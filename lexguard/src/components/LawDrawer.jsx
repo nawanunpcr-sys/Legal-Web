@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { I } from './icons.jsx'
 import { STATUS } from '../lib/supabase.js'
 
 function RepealModal({ law, onConfirm, onClose }){
@@ -15,11 +14,11 @@ function RepealModal({ law, onConfirm, onClose }){
       <div className="modal" style={{zIndex:401}}>
         <div className="modal-head">
           <h3 style={{color:'var(--bad)'}}>บันทึกการยกเลิกกฎหมาย</h3>
-          <button className="close" onClick={onClose}><I n="close"/></button>
+          <button className="close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
           <div className="ai-box" style={{borderColor:'var(--bad)',background:'var(--bad-bg)',marginBottom:16}}>
-            <span className="ai-tag" style={{color:'var(--bad)'}}><I n="alert"/>คำเตือน</span>
+            <span className="ai-tag" style={{color:'var(--bad)'}}>คำเตือน</span>
             <p style={{marginBottom:0,fontSize:13}}>เมื่อบันทึกแล้ว <b>{law.code}</b> จะถูกนำออกจากการคำนวณความสอดคล้องทันที และย้ายไปหน้า "กฎหมายที่ถูกยกเลิก" สามารถกู้คืนได้ในภายหลัง</p>
           </div>
           <label className="form-label">วันที่มีผลยกเลิก <span style={{color:'var(--bad)'}}>*</span></label>
@@ -33,7 +32,7 @@ function RepealModal({ law, onConfirm, onClose }){
         </div>
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
-          <button className="btn btn-danger" disabled={!valid} onClick={confirm}><I n="ban"/> ยืนยันการยกเลิก</button>
+          <button className="btn btn-danger" disabled={!valid} onClick={confirm}>ยืนยันการยกเลิก</button>
         </div>
       </div>
     </>
@@ -57,28 +56,28 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
       <div className="scrim" onClick={onClose}/>
       <div className="drawer">
         <div className="dr-head">
-          <button className="close" onClick={onClose}><I n="close"/></button>
+          <button className="close" onClick={onClose}>×</button>
           <div className="code">{law.code} · หมวด {law.cat} — {cat?.name||law.cat}</div>
           <h2 style={isRepealed?{textDecoration:'line-through',color:'var(--ink-faint)'}:{}}>{law.name}</h2>
           {isRepealed && (
-            <div style={{marginTop:6,padding:'6px 10px',background:'var(--bad-bg)',borderRadius:8,fontSize:12,color:'var(--bad)',display:'flex',alignItems:'center',gap:6}}>
-              <I n="ban" style={{width:13,height:13}}/> ยกเลิกแล้ว — {law.repeal_date||'ไม่ระบุวันที่'}
-              {law.replaced_by_code && <span style={{marginLeft:4}}>· แทนที่ด้วย <b>{law.replaced_by_code}</b></span>}
+            <div style={{marginTop:6,padding:'6px 12px',background:'var(--bad-bg)',borderRadius:6,fontSize:12,color:'var(--bad)'}}>
+              ยกเลิกแล้ว — {law.repeal_date||'ไม่ระบุวันที่'}
+              {law.replaced_by_code && <span style={{marginLeft:6}}>· แทนที่ด้วย <b>{law.replaced_by_code}</b></span>}
             </div>
           )}
           <div className="meta">
-            <span><I n="scale" style={{width:13,height:13}}/> {law.ministry||'—'}</span>
-            {law.issue_date && <span><I n="clock" style={{width:13,height:13}}/> {law.issue_date}</span>}
-            <span><I n="list" style={{width:13,height:13}}/> {law.reqs.length} ข้อกำหนด</span>
-            {law.law_type && <span><I n="scale" style={{width:13,height:13}}/> {law.law_type}</span>}
+            <span>{law.ministry||'—'}</span>
+            {law.issue_date && <span>{law.issue_date}</span>}
+            <span>{law.reqs.length} ข้อกำหนด</span>
+            {law.law_type && <span>{law.law_type}</span>}
           </div>
         </div>
         <div className="dr-body">
           {!isRepealed && (
             <div className="sec">
-              <div className="sec-t"><I n="spark"/> สรุปสาระสำคัญ (สรุปโดย AI)</div>
+              <div className="sec-t">สรุปสาระสำคัญ</div>
               <div className="ai-box">
-                <span className="ai-tag"><I n="spark"/> AI สรุปจากตัวบท</span>
+                <span className="ai-tag">AI สรุปจากตัวบท</span>
                 <p>{summary}… <br/><br/>กฎหมายฉบับนี้กำหนดข้อปฏิบัติรวม <b>{law.reqs.length} ข้อ</b> ปฏิบัติสอดคล้องแล้ว <b>{law.reqs.filter(r=>r.status==='met').length} ข้อ</b> ({p}%) ออกโดย {law.ministry||'—'}</p>
               </div>
             </div>
@@ -86,7 +85,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
 
           {isRepealed && (
             <div className="sec">
-              <div className="sec-t"><I n="info"/> รายละเอียดการยกเลิก</div>
+              <div className="sec-t">รายละเอียดการยกเลิก</div>
               <div className="panel" style={{padding:18}}>
                 <dl className="kv">
                   <dt>วันที่ยกเลิก</dt><dd style={{color:'var(--bad)'}}>{law.repeal_date||'—'}</dd>
@@ -100,22 +99,24 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
 
           {!isRepealed && (
             <div className="sec">
-              <div className="sec-t"><I n="check"/> ข้อกำหนด & การประเมิน
-                <span style={{marginLeft:'auto',fontFamily:'Bai Jamjuree',color:p===100?'var(--ok)':'var(--bad)'}}>{p}%</span></div>
+              <div className="sec-t">
+                ข้อกำหนด & การประเมิน
+                <span style={{marginLeft:'auto',fontFamily:'Bai Jamjuree',color:p===100?'var(--ok)':'var(--bad)'}}>{p}%</span>
+              </div>
               <p style={{fontSize:11.5,color:'var(--ink-faint)',marginBottom:10}}>คลิกกล่องสถานะเพื่อสลับ สอดคล้อง ↔ ยังไม่สอดคล้อง (บันทึกอัตโนมัติ)</p>
               {law.reqs.map(r=>(
                 <div className={'req '+r.status} key={r.id}>
                   <button className="ck" onClick={()=>onToggle(law,r)} title="สลับสถานะ">
-                    <I n={r.status==='met'?'check':'x'}/>
+                    {r.status==='met' ? 'C' : '·'}
                   </button>
                   <div style={{flex:1}}>
                     <div className="rt">{r.text}</div>
                     <div className="rmeta">
-                      {r.responsible && <span className="b">👤 {r.responsible}</span>}
-                      {r.frequency && <span className="b">🔄 {r.frequency}</span>}
-                      {r.documents && <span className="b">📄 {r.documents.slice(0,50)}</span>}
+                      {r.responsible && <span className="b">{r.responsible}</span>}
+                      {r.frequency && <span className="b">{r.frequency}</span>}
+                      {r.documents && <span className="b">{r.documents.slice(0,50)}</span>}
                     </div>
-                    {r.status==='unmet' && r.note && <div className="note">⚠ {r.note}</div>}
+                    {r.status==='unmet' && r.note && <div className="note">{r.note}</div>}
                   </div>
                 </div>
               ))}
@@ -124,7 +125,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
           )}
 
           <div className="sec">
-            <div className="sec-t"><I n="info"/> ข้อมูลทะเบียน</div>
+            <div className="sec-t">ข้อมูลทะเบียน</div>
             <div className="panel" style={{padding:18}}>
               <dl className="kv">
                 <dt>รหัสกฎหมาย</dt><dd className="num">{law.code}</dd>
@@ -144,12 +145,12 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
           <button className="btn btn-ghost" style={{flex:1}} onClick={onClose}>ปิด</button>
           {!isRepealed && (
             <>
-              <button className="btn btn-danger" style={{flex:1}} onClick={()=>setShowRepealModal(true)}><I n="ban"/> บันทึกการยกเลิก</button>
-              <button className="btn btn-primary" style={{flex:1}} onClick={()=>window.print()}><I n="download"/> พิมพ์ PDF</button>
+              <button className="btn btn-danger" style={{flex:1}} onClick={()=>setShowRepealModal(true)}>บันทึกการยกเลิก</button>
+              <button className="btn btn-primary" style={{flex:1}} onClick={()=>window.print()}>พิมพ์ PDF</button>
             </>
           )}
           {isRepealed && (
-            <button className="btn btn-primary" style={{flex:2}} onClick={()=>onRestore(law)}><I n="check"/> กู้คืนกฎหมาย</button>
+            <button className="btn btn-primary" style={{flex:2}} onClick={()=>onRestore(law)}>กู้คืนกฎหมาย</button>
           )}
         </div>
       </div>

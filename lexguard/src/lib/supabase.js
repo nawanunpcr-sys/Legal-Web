@@ -159,3 +159,23 @@ export async function updateCommSchedule(commId, patch) {
 export async function dismissNotification(id) {
   await supabase.from('lg_notification_log').update({ dismissed_at: new Date().toISOString() }).eq('id', id)
 }
+
+// ---- Monthly compliance check-off ----
+export async function fetchComplianceMonths(year) {
+  if (!hasSupabase) return []
+  const { data, error } = await supabase
+    .from('lg_compliance_months')
+    .select('*')
+    .eq('year', year)
+    .order('month')
+  if (error) throw error
+  return data || []
+}
+
+export async function toggleMonthCheck(year, month, checked) {
+  const checkedAt = checked ? new Date().toISOString() : null
+  const { error } = await supabase
+    .from('lg_compliance_months')
+    .upsert({ year, month, checked, checked_at: checkedAt }, { onConflict: 'year,month' })
+  if (error) throw error
+}

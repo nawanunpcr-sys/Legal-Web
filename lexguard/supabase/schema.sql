@@ -42,6 +42,19 @@ create table if not exists lg_notification_log (
 create index if not exists idx_lg_notif_type on lg_notification_log(type);
 create index if not exists idx_lg_notif_ref  on lg_notification_log(ref_type, ref_id);
 
+-- Monthly compliance check tracking (one row per year+month)
+create table if not exists lg_compliance_months (
+  id bigint generated always as identity primary key,
+  year int not null,
+  month int not null check (month between 1 and 12),
+  checked boolean not null default false,
+  checked_at timestamptz,
+  note text,
+  unique(year, month));
+create index if not exists idx_lg_comp_months_year on lg_compliance_months(year);
+alter table lg_compliance_months enable row level security;
+create policy lg_months_all on lg_compliance_months for all using (true) with check (true);
+
 alter table lg_categories enable row level security;
 alter table lg_laws enable row level security;
 alter table lg_requirements enable row level security;

@@ -4,8 +4,8 @@ import { supabase, hasSupabase, fetchAll,
          repealLaw, restoreLaw, createLaw,
          markCommSent, updateCommSchedule,
          dismissNotification,
+         fetchComplianceMonths, toggleMonthCheck,
          STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
-import { I } from './components/icons.jsx'
 import LawDrawer from './components/LawDrawer.jsx'
 import { buildReport } from './components/report.jsx'
 
@@ -49,7 +49,6 @@ const TITLES = {
 
 export default function App(){
   const [view,setView]     = useState('dashboard')
-  const [collapsed,setCollapsed] = useState(false)
   const [cats,setCats]     = useState([])
   const [laws,setLaws]     = useState([])
   const [comms,setComms]   = useState([])
@@ -58,13 +57,25 @@ export default function App(){
   const [err,setErr]       = useState('')
   const [search,setSearch] = useState('')
   const [openLaw,setOpenLaw] = useState(null)
+  const [monthYear,setMonthYear] = useState(new Date().getFullYear())
+  const [months,setMonths]   = useState([])
 
   useEffect(()=>{ (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
-    try{ const d=await fetchAll(); setCats(d.cats); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs) }
+    try{
+      const [d, mData] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear())])
+      setCats(d.cats); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
+      setMonths(mData)
+    }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
   })() },[])
+
+  useEffect(()=>{ (async()=>{
+    if(!hasSupabase) return
+    try{ const mData = await fetchComplianceMonths(monthYear); setMonths(mData) }
+    catch(e){ console.warn('month fetch error',e) }
+  })() },[monthYear])
 
   const catMap      = useMemo(()=>Object.fromEntries(cats.map(c=>[c.code,c])),[cats])
   const activeLaws  = useMemo(()=>laws.filter(l=>l.status!=='repealed'),[laws])
@@ -78,7 +89,7 @@ export default function App(){
   const bellNotifications = useMemo(()=>{
     const out=[]
     activeLaws.forEach(l=>{ if(l.status==='bad') out.push({type:'bad',law:l,text:l.code+' ยังไม่สอดคล้อง',sub:l.name.slice(0,60)}) })
-    activeLaws.forEach(l=>{ if(l.review_date){ const d=daysTo(l.review_date); if(d>=0&&d<=60) out.push({type:'review',law:l,days:d,text:l.code+' ครบกำหนดทบทวนใน '+d+' วัน',sub:thDate(l.review_date)}) }})
+    activeLaws.forEach(l=>{ if(l.review_date){ const d=daysTo(l.review_date); if(d>=0&&d<=200) out.push({type:'review',law:l,days:d,text:l.code+' ครบกำหนดทบทวนใน '+d+' วัน',sub:thDate(l.review_date)}) }})
     comms.forEach(c=>{ if(c.next_scheduled_date){ const d=daysTo(c.next_scheduled_date); const nb=c.notify_days_before||7; if(d>=0&&d<=nb) out.push({type:'comm',comm:c,days:d,text:'การสื่อสาร: '+c.topic.slice(0,50),sub:'ครบกำหนดใน '+d+' วัน — '+thDate(c.next_scheduled_date)}) }})
     notifs.filter(n=>n.type==='comm_submitted').slice(0,3).forEach(n=>out.push({type:'submitted',text:n.message,sub:thDate(n.created_at)}))
     return out.sort((a,b)=>(a.type==='bad'?-1:0)-(b.type==='bad'?-1:0))
@@ -125,6 +136,18 @@ export default function App(){
     catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
+  async function handleToggleMonth(year, month){
+    const existing = months.find(m=>m.year===year && m.month===month)
+    const nowChecked = existing ? !existing.checked : true
+    const checkedAt  = nowChecked ? new Date().toISOString() : null
+    setMonths(prev=>{
+      const hit = prev.find(m=>m.year===year && m.month===month)
+      if(hit) return prev.map(m=>m.year===year&&m.month===month ? {...m,checked:nowChecked,checked_at:checkedAt} : m)
+      return [...prev, {year,month,checked:nowChecked,checked_at:checkedAt}]
+    })
+    if(hasSupabase){ try{ await toggleMonthCheck(year,month,nowChecked) }catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) } }
+  }
+
   function exportPDF(){ buildReport({laws:activeLaws,stats,catName:Object.fromEntries(cats.map(c=>[c.code,c.name]))}); window.print() }
 
   if(loading) return <div className="loading"><div className="spin"/>กำลังโหลดข้อมูลจากฐานข้อมูล…</div>
@@ -133,13 +156,11 @@ export default function App(){
 
   return (
     <div className="app">
-      <aside className={'sidebar'+(collapsed?' collapsed':'')}>
-        <button className="collapse-btn" onClick={()=>setCollapsed(c=>!c)} title="ย่อ/ขยายแถบเมนู">
-          <I n="chevron" style={{transform:collapsed?'rotate(180deg)':'none'}}/>
-        </button>
+      <aside className="sidebar">
         <div className="brand">
-          <div className="mark"><I n="shield" stroke="#fff"/></div>
-          <div className="brand-txt"><h1>ComplyRegister</h1><span>ทะเบียนกฎหมาย SHE</span></div>
+          <div className="brand-mark">CR</div>
+          <h1>ComplyRegister</h1>
+          <span>ทะเบียนกฎหมาย SHE</span>
         </div>
 
         {NAV_GROUPS.map((group,gi)=>(
@@ -152,15 +173,11 @@ export default function App(){
                 n.id==='improvements'  ? (stats.nc||null)         :
                 n.id==='repealed'      ? (repealedLaws.length||null) :
                 n.id==='notifications' ? (bellNotifications.length||null) : null
-              const badgeColor =
-                n.id==='notifications'||n.id==='improvements'||n.id==='compliance' ? 'var(--bad)' :
-                n.id==='repealed' ? 'var(--ink-faint)' : null
               return (
                 <button key={n.id} className={'nav-item'+(view===n.id?' active':'')}
-                  onClick={()=>setView(n.id)} title={n.label}>
-                  <I n={n.icon}/>
+                  onClick={()=>setView(n.id)}>
                   <span className="label">{n.label}</span>
-                  {badge && <span className="badge" style={badgeColor?{background:badgeColor}:{}}>{badge}</span>}
+                  {badge && <span className="badge">{badge}</span>}
                 </button>
               )
             })}
@@ -178,11 +195,11 @@ export default function App(){
           <div className="vt">{title[0]}<small>{title[1]}</small></div>
           <div className="spacer"/>
           {(view==='register'||view==='repealed') && (
-            <div className="search"><I n="search"/><input placeholder="ค้นหากฎหมาย, รหัส, กระทรวง…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
+            <div className="search"><input placeholder="ค้นหากฎหมาย, รหัส, กระทรวง…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
           )}
-          <button className="btn btn-ghost no-print" onClick={exportPDF} title="ส่งออกรายงาน PDF">ส่งออก PDF</button>
-          <button className="bell no-print" onClick={()=>setView('notifications')} title="ศูนย์การแจ้งเตือน">
-            <I n="bell"/>{bellNotifications.length>0&&<span className="dot">{bellNotifications.length}</span>}
+          <button className="btn btn-ghost no-print" onClick={exportPDF}>ส่งออก PDF</button>
+          <button className="bell no-print" onClick={()=>setView('notifications')}>
+            การแจ้งเตือน{bellNotifications.length>0&&<span className="dot">{bellNotifications.length}</span>}
           </button>
         </header>
 
@@ -190,7 +207,8 @@ export default function App(){
           {err && <div className="banner">{err}</div>}
           {view==='dashboard'     && <Dashboard     laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} allLaws={laws}/>}
-          {view==='compliance'    && <Compliance    laws={activeLaws} cats={cats} stats={stats} onOpen={setOpenLaw}/>}
+          {view==='compliance'    && <Compliance    laws={activeLaws} cats={cats} stats={stats} onOpen={setOpenLaw}
+            months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}/>}
           {view==='improvements'  && <Improvements  laws={activeLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
@@ -305,7 +323,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
     <div className="modal" style={{zIndex:301,width:540}}>
       <div className="modal-head">
         <h3>เพิ่มกฎหมายใหม่</h3>
-        <button className="close" onClick={onClose}><I n="close"/></button>
+        <button className="close" onClick={onClose}>×</button>
       </div>
       <div className="modal-body">
         {/* code preview */}
@@ -344,7 +362,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
       <div className="modal-foot">
         <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
         <button className="btn btn-primary" disabled={!valid||saving} onClick={save}>
-          <I n="save"/> {saving ? 'กำลังบันทึก…' : `บันทึก ${previewCode}`}
+          {saving ? 'กำลังบันทึก…' : `บันทึก ${previewCode}`}
         </button>
       </div>
     </div></>
@@ -366,7 +384,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,allLaws}){
       <span className={'chip'+(cat==='all'?' active':'')} onClick={()=>setCat('all')}>ทุกหมวด ({laws.length})</span>
       {catsList.map(c=>(<span key={c} className={'chip'+(cat===c?' active':'')} onClick={()=>setCat(c)} style={cat===c?{borderColor:catMap[c]?.color,color:catMap[c]?.color}:{}}>{c} · {catMap[c]?.name} ({laws.filter(l=>l.cat===c).length})</span>))}
       <span className="right" style={{marginLeft:'auto'}}>พบ {rows.length} ฉบับ</span>
-      <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} onClick={()=>setShowAdd(true)}><I n="plus"/> เพิ่มกฎหมาย</button>
+      <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} onClick={()=>setShowAdd(true)}>+ เพิ่มกฎหมาย</button>
     </div>
     {activeCats.map(c=>(
       <div key={c} style={{marginBottom:20}}>
@@ -400,7 +418,47 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,allLaws}){
 }
 
 /* ─────────────────────────── COMPLIANCE ─────────────────────────── */
-function Compliance({laws,cats,stats,onOpen}){
+const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+
+function MonthlyCheckPanel({ months, year, setYear, onToggle }) {
+  const toBE = y => y + 543
+  const getMonth = m => months.find(r=>r.year===year && r.month===m) || {checked:false}
+  const checkedCount = months.filter(m=>m.year===year && m.checked).length
+
+  return (
+    <div className="panel month-panel">
+      <div className="panel-h">
+        <h3>การตรวจสอบรายเดือน</h3>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
+          <button className="month-yr-btn" onClick={()=>setYear(y=>y-1)}>‹</button>
+          <span style={{fontFamily:'Bai Jamjuree',fontSize:13,fontWeight:600,minWidth:60,textAlign:'center'}}>ปี {toBE(year)}</span>
+          <button className="month-yr-btn" onClick={()=>setYear(y=>y+1)}>›</button>
+        </div>
+        <span className="sub">{checkedCount}/12 เดือน</span>
+      </div>
+      <div className="month-grid">
+        {TH_MONTHS.map((label, i) => {
+          const m = i + 1
+          const rec = getMonth(m)
+          const isCurrentMonth = year===new Date().getFullYear() && m===new Date().getMonth()+1
+          return (
+            <button
+              key={m}
+              className={'month-cell'+(rec.checked?' month-checked':'')+(isCurrentMonth?' month-current':'')}
+              onClick={()=>onToggle(year, m)}
+              title={rec.checked && rec.checked_at ? 'ตรวจสอบแล้ว: '+new Date(rec.checked_at).toLocaleDateString('th-TH') : 'คลิกเพื่อทำเครื่องหมาย'}
+            >
+              <span className="month-name">{label}</span>
+              <span className="month-tick">{rec.checked ? '✓' : ''}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function Compliance({laws,cats,stats,onOpen,months,monthYear,setMonthYear,onToggleMonth}){
   const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
   return <div className="view">
     <div className="grid" style={{gridTemplateColumns:'repeat(3,1fr)',marginBottom:16}}>
@@ -408,15 +466,18 @@ function Compliance({laws,cats,stats,onOpen}){
       <div className="panel" style={{padding:18}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>ผ่านการประเมิน (C)</div><div className="num" style={{fontSize:28,fontWeight:700,color:'var(--ok)'}}>{stats.met}</div></div>
       <div className="panel" style={{padding:18}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>ยังไม่สอดคล้อง (NC)</div><div className="num" style={{fontSize:28,fontWeight:700,color:'var(--bad)'}}>{stats.nc}</div></div>
     </div>
-    <div className="panel"><div className="panel-h"><h3>สถานะรายหมวด / ลำดับชั้นกฎหมาย</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกที่กฎหมายเพื่อดูข้อกำหนดและแก้ไข</span></div>
+
+    <MonthlyCheckPanel months={months} year={monthYear} setYear={setMonthYear} onToggle={onToggleMonth}/>
+
+    <div className="panel" style={{marginTop:14}}><div className="panel-h"><h3>สถานะรายหมวด / ลำดับชั้นกฎหมาย</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกที่กฎหมายเพื่อดูข้อกำหนดและแก้ไข</span></div>
       <div className="panel-b">
         {cats.filter(c=>byCat[c.code]).map(c=>{
           let r=0,m=0; byCat[c.code].forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++}))
           const p=r?Math.round(m/r*100):100
           const byTier={}; byCat[c.code].forEach(l=>{ const t=l.hierarchy_level||5; (byTier[t]=byTier[t]||[]).push(l) })
           return <details key={c.code} style={{marginBottom:12}} open={c.code==='LA'}>
-            <summary style={{cursor:'pointer',display:'flex',alignItems:'center',gap:12,padding:'12px 14px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:11,listStyle:'none'}}>
-              <span style={{width:10,height:10,borderRadius:3,background:c.color}}/>
+            <summary style={{cursor:'pointer',display:'flex',alignItems:'center',gap:12,padding:'12px 14px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:8,listStyle:'none'}}>
+              <span style={{width:8,height:8,borderRadius:2,background:c.color,flexShrink:0}}/>
               <b style={{fontFamily:'Bai Jamjuree'}}>{c.code}</b><span style={{flex:1}}>{c.name}</span>
               <span className="num" style={{color:c.color,fontWeight:700}}>{p}%</span>
               <span style={{fontSize:12,color:'var(--ink-faint)'}}>{byCat[c.code].length} ฉบับ</span>
@@ -453,7 +514,7 @@ function Repealed({laws,catMap,search,onOpen,onRestore}){
   if (rows.length===0) return (
     <div className="view">
       <div className="panel" style={{padding:'60px 20px',textAlign:'center'}}>
-        <div style={{width:52,height:52,borderRadius:14,background:'#f0f0f0',color:'#aaa',display:'grid',placeItems:'center',margin:'0 auto 14px'}}><I n="ban" style={{width:24,height:24}}/></div>
+        <div style={{width:52,height:52,borderRadius:14,background:'#f0f0f0',color:'#aaa',display:'grid',placeItems:'center',margin:'0 auto 14px',fontSize:22,fontWeight:700}}>—</div>
         <div style={{fontFamily:'Bai Jamjuree',fontSize:16,fontWeight:700}}>ยังไม่มีกฎหมายที่ถูกยกเลิก</div>
         <div style={{fontSize:13,color:'var(--ink-faint)',marginTop:6}}>กฎหมายที่บันทึกการยกเลิกจะแสดงที่นี่</div>
       </div>
@@ -463,7 +524,7 @@ function Repealed({laws,catMap,search,onOpen,onRestore}){
   return <div className="view">
     {/* summary banner */}
     <div style={{display:'flex',alignItems:'center',gap:16,padding:'14px 18px',background:'var(--bad-bg)',border:'1px solid #f5c0c0',borderRadius:12,marginBottom:20}}>
-      <div style={{width:40,height:40,borderRadius:11,background:'var(--bad)',color:'#fff',display:'grid',placeItems:'center',flexShrink:0}}><I n="ban" style={{width:20,height:20}}/></div>
+      <div style={{width:40,height:40,borderRadius:11,background:'var(--bad)',color:'#fff',display:'grid',placeItems:'center',flexShrink:0,fontFamily:'Bai Jamjuree',fontSize:14,fontWeight:700}}>ยก</div>
       <div>
         <div style={{fontFamily:'Bai Jamjuree',fontWeight:700,fontSize:15,color:'var(--bad)'}}>{rows.length} กฎหมายที่ถูกยกเลิก / แทนที่</div>
         <div style={{fontSize:12.5,color:'#a33',marginTop:2}}>รายการเหล่านี้ไม่นับในสถิติความสอดคล้อง — สามารถกู้คืนได้จากหน้ารายละเอียด</div>
@@ -489,7 +550,7 @@ function Repealed({laws,catMap,search,onOpen,onRestore}){
               </div>
               <div style={{display:'flex',gap:8,flexShrink:0}}>
                 <button className="btn btn-ghost" style={{padding:'5px 12px',fontSize:12}} onClick={()=>onOpen(l)}>ดูรายละเอียด</button>
-                <button className="btn btn-primary" style={{padding:'5px 12px',fontSize:12}} onClick={()=>onRestore(l)}><I n="check"/> กู้คืน</button>
+                <button className="btn btn-primary" style={{padding:'5px 12px',fontSize:12}} onClick={()=>onRestore(l)}>กู้คืน</button>
               </div>
             </div>
             {/* repeal details */}
@@ -529,7 +590,7 @@ function CommScheduleModal({comm,onSave,onClose}){
   function save(){ onSave(comm.id,{scheduled_date:date||null,recurrence_type:rec,next_scheduled_date:date||null,notify_days_before:Number(notifyDays),assigned_to:assignedTo||null}); onClose() }
   return (<><div className="scrim" onClick={onClose}/>
     <div className="modal">
-      <div className="modal-head"><h3>ตั้งค่าตารางการสื่อสาร</h3><button className="close" onClick={onClose}><I n="close"/></button></div>
+      <div className="modal-head"><h3>ตั้งค่าตารางการสื่อสาร</h3><button className="close" onClick={onClose}>×</button></div>
       <div className="modal-body">
         <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:16}}>{comm.topic}</p>
         <label className="form-label">วันที่กำหนด (ครั้งแรก / ถัดไป)</label>
@@ -554,7 +615,7 @@ function MarkSentModal({comm,onSave,onClose}){
   function save(){ onSave(comm.id,fileRef); onClose() }
   return (<><div className="scrim" onClick={onClose}/>
     <div className="modal">
-      <div className="modal-head"><h3>บันทึกการส่ง / สื่อสาร</h3><button className="close" onClick={onClose}><I n="close"/></button></div>
+      <div className="modal-head"><h3>บันทึกการส่ง / สื่อสาร</h3><button className="close" onClick={onClose}>×</button></div>
       <div className="modal-body">
         <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:16}}>{comm.topic}</p>
         <label className="form-label">อ้างอิงไฟล์ / เอกสารที่ส่ง (ไม่บังคับ)</label>
