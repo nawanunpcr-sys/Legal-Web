@@ -175,7 +175,7 @@ export default function App(){
           {(view==='register'||view==='repealed') && (
             <div className="search"><I n="search"/><input placeholder="ค้นหากฎหมาย, รหัส, กระทรวง…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
           )}
-          <button className="btn btn-ghost no-print" onClick={exportPDF} title="ส่งออกรายงาน PDF"><I n="download"/>ส่งออก PDF</button>
+          <button className="btn btn-ghost no-print" onClick={exportPDF} title="ส่งออกรายงาน PDF">ส่งออก PDF</button>
           <button className="bell no-print" onClick={()=>setView('notifications')} title="ศูนย์การแจ้งเตือน">
             <I n="bell"/>{bellNotifications.length>0&&<span className="dot">{bellNotifications.length}</span>}
           </button>
@@ -226,18 +226,17 @@ function CatBars({laws,cats}){
 function Dashboard({laws,cats,stats,catMap,onOpen}){
   const bad=laws.filter(l=>l.status==='bad')
   const cards=[
-    {cls:'s-total',icon:'book',  lab:'กฎหมายที่มีผลบังคับใช้', val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด',        dc:'var(--brand)'},
-    {cls:'s-ok',   icon:'check', lab:'ข้อกำหนดที่สอดคล้อง',    val:stats.met,   unit:'ข้อ',  delta:stats.pct+'% ของข้อกำหนด', dc:'var(--ok)'  },
-    {cls:'s-warn',  icon:'list', lab:'ข้อกำหนดทั้งหมด',         val:stats.req,   unit:'ข้อ',  delta:'ประเมินครบทุกข้อ',         dc:'var(--review)'},
-    {cls:'s-bad',  icon:'alert', lab:'ยังไม่สอดคล้อง',          val:stats.nc,    unit:'ข้อ',  delta:'ต้องติดตาม',               dc:'var(--bad)' },
+    {cls:'s-total', lab:'กฎหมายที่มีผลบังคับใช้', val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด'},
+    {cls:'s-ok',    lab:'ข้อกำหนดที่สอดคล้อง',    val:stats.met,   unit:'ข้อ',  delta:stats.pct+'% ของข้อกำหนด'},
+    {cls:'s-warn',  lab:'ข้อกำหนดทั้งหมด',         val:stats.req,   unit:'ข้อ',  delta:'ประเมินครบทุกข้อ'},
+    {cls:'s-bad',   lab:'ยังไม่สอดคล้อง',          val:stats.nc,    unit:'ข้อ',  delta:'ต้องติดตาม'},
   ]
   return <div className="view">
     <div className="grid stats">
       {cards.map((c,i)=>(<div className={'stat '+c.cls} key={i}>
-        <div className="ic"><I n={c.icon}/></div>
         <div className="lab">{c.lab}</div>
         <div className="val num">{c.val} <small>{c.unit}</small></div>
-        <div className="delta" style={{color:c.dc}}>{c.delta}</div>
+        <div className="delta">{c.delta}</div>
       </div>))}
     </div>
     <div className="cols">
@@ -362,8 +361,8 @@ function Repealed({laws,catMap,search,onOpen}){
   const q=search.toLowerCase()
   const rows=laws.filter(l=>!q||l.name.toLowerCase().includes(q)||l.code.toLowerCase().includes(q))
   return <div className="view">
-    <div className="ai-box" style={{marginBottom:16,borderColor:'var(--bad)',background:'var(--bad-bg)'}}>
-      <span className="ai-tag" style={{color:'var(--bad)'}}><I n="ban"/>กฎหมายที่ถูกยกเลิก / แทนที่</span>
+    <div className="ai-box" style={{marginBottom:16,borderLeftColor:'var(--bad)'}}>
+      <span className="ai-tag" style={{color:'var(--bad)'}}>กฎหมายที่ถูกยกเลิก / แทนที่</span>
       <p style={{marginBottom:0}}>รายการต่อไปนี้ถูกบันทึกว่าไม่มีผลบังคับใช้แล้ว ไม่นับในสถิติความสอดคล้อง คลิกแต่ละรายการเพื่อดูรายละเอียดหรือกู้คืน</p>
     </div>
     {rows.length===0 && <div className="panel"><div style={{textAlign:'center',color:'var(--ink-faint)',padding:40}}>ยังไม่มีกฎหมายที่ถูกบันทึกว่ายกเลิก</div></div>}
@@ -409,7 +408,7 @@ function CommScheduleModal({comm,onSave,onClose}){
       </div>
       <div className="modal-foot">
         <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
-        <button className="btn btn-primary" onClick={save}><I n="save"/> บันทึก</button>
+        <button className="btn btn-primary" onClick={save}>บันทึก</button>
       </div>
     </div></>)
 }
@@ -426,7 +425,7 @@ function MarkSentModal({comm,onSave,onClose}){
       </div>
       <div className="modal-foot">
         <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
-        <button className="btn btn-primary" onClick={save}><I n="check"/> ยืนยันการส่ง</button>
+        <button className="btn btn-primary" onClick={save}>ยืนยันการส่ง</button>
       </div>
     </div></>)
 }
@@ -478,8 +477,8 @@ function Communication({comms,onMarkSent,onScheduleUpdate}){
           </td>
           <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{c.assigned_to||'—'}</td>
           <td><div style={{display:'flex',gap:4}}>
-            <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11}} onClick={()=>setSchedModal(c)} title="ตั้งค่าตาราง"><I n="clock"/></button>
-            <button className="btn btn-primary" style={{padding:'3px 8px',fontSize:11}} onClick={()=>setSentModal(c)} title="บันทึกการส่ง"><I n="check"/></button>
+            <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11}} onClick={()=>setSchedModal(c)} title="ตั้งค่าตาราง">ตาราง</button>
+            <button className="btn btn-primary" style={{padding:'3px 8px',fontSize:11}} onClick={()=>setSentModal(c)} title="บันทึกการส่ง">บันทึก</button>
           </div></td>
         </tr>
       ))}
@@ -494,7 +493,7 @@ function Analysis({laws,cats,stats,catMap,onOpen}){
   const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
   return <div className="view">
     <div className="ai-box" style={{marginBottom:20}}>
-      <span className="ai-tag"><I n="spark"/>บทสรุปผู้บริหาร (สรุปโดย AI)</span>
+      <span className="ai-tag">บทสรุปผู้บริหาร</span>
       <p>จากทะเบียนกฎหมาย SHE ของ <b>บริษัท จัสเทล เน็ทเวิร์ค</b> (F-259, รอบ 1 ปี 2569) มีกฎหมายที่มีผลบังคับใช้ทั้งสิ้น <b>{stats.total} ฉบับ</b> ใน {cats.length} หมวด รวมข้อกำหนดที่ต้องปฏิบัติ <b>{stats.req} ข้อ</b> โดยมีอัตราความสอดคล้องโดยรวม <b>{stats.pct}%</b> ({stats.met} ข้อ) คงเหลือข้อกำหนดที่ยังไม่สอดคล้องเพียง <b>{stats.nc} ข้อ</b></p>
     </div>
     <div className="cols" style={{marginTop:0}}>
@@ -502,12 +501,12 @@ function Analysis({laws,cats,stats,catMap,onOpen}){
         <div className="panel-h" style={{border:'none',padding:'0 0 13px'}}><h3>ข้อค้นพบสำคัญ & ข้อเสนอแนะ</h3></div>
         {bad.map(l=>l.reqs.filter(r=>r.status==='unmet').map(r=>(
           <div className="insight" key={r.id} onClick={()=>onOpen(l)} style={{cursor:'pointer'}}>
-            <div className="ii" style={{background:'var(--bad-bg)',color:'var(--bad)'}}><I n="alert"/></div>
+            <div className="ii" style={{background:'var(--bad)'}}/>
             <div><span className="ic-code">{l.code} · ยังไม่สอดคล้อง</span><h4>{l.name.slice(0,70)}</h4><p>{(r.note||r.text).slice(0,150)}…</p></div>
           </div>)))}
-        <div className="insight"><div className="ii" style={{background:'var(--ok-bg)',color:'var(--ok)'}}><I n="check"/></div>
+        <div className="insight"><div className="ii" style={{background:'var(--ok)'}}/>
           <div><span className="ic-code">จุดแข็ง</span><h4>5 หมวดสอดคล้องครบ 100%</h4><p>หมวดไฟฟ้า, อัคคีภัย, สภาพแวดล้อม, เครื่องจักร และ Service ผ่านการประเมินทุกข้อกำหนด</p></div></div>
-        <div className="insight"><div className="ii" style={{background:'var(--review-bg)',color:'var(--review)'}}><I n="clock"/></div>
+        <div className="insight"><div className="ii" style={{background:'var(--review)'}}/>
           <div><span className="ic-code">ข้อเสนอแนะ</span><h4>ติดตามประกาศหลักสูตรผู้ชำนาญการ</h4><p>มอบหมายผู้รับผิดชอบติดตามประกาศกระทรวงแรงงาน เพื่อปิดข้อ NC ทั้ง {stats.nc} ข้อทันทีเมื่อมีผลบังคับ</p></div></div>
       </div>
       <div>
@@ -543,7 +542,7 @@ function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
   if (notifs.length===0) return (
     <div className="view">
       <div className="panel notif-empty">
-        <div className="notif-empty-ic"><I n="bell"/></div>
+        <div className="notif-empty-ic" style={{fontSize:22}}>✓</div>
         <div style={{fontFamily:'Bai Jamjuree',fontSize:16,fontWeight:600,marginBottom:6}}>ไม่มีการแจ้งเตือน</div>
         <div style={{fontSize:13,color:'var(--ink-faint)'}}>ระบบจะแจ้งเตือนเมื่อมีข้อกำหนดที่ต้องติดตามหรือกำหนดการที่ใกล้ครบ</div>
       </div>
@@ -571,7 +570,7 @@ function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
           const m=NOTIF_META[n.type]||{label:n.type,icon:'info',bg:'var(--brand-tint)',fg:'var(--brand)'}
           return (
             <div key={i} className="notif-card" onClick={()=>{ if(n.law) onOpenLaw(n.law); else if(n.comm) onGoToView('comm') }}>
-              <div className="notif-ico" style={{background:m.bg,color:m.fg}}><I n={m.icon}/></div>
+              <div className="notif-ico" style={{background:m.fg}}/>
               <div className="notif-body">
                 <div className="notif-title">{n.text}</div>
                 <div className="notif-sub">{n.sub}</div>
@@ -595,8 +594,8 @@ function Improvements({ laws, catMap, onOpen }) {
   if (ncLaws.length===0) return (
     <div className="view">
       <div className="panel" style={{padding:'60px 20px',textAlign:'center'}}>
-        <div style={{width:56,height:56,borderRadius:16,background:'var(--ok-bg)',color:'var(--ok)',display:'grid',placeItems:'center',margin:'0 auto 16px'}}>
-          <I n="check" style={{width:28,height:28}}/>
+        <div style={{width:56,height:56,borderRadius:12,background:'var(--ok-bg)',color:'var(--ok)',display:'grid',placeItems:'center',margin:'0 auto 16px',fontSize:24}}>
+          ✓
         </div>
         <div style={{fontFamily:'Bai Jamjuree',fontSize:18,fontWeight:700}}>ทุกข้อกำหนดสอดคล้องครบถ้วน</div>
         <div style={{fontSize:13,color:'var(--ink-faint)',marginTop:6}}>ไม่มีรายการที่ต้องปรับปรุงในขณะนี้</div>
@@ -606,8 +605,8 @@ function Improvements({ laws, catMap, onOpen }) {
 
   return (
     <div className="view">
-      <div className="ai-box" style={{marginBottom:16,borderColor:'#e8b85a',background:'#fef9ec'}}>
-        <span className="ai-tag" style={{color:'var(--warn)'}}><I n="alert"/> แผนปรับปรุง / ปิด NC (อ้างอิง PD-05)</span>
+      <div className="ai-box" style={{marginBottom:16,borderLeftColor:'var(--warn)'}}>
+        <span className="ai-tag" style={{color:'var(--warn)'}}>แผนปรับปรุง / ปิด NC — อ้างอิง PD-05</span>
         <p style={{marginBottom:0}}>รายการข้อกำหนดที่ยังไม่สอดคล้อง <b>{totalNc} ข้อ</b> จาก <b>{ncLaws.length} กฎหมาย</b> — คลิกที่รายการเพื่อเปิดรายละเอียดและอัปเดตสถานะ</p>
       </div>
       {ncLaws.map(l=>{
@@ -629,9 +628,9 @@ function Improvements({ laws, catMap, onOpen }) {
                   <div style={{flex:1}}>
                     <div style={{fontSize:13,fontWeight:500,lineHeight:1.5}}>{r.text.slice(0,140)}{r.text.length>140?'…':''}</div>
                     <div style={{display:'flex',gap:7,marginTop:5,flexWrap:'wrap'}}>
-                      {r.responsible&&<span className="meta-chip">👤 {r.responsible}</span>}
-                      {r.frequency&&<span className="meta-chip">🔄 {r.frequency}</span>}
-                      {r.note&&<span className="meta-chip" style={{color:'var(--bad)',borderColor:'var(--bad-bg)',background:'var(--bad-bg)'}}>⚠ {r.note.slice(0,80)}</span>}
+                      {r.responsible&&<span className="meta-chip">{r.responsible}</span>}
+                      {r.frequency&&<span className="meta-chip">{r.frequency}</span>}
+                      {r.note&&<span className="meta-chip" style={{color:'var(--bad)',borderColor:'var(--bad-bg)',background:'var(--bad-bg)'}}>{r.note.slice(0,80)}</span>}
                     </div>
                   </div>
                   <span className="pill p-bad" style={{fontSize:10,padding:'2px 7px',alignSelf:'flex-start',marginTop:2}}>NC</span>
@@ -647,26 +646,25 @@ function Improvements({ laws, catMap, onOpen }) {
 
 /* ─────────────────────────── DOCUMENTS ─────────────────────────── */
 const DOC_TYPES = [
-  { key:'F-259',  label:'แบบ F-259 ทะเบียนกฎหมาย',    desc:'ทะเบียนกฎหมาย SHE ประจำปีพร้อมข้อกำหนดทั้งหมด', icon:'book',     color:'#0f6b58', bg:'#e2efe9' },
-  { key:'PD-60',  label:'เอกสาร PD-60 ข้อ 7',          desc:'กรอบเวลาตามกฎหมาย — เอกสารส่งราชการ',            icon:'clock',    color:'#4f72c4', bg:'#e8edf8' },
-  { key:'PD-05',  label:'เอกสาร PD-05 แผนปรับปรุง',    desc:'บันทึกการแก้ไขและปิดข้อ NC',                     icon:'alert',    color:'#cf8a12', bg:'#fbf0db' },
-  { key:'report', label:'รายงานผู้บริหาร (Mgmt Review)',desc:'AI ร่างรายงานและส่งออก PDF',                      icon:'download', color:'#1f9d6b', bg:'#e6f4ee' },
+  { key:'F-259',  label:'แบบ F-259 ทะเบียนกฎหมาย',    desc:'ทะเบียนกฎหมาย SHE ประจำปีพร้อมข้อกำหนดทั้งหมด', color:'#0f6b58' },
+  { key:'PD-60',  label:'เอกสาร PD-60 ข้อ 7',          desc:'กรอบเวลาตามกฎหมาย — เอกสารส่งราชการ',            color:'#4f72c4' },
+  { key:'PD-05',  label:'เอกสาร PD-05 แผนปรับปรุง',    desc:'บันทึกการแก้ไขและปิดข้อ NC',                     color:'#cf8a12' },
+  { key:'report', label:'รายงานผู้บริหาร (Mgmt Review)',desc:'AI ร่างรายงานและส่งออก PDF',                      color:'#1f9d6b' },
 ]
 function Documents({ laws, cats, catMap }) {
   const docsLaws = laws.filter(l=>l.reqs.some(r=>r.documents))
   return (
     <div className="view">
-      <div className="grid" style={{gridTemplateColumns:'repeat(2,1fr)',gap:16,marginBottom:20}}>
+      <div className="grid" style={{gridTemplateColumns:'repeat(2,1fr)',gap:14,marginBottom:20}}>
         {DOC_TYPES.map(d=>(
-          <div key={d.key} className="panel doc-card" style={{padding:24}}>
-            <div className="doc-ic" style={{background:d.bg,color:d.color}}><I n={d.icon}/></div>
-            <div style={{marginTop:14}}>
+          <div key={d.key} className="panel doc-card" style={{padding:22,borderTop:`3px solid ${d.color}`}}>
+            <div>
               <div className="doc-title">{d.label}</div>
-              <div style={{fontSize:12.5,color:'var(--ink-faint)',marginTop:4,lineHeight:1.55}}>{d.desc}</div>
+              <div style={{fontSize:12.5,color:'var(--ink-faint)',marginTop:5,lineHeight:1.55}}>{d.desc}</div>
             </div>
             <button className="btn btn-ghost" style={{marginTop:16,width:'100%',justifyContent:'center'}}
               onClick={()=>{ if(d.key==='report'||d.key==='F-259') window.print() }}>
-              <I n="download"/> ส่งออก / พิมพ์
+              ส่งออก / พิมพ์
             </button>
           </div>
         ))}
