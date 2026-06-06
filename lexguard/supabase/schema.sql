@@ -8,7 +8,11 @@ create table if not exists lg_laws (
   id bigint generated always as identity primary key,
   code text unique not null, cat text not null references lg_categories(code),
   ministry text, name text not null, issue_date text,
-  status text not null default 'ok', review_date date,
+  status text not null default 'ok',           -- ok | bad | repealed
+  law_type text,                                -- พระราชบัญญัติ / กฎกระทรวง / ประกาศ …
+  hierarchy_level int not null default 5,       -- 1 (highest) … 5
+  review_date date,
+  repeal_date date, repeal_reason text, replaced_by_code text, repealed_by_authority text,
   created_at timestamptz default now(), updated_at timestamptz default now());
 create index if not exists idx_lg_laws_cat on lg_laws(cat);
 create index if not exists idx_lg_laws_review on lg_laws(review_date);
@@ -22,7 +26,21 @@ create index if not exists idx_lg_req_law on lg_requirements(law_id);
 
 create table if not exists lg_communications (
   id bigint generated always as identity primary key,
-  scope text not null, topic text not null, sender text, receiver text, frequency text, method text);
+  scope text not null, topic text not null, sender text, receiver text, frequency text, method text,
+  scheduled_date date,
+  recurrence_type text not null default 'annually',  -- once | monthly | quarterly | annually | asneeded
+  next_scheduled_date date,
+  notify_days_before int not null default 7,
+  assigned_to text, file_reference text, last_sent_at timestamptz);
+
+create table if not exists lg_notification_log (
+  id bigint generated always as identity primary key,
+  type text not null,   -- law_review | comm_schedule | comm_submitted | law_repealed
+  ref_id bigint, ref_type text,
+  message text not null, due_date date,
+  created_at timestamptz not null default now(), dismissed_at timestamptz);
+create index if not exists idx_lg_notif_type on lg_notification_log(type);
+create index if not exists idx_lg_notif_ref  on lg_notification_log(ref_type, ref_id);
 
 alter table lg_categories enable row level security;
 alter table lg_laws enable row level security;
@@ -33,4 +51,5 @@ alter table lg_communications enable row level security;
 create policy lg_cat_all  on lg_categories     for all using (true) with check (true);
 create policy lg_laws_all on lg_laws           for all using (true) with check (true);
 create policy lg_req_all  on lg_requirements   for all using (true) with check (true);
-create policy lg_comm_all on lg_communications for all using (true) with check (true);
+create policy lg_comm_all  on lg_communications    for all using (true) with check (true);
+create policy lg_notif_all on lg_notification_log  for all using (true) with check (true);

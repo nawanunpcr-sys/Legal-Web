@@ -18,6 +18,7 @@ const PATHS = {
   save:<><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></>,
   info:<><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></>,
   scale:<><path d="M12 3v18M5 7h14M7 7l-3 7h6zM17 7l-3 7h6z"/></>,
+  ban:<><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></>,
 }
 export function I({ n, style, stroke }){
   return <svg viewBox="0 0 24 24" {...P} stroke={stroke||'currentColor'} style={style}>{PATHS[n]||null}</svg>
