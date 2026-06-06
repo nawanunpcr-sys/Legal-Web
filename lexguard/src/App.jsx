@@ -15,31 +15,49 @@ const daysTo = s => Math.ceil((new Date(s)-new Date())/86400000)
 const Pill = ({s}) => <span className={'pill '+(STATUS[s]?.cls||'p-ok')}>{STATUS[s]?.label||s}</span>
 const Tag = ({c,color}) => <span className="tag" style={{borderColor:(color||'#888')+'33',color:color||'#888'}}>{c}</span>
 
-const NAV = [
-  { id:'dashboard',  label:'Dashboard',          icon:'grid'    },
-  { id:'register',   label:'ทะเบียนกฎหมาย',      icon:'book'    },
-  { id:'compliance', label:'ติดตามความสอดคล้อง', icon:'check'   },
-  { id:'repealed',   label:'กฎหมายที่ถูกยกเลิก', icon:'ban'     },
-  { id:'comm',       label:'การสื่อสาร (ISD-86)', icon:'chat'    },
-  { id:'analysis',   label:'วิเคราะห์ & สรุป AI', icon:'spark'   },
+const NAV_GROUPS = [
+  { label: null, items: [
+    { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
+  ]},
+  { label: 'ทะเบียน & ประเมิน', items: [
+    { id:'register',      label:'ทะเบียนกฎหมาย',        icon:'book'    },
+    { id:'compliance',    label:'ติดตามความสอดคล้อง',   icon:'check'   },
+    { id:'improvements',  label:'แผนปรับปรุง',           icon:'alert'   },
+    { id:'repealed',      label:'กฎหมายที่ถูกยกเลิก',   icon:'ban'     },
+  ]},
+  { label: 'การดำเนินการ', items: [
+    { id:'comm',          label:'การสื่อสาร (ISD-86)',   icon:'chat'    },
+    { id:'documents',     label:'จัดเก็บเอกสาร',         icon:'folder'  },
+  ]},
+  { label: 'วิเคราะห์', items: [
+    { id:'analysis',      label:'วิเคราะห์ & AI',         icon:'spark'   },
+    { id:'notifications', label:'การแจ้งเตือน',           icon:'bell'    },
+  ]},
 ]
+
 const TITLES = {
-  dashboard: ['Dashboard',             'สรุปสถานะความสอดคล้องตามกฎหมาย SHE'],
-  register:  ['ทะเบียนกฎหมาย',         'กฎหมายที่เกี่ยวข้องและสถานะการปฏิบัติ'],
-  compliance:['ติดตามความสอดคล้อง',    'สถานะรายข้อกำหนดแยกตามหมวดและลำดับชั้น'],
-  repealed:  ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
-  comm:      ['ตารางการสื่อสาร',        'การสื่อสารภายในและภายนอกองค์กร (ISD-86)'],
-  analysis:  ['วิเคราะห์ & สรุป AI',   'ข้อค้นพบและข้อเสนอแนะจากการประเมิน'],
+  dashboard:     ['Dashboard',             'สรุปสถานะความสอดคล้องตามกฎหมาย SHE'],
+  register:      ['ทะเบียนกฎหมาย',         'กฎหมายที่เกี่ยวข้องและสถานะการปฏิบัติ'],
+  compliance:    ['ติดตามความสอดคล้อง',    'สถานะรายข้อกำหนดแยกตามหมวดและลำดับชั้น'],
+  improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
+  repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
+  comm:          ['ตารางการสื่อสาร',        'การสื่อสารภายในและภายนอกองค์กร (ISD-86)'],
+  documents:     ['จัดเก็บเอกสาร',         'เอกสารกฎหมาย ต้นฉบับ สำเนา และรายงานราชการ'],
+  analysis:      ['วิเคราะห์ & สรุป AI',   'ข้อค้นพบและข้อเสนอแนะจากการประเมิน'],
+  notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
 }
 
 export default function App(){
-  const [view,setView]=useState('dashboard')
-  const [collapsed,setCollapsed]=useState(false)
-  const [cats,setCats]=useState([]); const [laws,setLaws]=useState([]); const [comms,setComms]=useState([])
-  const [notifs,setNotifs]=useState([])
-  const [loading,setLoading]=useState(true); const [err,setErr]=useState('')
-  const [search,setSearch]=useState(''); const [openLaw,setOpenLaw]=useState(null)
-  const [showBell,setShowBell]=useState(false)
+  const [view,setView]     = useState('dashboard')
+  const [collapsed,setCollapsed] = useState(false)
+  const [cats,setCats]     = useState([])
+  const [laws,setLaws]     = useState([])
+  const [comms,setComms]   = useState([])
+  const [notifs,setNotifs] = useState([])
+  const [loading,setLoading] = useState(true)
+  const [err,setErr]       = useState('')
+  const [search,setSearch] = useState('')
+  const [openLaw,setOpenLaw] = useState(null)
 
   useEffect(()=>{ (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
@@ -48,16 +66,15 @@ export default function App(){
     setLoading(false)
   })() },[])
 
-  const catMap = useMemo(()=>Object.fromEntries(cats.map(c=>[c.code,c])),[cats])
-  const activeLaws = useMemo(()=>laws.filter(l=>l.status!=='repealed'),[laws])
-  const repealedLaws = useMemo(()=>laws.filter(l=>l.status==='repealed'),[laws])
+  const catMap      = useMemo(()=>Object.fromEntries(cats.map(c=>[c.code,c])),[cats])
+  const activeLaws  = useMemo(()=>laws.filter(l=>l.status!=='repealed'),[laws])
+  const repealedLaws= useMemo(()=>laws.filter(l=>l.status==='repealed'),[laws])
 
   const stats = useMemo(()=>{
     let req=0,met=0; activeLaws.forEach(l=>l.reqs.forEach(r=>{req++;if(r.status==='met')met++}))
-    return { total:activeLaws.length, req, met, nc:req-met, pct: req?Math.round(met/req*100):100 }
+    return { total:activeLaws.length, req, met, nc:req-met, pct:req?Math.round(met/req*100):100 }
   },[activeLaws])
 
-  // Bell notifications: law reviews + comm deadlines + log entries
   const bellNotifications = useMemo(()=>{
     const out=[]
     activeLaws.forEach(l=>{ if(l.status==='bad') out.push({type:'bad',law:l,text:l.code+' ยังไม่สอดคล้อง',sub:l.name.slice(0,60)}) })
@@ -75,45 +92,39 @@ export default function App(){
       const status=reqs.some(r=>r.status==='unmet')?'bad':'ok'
       return {...l,reqs,status}
     }))
-    setOpenLaw(prev=> prev&&prev.id===law.id ? {...prev,reqs:prev.reqs.map(r=>r.id===req.id?{...r,status:next}:r),status:prev.reqs.map(r=>r.id===req.id?{...r,status:next}:r).some(r=>r.status==='unmet')?'bad':'ok'} : prev)
+    setOpenLaw(prev=>prev&&prev.id===law.id?{...prev,reqs:prev.reqs.map(r=>r.id===req.id?{...r,status:next}:r),status:prev.reqs.map(r=>r.id===req.id?{...r,status:next}:r).some(r=>r.status==='unmet')?'bad':'ok'}:prev)
     try{ await setRequirementStatus(req.id,next); await recomputeLawStatus(law.id,law.reqs.map(r=>r.id===req.id?{...r,status:next}:r)) }
     catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleRepeal(law, data){
-    try{
-      await repealLaw(law.id, data)
-      setLaws(prev=>prev.map(l=>l.id===law.id?{...l,status:'repealed',...data}:l))
-      setOpenLaw(null)
-    } catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    try{ await repealLaw(law.id,data); setLaws(prev=>prev.map(l=>l.id===law.id?{...l,status:'repealed',...data}:l)); setOpenLaw(null) }
+    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleRestore(law){
-    try{
-      await restoreLaw(law.id)
-      setLaws(prev=>prev.map(l=>l.id===law.id?{...l,status:'ok',repeal_date:null,repeal_reason:null,replaced_by_code:null,repealed_by_authority:null}:l))
-      setOpenLaw(null)
-    } catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    try{ await restoreLaw(law.id); setLaws(prev=>prev.map(l=>l.id===law.id?{...l,status:'ok',repeal_date:null,repeal_reason:null,replaced_by_code:null,repealed_by_authority:null}:l)); setOpenLaw(null) }
+    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleMarkSent(commId, fileRef){
     try{
-      await markCommSent(commId, fileRef)
-      const {data} = await supabase.from('lg_communications').select('*').eq('id',commId).single()
+      await markCommSent(commId,fileRef)
+      const {data}=await supabase.from('lg_communications').select('*').eq('id',commId).single()
       if(data) setComms(prev=>prev.map(c=>c.id===commId?data:c))
     } catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleCommScheduleUpdate(commId, patch){
-    try{
-      await updateCommSchedule(commId, patch)
-      setComms(prev=>prev.map(c=>c.id===commId?{...c,...patch}:c))
-    } catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    try{ await updateCommSchedule(commId,patch); setComms(prev=>prev.map(c=>c.id===commId?{...c,...patch}:c)) }
+    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   function exportPDF(){ buildReport({laws:activeLaws,stats,catName:Object.fromEntries(cats.map(c=>[c.code,c.name]))}); window.print() }
 
-  if(loading) return <div className="loading"><div className="spin"></div>กำลังโหลดข้อมูลจากฐานข้อมูล…</div>
+  if(loading) return <div className="loading"><div className="spin"/>กำลังโหลดข้อมูลจากฐานข้อมูล…</div>
+
+  const title = TITLES[view] || ['—','']
 
   return (
     <div className="app">
@@ -125,15 +136,32 @@ export default function App(){
           <div className="mark"><I n="shield" stroke="#fff"/></div>
           <div className="brand-txt"><h1>ComplyRegister</h1><span>ทะเบียนกฎหมาย SHE</span></div>
         </div>
-        <div className="nav-label">เมนูหลัก</div>
-        {NAV.map(n=>(
-          <button key={n.id} className={'nav-item'+(view===n.id?' active':'')} onClick={()=>{setView(n.id);setShowBell(false)}} title={n.label}>
-            <I n={n.icon}/><span className="label">{n.label}</span>
-            {n.id==='register' && <span className="badge">{activeLaws.length}</span>}
-            {n.id==='compliance' && stats.nc>0 && <span className="badge" style={{background:'var(--bad)'}}>{stats.nc}</span>}
-            {n.id==='repealed' && repealedLaws.length>0 && <span className="badge" style={{background:'var(--ink-faint)'}}>{repealedLaws.length}</span>}
-          </button>
+
+        {NAV_GROUPS.map((group,gi)=>(
+          <div key={gi} className="nav-group">
+            {group.label && <div className="nav-label">{group.label}</div>}
+            {group.items.map(n=>{
+              const badge =
+                n.id==='register'      ? activeLaws.length        :
+                n.id==='compliance'    ? (stats.nc||null)         :
+                n.id==='improvements'  ? (stats.nc||null)         :
+                n.id==='repealed'      ? (repealedLaws.length||null) :
+                n.id==='notifications' ? (bellNotifications.length||null) : null
+              const badgeColor =
+                n.id==='notifications'||n.id==='improvements'||n.id==='compliance' ? 'var(--bad)' :
+                n.id==='repealed' ? 'var(--ink-faint)' : null
+              return (
+                <button key={n.id} className={'nav-item'+(view===n.id?' active':'')}
+                  onClick={()=>setView(n.id)} title={n.label}>
+                  <I n={n.icon}/>
+                  <span className="label">{n.label}</span>
+                  {badge && <span className="badge" style={badgeColor?{background:badgeColor}:{}}>{badge}</span>}
+                </button>
+              )
+            })}
+          </div>
         ))}
+
         <div className="side-foot">
           <div className="av">จ</div>
           <div><div className="nm">จป. วิชาชีพ</div><div className="rl">จัสเทล เน็ทเวิร์ค</div></div>
@@ -142,61 +170,37 @@ export default function App(){
 
       <div className="main">
         <header className="topbar">
-          <div className="vt">{TITLES[view][0]}<small>{TITLES[view][1]}</small></div>
+          <div className="vt">{title[0]}<small>{title[1]}</small></div>
           <div className="spacer"/>
           {(view==='register'||view==='repealed') && (
             <div className="search"><I n="search"/><input placeholder="ค้นหากฎหมาย, รหัส, กระทรวง…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
           )}
           <button className="btn btn-ghost no-print" onClick={exportPDF} title="ส่งออกรายงาน PDF"><I n="download"/>ส่งออก PDF</button>
-          <div style={{position:'relative'}} className="no-print">
-            <button className="bell" onClick={()=>setShowBell(s=>!s)} title="การแจ้งเตือน">
-              <I n="bell"/>{bellNotifications.length>0 && <span className="dot">{bellNotifications.length}</span>}
-            </button>
-            {showBell && (
-              <div className="popover">
-                <h4>การแจ้งเตือน ({bellNotifications.length})</h4>
-                {bellNotifications.length===0 && <div className="noti"><div className="s" style={{padding:'8px 12px'}}>ไม่มีการแจ้งเตือน</div></div>}
-                {bellNotifications.map((n,i)=>{
-                  const isGood = n.type==='submitted'
-                  const bg = n.type==='bad'?'var(--bad-bg)':isGood?'var(--ok-bg)':'var(--review-bg)'
-                  const fg = n.type==='bad'?'var(--bad)':isGood?'var(--ok)':'var(--review)'
-                  const ic = n.type==='bad'?'alert':isGood?'check':'clock'
-                  return (
-                    <div className="noti" key={i} onClick={()=>{ if(n.law){setOpenLaw(n.law);setShowBell(false)} if(n.comm){setView('comm');setShowBell(false)} }}>
-                      <div className="ico" style={{background:bg,color:fg}}><I n={ic}/></div>
-                      <div><div className="t">{n.text}</div><div className="s">{n.sub}</div></div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
+          <button className="bell no-print" onClick={()=>setView('notifications')} title="ศูนย์การแจ้งเตือน">
+            <I n="bell"/>{bellNotifications.length>0&&<span className="dot">{bellNotifications.length}</span>}
+          </button>
         </header>
 
         <div className="content">
           {err && <div className="banner">{err}</div>}
-          {view==='dashboard'  && <Dashboard laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw}/>}
-          {view==='register'   && <Register  laws={activeLaws} catMap={catMap} search={search} onOpen={setOpenLaw}/>}
-          {view==='compliance' && <Compliance laws={activeLaws} cats={cats} stats={stats} onOpen={setOpenLaw}/>}
-          {view==='repealed'   && <Repealed  laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw}/>}
-          {view==='comm'       && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
-          {view==='analysis'   && <Analysis  laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw}/>}
+          {view==='dashboard'     && <Dashboard     laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw}/>}
+          {view==='register'      && <Register      laws={activeLaws} catMap={catMap} search={search} onOpen={setOpenLaw}/>}
+          {view==='compliance'    && <Compliance    laws={activeLaws} cats={cats} stats={stats} onOpen={setOpenLaw}/>}
+          {view==='improvements'  && <Improvements  laws={activeLaws} catMap={catMap} onOpen={setOpenLaw}/>}
+          {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw}/>}
+          {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
+          {view==='documents'     && <Documents     laws={activeLaws} cats={cats} catMap={catMap}/>}
+          {view==='analysis'      && <Analysis      laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw}/>}
+          {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={setView}/>}
         </div>
       </div>
 
       {openLaw && (
-        <LawDrawer
-          law={openLaw}
-          catMap={catMap}
-          onClose={()=>setOpenLaw(null)}
-          onToggle={toggleReq}
-          onRepeal={handleRepeal}
-          onRestore={handleRestore}
-          prog={prog}
-          thDate={thDate}
-        />
+        <LawDrawer law={openLaw} catMap={catMap} onClose={()=>setOpenLaw(null)}
+          onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore}
+          prog={prog} thDate={thDate}/>
       )}
-      <div id="print-report"></div>
+      <div id="print-report"/>
     </div>
   )
 }
@@ -222,10 +226,10 @@ function CatBars({laws,cats}){
 function Dashboard({laws,cats,stats,catMap,onOpen}){
   const bad=laws.filter(l=>l.status==='bad')
   const cards=[
-    {cls:'s-total',icon:'book',  lab:'กฎหมายที่มีผลบังคับใช้', val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด',             dc:'var(--brand)'},
-    {cls:'s-ok',   icon:'check', lab:'ข้อกำหนดที่สอดคล้อง',    val:stats.met,   unit:'ข้อ',  delta:stats.pct+'% ของข้อกำหนด',      dc:'var(--ok)'  },
-    {cls:'s-warn',  icon:'list', lab:'ข้อกำหนดทั้งหมด',         val:stats.req,   unit:'ข้อ',  delta:'ประเมินครบทุกข้อ',              dc:'var(--review)'},
-    {cls:'s-bad',  icon:'alert', lab:'ยังไม่สอดคล้อง',          val:stats.nc,    unit:'ข้อ',  delta:'ต้องติดตาม',                    dc:'var(--bad)' },
+    {cls:'s-total',icon:'book',  lab:'กฎหมายที่มีผลบังคับใช้', val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด',        dc:'var(--brand)'},
+    {cls:'s-ok',   icon:'check', lab:'ข้อกำหนดที่สอดคล้อง',    val:stats.met,   unit:'ข้อ',  delta:stats.pct+'% ของข้อกำหนด', dc:'var(--ok)'  },
+    {cls:'s-warn',  icon:'list', lab:'ข้อกำหนดทั้งหมด',         val:stats.req,   unit:'ข้อ',  delta:'ประเมินครบทุกข้อ',         dc:'var(--review)'},
+    {cls:'s-bad',  icon:'alert', lab:'ยังไม่สอดคล้อง',          val:stats.nc,    unit:'ข้อ',  delta:'ต้องติดตาม',               dc:'var(--bad)' },
   ]
   return <div className="view">
     <div className="grid stats">
@@ -269,22 +273,8 @@ function Register({laws,catMap,search,onOpen}){
   const catsList=[...new Set(laws.map(l=>l.cat))].sort()
   const q=search.toLowerCase()
   const rows=laws.filter(l=>(cat==='all'||l.cat===cat)&&(!q||l.name.toLowerCase().includes(q)||l.code.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)))
-
-  // Group by category then by hierarchy_level
-  const grouped = useMemo(()=>{
-    const byCat={}
-    rows.forEach(l=>{
-      const c=l.cat
-      if(!byCat[c]) byCat[c]={}
-      const tier=l.hierarchy_level||5
-      if(!byCat[c][tier]) byCat[c][tier]=[]
-      byCat[c][tier].push(l)
-    })
-    return byCat
-  },[rows])
-
-  const activeCats = catsList.filter(c=>cat==='all'||c===cat)
-
+  const grouped=useMemo(()=>{ const byCat={}; rows.forEach(l=>{ const c=l.cat; if(!byCat[c])byCat[c]={}; const t=l.hierarchy_level||5; if(!byCat[c][t])byCat[c][t]=[]; byCat[c][t].push(l) }); return byCat },[rows])
+  const activeCats=catsList.filter(c=>cat==='all'||c===cat)
   return <div className="view">
     <div className="filterbar">
       <span className={'chip'+(cat==='all'?' active':'')} onClick={()=>setCat('all')}>ทุกหมวด ({laws.length})</span>
@@ -300,10 +290,7 @@ function Register({laws,catMap,search,onOpen}){
         </div>
         {LAW_TYPES.filter(t=>grouped[c]?.[t.level]?.length).map(t=>(
           <div key={t.level} style={{marginBottom:8}}>
-            <div className="hier-tier-label">
-              <span className="tier-badge">ชั้น {t.level}</span>
-              {t.label}
-            </div>
+            <div className="hier-tier-label"><span className="tier-badge">ชั้น {t.level}</span>{t.label}</div>
             <div className="panel" style={{marginTop:0,borderTopLeftRadius:0,borderTopRightRadius:0}}>
               <div className="tablewrap"><table>
                 <thead><tr><th>รหัส / ชื่อกฎหมาย</th><th>กระทรวง</th><th>สถานะ</th><th>ความสอดคล้อง</th></tr></thead>
@@ -319,8 +306,6 @@ function Register({laws,catMap,search,onOpen}){
             </div>
           </div>
         ))}
-        {/* Laws with no hierarchy_level assigned yet */}
-        {grouped[c]?.[5] && !LAW_TYPES.slice(0,4).some(t=>grouped[c]?.[t.level]?.length) && null}
       </div>
     ))}
     {rows.length===0 && <div className="panel"><div style={{textAlign:'center',color:'var(--ink-faint)',padding:40}}>ไม่พบกฎหมายที่ตรงกับเงื่อนไข</div></div>}
@@ -341,7 +326,6 @@ function Compliance({laws,cats,stats,onOpen}){
         {cats.filter(c=>byCat[c.code]).map(c=>{
           let r=0,m=0; byCat[c.code].forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++}))
           const p=r?Math.round(m/r*100):100
-          // group laws in this cat by hierarchy_level
           const byTier={}; byCat[c.code].forEach(l=>{ const t=l.hierarchy_level||5; (byTier[t]=byTier[t]||[]).push(l) })
           return <details key={c.code} style={{marginBottom:12}} open={c.code==='LA'}>
             <summary style={{cursor:'pointer',display:'flex',alignItems:'center',gap:12,padding:'12px 14px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:11,listStyle:'none'}}>
@@ -387,7 +371,7 @@ function Repealed({laws,catMap,search,onOpen}){
       <div className="panel"><div className="tablewrap"><table>
         <thead><tr><th>รหัส / ชื่อกฎหมาย</th><th>หมวด</th><th>วันที่ยกเลิก</th><th>เหตุผล</th><th>แทนที่ด้วย</th></tr></thead>
         <tbody>{rows.map(l=>(
-          <tr key={l.id} onClick={()=>onOpen(l)} style={{cursor:'pointer',opacity:0.85}}>
+          <tr key={l.id} onClick={()=>onOpen(l)} style={{cursor:'pointer',opacity:.85}}>
             <td><div className="law-code" style={{textDecoration:'line-through',color:'var(--ink-faint)'}}>{l.code}</div><div className="law-title" style={{fontSize:13,color:'var(--ink-soft)'}}>{l.name.slice(0,70)}{l.name.length>70?'…':''}</div></td>
             <td><Tag c={l.cat} color={catMap[l.cat]?.color}/></td>
             <td style={{fontSize:12.5,color:'var(--bad)',whiteSpace:'nowrap'}}>{l.repeal_date||'—'}</td>
@@ -407,69 +391,56 @@ function CommScheduleModal({comm,onSave,onClose}){
   const [notifyDays,setNotifyDays]=useState(comm.notify_days_before||7)
   const [assignedTo,setAssignedTo]=useState(comm.assigned_to||'')
   function save(){ onSave(comm.id,{scheduled_date:date||null,recurrence_type:rec,next_scheduled_date:date||null,notify_days_before:Number(notifyDays),assigned_to:assignedTo||null}); onClose() }
-  return (
-    <>
-      <div className="scrim" onClick={onClose}/>
-      <div className="modal">
-        <div className="modal-head"><h3>ตั้งค่าตารางการสื่อสาร</h3><button className="close" onClick={onClose}><I n="close"/></button></div>
-        <div className="modal-body">
-          <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:16}}>{comm.topic}</p>
-          <label className="form-label">วันที่กำหนด (ครั้งแรก / ถัดไป)</label>
-          <input className="form-input" type="date" value={date} onChange={e=>setDate(e.target.value)}/>
-          <label className="form-label">ความถี่</label>
-          <select className="form-input" value={rec} onChange={e=>setRec(e.target.value)}>
-            {Object.entries(RECURRENCE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
-          </select>
-          <label className="form-label">แจ้งเตือนล่วงหน้า (วัน)</label>
-          <input className="form-input" type="number" min="1" max="90" value={notifyDays} onChange={e=>setNotifyDays(e.target.value)}/>
-          <label className="form-label">ผู้รับผิดชอบ</label>
-          <input className="form-input" type="text" placeholder="ชื่อผู้รับผิดชอบ…" value={assignedTo} onChange={e=>setAssignedTo(e.target.value)}/>
-        </div>
-        <div className="modal-foot">
-          <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
-          <button className="btn btn-primary" onClick={save}><I n="save"/> บันทึก</button>
-        </div>
+  return (<><div className="scrim" onClick={onClose}/>
+    <div className="modal">
+      <div className="modal-head"><h3>ตั้งค่าตารางการสื่อสาร</h3><button className="close" onClick={onClose}><I n="close"/></button></div>
+      <div className="modal-body">
+        <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:16}}>{comm.topic}</p>
+        <label className="form-label">วันที่กำหนด (ครั้งแรก / ถัดไป)</label>
+        <input className="form-input" type="date" value={date} onChange={e=>setDate(e.target.value)}/>
+        <label className="form-label">ความถี่</label>
+        <select className="form-input" value={rec} onChange={e=>setRec(e.target.value)}>
+          {Object.entries(RECURRENCE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+        </select>
+        <label className="form-label">แจ้งเตือนล่วงหน้า (วัน)</label>
+        <input className="form-input" type="number" min="1" max="90" value={notifyDays} onChange={e=>setNotifyDays(e.target.value)}/>
+        <label className="form-label">ผู้รับผิดชอบ</label>
+        <input className="form-input" type="text" placeholder="ชื่อผู้รับผิดชอบ…" value={assignedTo} onChange={e=>setAssignedTo(e.target.value)}/>
       </div>
-    </>
-  )
+      <div className="modal-foot">
+        <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
+        <button className="btn btn-primary" onClick={save}><I n="save"/> บันทึก</button>
+      </div>
+    </div></>)
 }
-
 function MarkSentModal({comm,onSave,onClose}){
   const [fileRef,setFileRef]=useState(comm.file_reference||'')
   function save(){ onSave(comm.id,fileRef); onClose() }
-  return (
-    <>
-      <div className="scrim" onClick={onClose}/>
-      <div className="modal">
-        <div className="modal-head"><h3>บันทึกการส่ง / สื่อสาร</h3><button className="close" onClick={onClose}><I n="close"/></button></div>
-        <div className="modal-body">
-          <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:16}}>{comm.topic}</p>
-          <label className="form-label">อ้างอิงไฟล์ / เอกสารที่ส่ง (ไม่บังคับ)</label>
-          <input className="form-input" type="text" placeholder="เช่น ISD-86_2569Q1.pdf หรือ URL…" value={fileRef} onChange={e=>setFileRef(e.target.value)}/>
-        </div>
-        <div className="modal-foot">
-          <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
-          <button className="btn btn-primary" onClick={save}><I n="check"/> ยืนยันการส่ง</button>
-        </div>
+  return (<><div className="scrim" onClick={onClose}/>
+    <div className="modal">
+      <div className="modal-head"><h3>บันทึกการส่ง / สื่อสาร</h3><button className="close" onClick={onClose}><I n="close"/></button></div>
+      <div className="modal-body">
+        <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:16}}>{comm.topic}</p>
+        <label className="form-label">อ้างอิงไฟล์ / เอกสารที่ส่ง (ไม่บังคับ)</label>
+        <input className="form-input" type="text" placeholder="เช่น ISD-86_2569Q1.pdf หรือ URL…" value={fileRef} onChange={e=>setFileRef(e.target.value)}/>
       </div>
-    </>
-  )
+      <div className="modal-foot">
+        <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
+        <button className="btn btn-primary" onClick={save}><I n="check"/> ยืนยันการส่ง</button>
+      </div>
+    </div></>)
 }
-
 function Communication({comms,onMarkSent,onScheduleUpdate}){
   const [scope,setScope]=useState('internal')
   const [filter,setFilter]=useState('all')
   const [schedModal,setSchedModal]=useState(null)
   const [sentModal,setSentModal]=useState(null)
-  const today=new Date()
-
   const rows=comms.filter(c=>{
     if(c.scope!==scope) return false
     if(filter==='upcoming'){ const d=c.next_scheduled_date?daysTo(c.next_scheduled_date):null; return d!==null&&d>=0&&d<=30 }
     if(filter==='overdue'){  const d=c.next_scheduled_date?daysTo(c.next_scheduled_date):null; return d!==null&&d<0 }
     return true
   })
-
   function countdownChip(c){
     if(!c.next_scheduled_date) return null
     const d=daysTo(c.next_scheduled_date)
@@ -478,7 +449,6 @@ function Communication({comms,onMarkSent,onScheduleUpdate}){
     if(d<=7)  return <span className="chip-date soon">ใน {d} วัน</span>
     return <span className="chip-date ok">ใน {d} วัน</span>
   }
-
   return <div className="view">
     {schedModal && <CommScheduleModal comm={schedModal} onSave={onScheduleUpdate} onClose={()=>setSchedModal(null)}/>}
     {sentModal  && <MarkSentModal    comm={sentModal}  onSave={onMarkSent}       onClose={()=>setSentModal(null)}/>}
@@ -504,15 +474,13 @@ function Communication({comms,onMarkSent,onScheduleUpdate}){
           <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{c.receiver}</td>
           <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{RECURRENCE_LABELS[c.recurrence_type]||c.frequency||'—'}</td>
           <td style={{fontSize:12,whiteSpace:'nowrap'}}>
-            {c.next_scheduled_date ? <><div>{c.next_scheduled_date}</div>{countdownChip(c)}</> : <span style={{color:'var(--ink-faint)'}}>ยังไม่ตั้งค่า</span>}
+            {c.next_scheduled_date?<><div>{c.next_scheduled_date}</div>{countdownChip(c)}</>:<span style={{color:'var(--ink-faint)'}}>ยังไม่ตั้งค่า</span>}
           </td>
           <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{c.assigned_to||'—'}</td>
-          <td>
-            <div style={{display:'flex',gap:4}}>
-              <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11}} onClick={()=>setSchedModal(c)} title="ตั้งค่าตาราง"><I n="clock"/></button>
-              <button className="btn btn-primary" style={{padding:'3px 8px',fontSize:11}} onClick={()=>setSentModal(c)} title="บันทึกการส่ง"><I n="check"/></button>
-            </div>
-          </td>
+          <td><div style={{display:'flex',gap:4}}>
+            <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11}} onClick={()=>setSchedModal(c)} title="ตั้งค่าตาราง"><I n="clock"/></button>
+            <button className="btn btn-primary" style={{padding:'3px 8px',fontSize:11}} onClick={()=>setSentModal(c)} title="บันทึกการส่ง"><I n="check"/></button>
+          </div></td>
         </tr>
       ))}
       {rows.length===0 && <tr><td colSpan="7" style={{textAlign:'center',color:'var(--ink-faint)',padding:32}}>ไม่มีรายการที่ตรงกับตัวกรอง</td></tr>}
@@ -527,7 +495,7 @@ function Analysis({laws,cats,stats,catMap,onOpen}){
   return <div className="view">
     <div className="ai-box" style={{marginBottom:20}}>
       <span className="ai-tag"><I n="spark"/>บทสรุปผู้บริหาร (สรุปโดย AI)</span>
-      <p>จากทะเบียนกฎหมาย SHE ของ <b>บริษัท จัสเทล เน็ทเวิร์ค</b> (F-259, รอบ 1 ปี 2569) มีกฎหมายที่มีผลบังคับใช้ทั้งสิ้น <b>{stats.total} ฉบับ</b> ใน {cats.length} หมวด รวมข้อกำหนดที่ต้องปฏิบัติ <b>{stats.req} ข้อ</b> โดยมีอัตราความสอดคล้องโดยรวม <b>{stats.pct}%</b> ({stats.met} ข้อ) คงเหลือข้อกำหนดที่ยังไม่สอดคล้องเพียง <b>{stats.nc} ข้อ</b> ซึ่งอยู่ในหมวด LA และอยู่ระหว่างรอภาครัฐประกาศหลักสูตร/แนวทางปฏิบัติ จึงเป็นความเสี่ยงระดับต่ำที่อยู่นอกเหนือการควบคุมโดยตรง — ภาพรวมระบบจัดการกฎหมายอยู่ในเกณฑ์ดีเยี่ยมและพร้อมต่อการตรวจประเมิน</p>
+      <p>จากทะเบียนกฎหมาย SHE ของ <b>บริษัท จัสเทล เน็ทเวิร์ค</b> (F-259, รอบ 1 ปี 2569) มีกฎหมายที่มีผลบังคับใช้ทั้งสิ้น <b>{stats.total} ฉบับ</b> ใน {cats.length} หมวด รวมข้อกำหนดที่ต้องปฏิบัติ <b>{stats.req} ข้อ</b> โดยมีอัตราความสอดคล้องโดยรวม <b>{stats.pct}%</b> ({stats.met} ข้อ) คงเหลือข้อกำหนดที่ยังไม่สอดคล้องเพียง <b>{stats.nc} ข้อ</b></p>
     </div>
     <div className="cols" style={{marginTop:0}}>
       <div>
@@ -538,9 +506,9 @@ function Analysis({laws,cats,stats,catMap,onOpen}){
             <div><span className="ic-code">{l.code} · ยังไม่สอดคล้อง</span><h4>{l.name.slice(0,70)}</h4><p>{(r.note||r.text).slice(0,150)}…</p></div>
           </div>)))}
         <div className="insight"><div className="ii" style={{background:'var(--ok-bg)',color:'var(--ok)'}}><I n="check"/></div>
-          <div><span className="ic-code">จุดแข็ง</span><h4>5 หมวดสอดคล้องครบ 100%</h4><p>หมวดไฟฟ้า, อัคคีภัย, สภาพแวดล้อม, เครื่องจักร และ Service ผ่านการประเมินทุกข้อกำหนด เป็นฐานที่มั่นคงต่อการรับรองมาตรฐาน ISO 45001</p></div></div>
+          <div><span className="ic-code">จุดแข็ง</span><h4>5 หมวดสอดคล้องครบ 100%</h4><p>หมวดไฟฟ้า, อัคคีภัย, สภาพแวดล้อม, เครื่องจักร และ Service ผ่านการประเมินทุกข้อกำหนด</p></div></div>
         <div className="insight"><div className="ii" style={{background:'var(--review-bg)',color:'var(--review)'}}><I n="clock"/></div>
-          <div><span className="ic-code">ข้อเสนอแนะ</span><h4>ติดตามประกาศหลักสูตรผู้ชำนาญการ</h4><p>มอบหมายผู้รับผิดชอบติดตามประกาศกระทรวงแรงงานเรื่องหลักสูตรอบรม เพื่อขึ้นทะเบียนผู้ชำนาญการและปิดข้อ NC ทั้ง {stats.nc} ข้อทันทีเมื่อมีผลบังคับ</p></div></div>
+          <div><span className="ic-code">ข้อเสนอแนะ</span><h4>ติดตามประกาศหลักสูตรผู้ชำนาญการ</h4><p>มอบหมายผู้รับผิดชอบติดตามประกาศกระทรวงแรงงาน เพื่อปิดข้อ NC ทั้ง {stats.nc} ข้อทันทีเมื่อมีผลบังคับ</p></div></div>
       </div>
       <div>
         <div className="panel-h" style={{border:'none',padding:'0 0 13px'}}><h3>สัดส่วนกฎหมายรายหมวด</h3></div>
@@ -552,4 +520,180 @@ function Analysis({laws,cats,stats,catMap,onOpen}){
       </div>
     </div>
   </div>
+}
+
+/* ─────────────────────────── NOTIFICATIONS ─────────────────────────── */
+const NOTIF_META = {
+  bad:       { label:'ไม่สอดคล้อง',    icon:'alert',    bg:'var(--bad-bg)',    fg:'var(--bad)'    },
+  review:    { label:'ครบกำหนดทบทวน', icon:'clock',    bg:'var(--review-bg)', fg:'var(--review)' },
+  comm:      { label:'กำหนดสื่อสาร',   icon:'chat',     bg:'var(--brand-tint)',fg:'var(--brand)'  },
+  submitted: { label:'ส่งเรียบร้อย',   icon:'check',    bg:'var(--ok-bg)',     fg:'var(--ok)'     },
+}
+function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
+  const [filter, setFilter] = useState('all')
+  const counts = useMemo(()=>({
+    all: notifs.length,
+    bad: notifs.filter(n=>n.type==='bad').length,
+    review: notifs.filter(n=>n.type==='review').length,
+    comm: notifs.filter(n=>n.type==='comm').length,
+    submitted: notifs.filter(n=>n.type==='submitted').length,
+  }), [notifs])
+  const filtered = filter==='all' ? notifs : notifs.filter(n=>n.type===filter)
+
+  if (notifs.length===0) return (
+    <div className="view">
+      <div className="panel notif-empty">
+        <div className="notif-empty-ic"><I n="bell"/></div>
+        <div style={{fontFamily:'Bai Jamjuree',fontSize:16,fontWeight:600,marginBottom:6}}>ไม่มีการแจ้งเตือน</div>
+        <div style={{fontSize:13,color:'var(--ink-faint)'}}>ระบบจะแจ้งเตือนเมื่อมีข้อกำหนดที่ต้องติดตามหรือกำหนดการที่ใกล้ครบ</div>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="view">
+      <div className="filterbar">
+        {[['all','ทั้งหมด'],['bad','ไม่สอดคล้อง'],['review','ครบกำหนดทบทวน'],['comm','กำหนดสื่อสาร'],['submitted','ส่งแล้ว']]
+          .filter(([k])=>k==='all'||counts[k]>0)
+          .map(([k,lbl])=>{
+            const m=NOTIF_META[k]
+            return (
+              <span key={k} className={'chip'+(filter===k?' active':'')}
+                onClick={()=>setFilter(k)}
+                style={filter===k&&k!=='all'?{background:m?.fg,color:'#fff',borderColor:m?.fg}:{}}>
+                {lbl} ({k==='all'?counts.all:counts[k]})
+              </span>
+            )
+          })}
+      </div>
+      <div className="notif-list">
+        {filtered.map((n,i)=>{
+          const m=NOTIF_META[n.type]||{label:n.type,icon:'info',bg:'var(--brand-tint)',fg:'var(--brand)'}
+          return (
+            <div key={i} className="notif-card" onClick={()=>{ if(n.law) onOpenLaw(n.law); else if(n.comm) onGoToView('comm') }}>
+              <div className="notif-ico" style={{background:m.bg,color:m.fg}}><I n={m.icon}/></div>
+              <div className="notif-body">
+                <div className="notif-title">{n.text}</div>
+                <div className="notif-sub">{n.sub}</div>
+                {n.type==='review'&&n.days!==undefined&&<div style={{marginTop:4,fontSize:11.5,color:'var(--review)',fontWeight:600}}>เหลือเวลา {n.days} วัน</div>}
+                {n.type==='bad'&&<div style={{marginTop:4,fontSize:11.5,color:'var(--bad)',fontWeight:600}}>คลิกเพื่อดูข้อกำหนดและแก้ไข →</div>}
+              </div>
+              <span className="notif-badge" style={{background:m.bg,color:m.fg}}>{m.label}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/* ─────────────────────────── IMPROVEMENTS ─────────────────────────── */
+function Improvements({ laws, catMap, onOpen }) {
+  const ncLaws = laws.filter(l=>l.status==='bad')
+  const totalNc = ncLaws.reduce((a,l)=>a+l.reqs.filter(r=>r.status==='unmet').length, 0)
+
+  if (ncLaws.length===0) return (
+    <div className="view">
+      <div className="panel" style={{padding:'60px 20px',textAlign:'center'}}>
+        <div style={{width:56,height:56,borderRadius:16,background:'var(--ok-bg)',color:'var(--ok)',display:'grid',placeItems:'center',margin:'0 auto 16px'}}>
+          <I n="check" style={{width:28,height:28}}/>
+        </div>
+        <div style={{fontFamily:'Bai Jamjuree',fontSize:18,fontWeight:700}}>ทุกข้อกำหนดสอดคล้องครบถ้วน</div>
+        <div style={{fontSize:13,color:'var(--ink-faint)',marginTop:6}}>ไม่มีรายการที่ต้องปรับปรุงในขณะนี้</div>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="view">
+      <div className="ai-box" style={{marginBottom:16,borderColor:'#e8b85a',background:'#fef9ec'}}>
+        <span className="ai-tag" style={{color:'var(--warn)'}}><I n="alert"/> แผนปรับปรุง / ปิด NC (อ้างอิง PD-05)</span>
+        <p style={{marginBottom:0}}>รายการข้อกำหนดที่ยังไม่สอดคล้อง <b>{totalNc} ข้อ</b> จาก <b>{ncLaws.length} กฎหมาย</b> — คลิกที่รายการเพื่อเปิดรายละเอียดและอัปเดตสถานะ</p>
+      </div>
+      {ncLaws.map(l=>{
+        const ncReqs=l.reqs.filter(r=>r.status==='unmet')
+        const cat=catMap[l.cat]
+        return (
+          <div key={l.id} className="panel" style={{marginBottom:12}}>
+            <div className="panel-h" style={{cursor:'pointer'}} onClick={()=>onOpen(l)}>
+              <span style={{width:10,height:10,borderRadius:3,background:cat?.color||'#888',flexShrink:0}}/>
+              <span className="num" style={{fontSize:12,color:'var(--brand)',fontWeight:700}}>{l.code}</span>
+              <span style={{flex:1,fontSize:14,fontWeight:500}}>{l.name.slice(0,80)}{l.name.length>80?'…':''}</span>
+              <span className="pill p-bad">{ncReqs.length} ข้อ NC</span>
+              <span style={{fontSize:12,color:'var(--brand)',fontWeight:500}}>ดูรายละเอียด →</span>
+            </div>
+            <div style={{padding:'2px 22px 14px'}}>
+              {ncReqs.map(r=>(
+                <div key={r.id} className="impr-row">
+                  <div className="impr-dot"/>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:500,lineHeight:1.5}}>{r.text.slice(0,140)}{r.text.length>140?'…':''}</div>
+                    <div style={{display:'flex',gap:7,marginTop:5,flexWrap:'wrap'}}>
+                      {r.responsible&&<span className="meta-chip">👤 {r.responsible}</span>}
+                      {r.frequency&&<span className="meta-chip">🔄 {r.frequency}</span>}
+                      {r.note&&<span className="meta-chip" style={{color:'var(--bad)',borderColor:'var(--bad-bg)',background:'var(--bad-bg)'}}>⚠ {r.note.slice(0,80)}</span>}
+                    </div>
+                  </div>
+                  <span className="pill p-bad" style={{fontSize:10,padding:'2px 7px',alignSelf:'flex-start',marginTop:2}}>NC</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ─────────────────────────── DOCUMENTS ─────────────────────────── */
+const DOC_TYPES = [
+  { key:'F-259',  label:'แบบ F-259 ทะเบียนกฎหมาย',    desc:'ทะเบียนกฎหมาย SHE ประจำปีพร้อมข้อกำหนดทั้งหมด', icon:'book',     color:'#0f6b58', bg:'#e2efe9' },
+  { key:'PD-60',  label:'เอกสาร PD-60 ข้อ 7',          desc:'กรอบเวลาตามกฎหมาย — เอกสารส่งราชการ',            icon:'clock',    color:'#4f72c4', bg:'#e8edf8' },
+  { key:'PD-05',  label:'เอกสาร PD-05 แผนปรับปรุง',    desc:'บันทึกการแก้ไขและปิดข้อ NC',                     icon:'alert',    color:'#cf8a12', bg:'#fbf0db' },
+  { key:'report', label:'รายงานผู้บริหาร (Mgmt Review)',desc:'AI ร่างรายงานและส่งออก PDF',                      icon:'download', color:'#1f9d6b', bg:'#e6f4ee' },
+]
+function Documents({ laws, cats, catMap }) {
+  const docsLaws = laws.filter(l=>l.reqs.some(r=>r.documents))
+  return (
+    <div className="view">
+      <div className="grid" style={{gridTemplateColumns:'repeat(2,1fr)',gap:16,marginBottom:20}}>
+        {DOC_TYPES.map(d=>(
+          <div key={d.key} className="panel doc-card" style={{padding:24}}>
+            <div className="doc-ic" style={{background:d.bg,color:d.color}}><I n={d.icon}/></div>
+            <div style={{marginTop:14}}>
+              <div className="doc-title">{d.label}</div>
+              <div style={{fontSize:12.5,color:'var(--ink-faint)',marginTop:4,lineHeight:1.55}}>{d.desc}</div>
+            </div>
+            <button className="btn btn-ghost" style={{marginTop:16,width:'100%',justifyContent:'center'}}
+              onClick={()=>{ if(d.key==='report'||d.key==='F-259') window.print() }}>
+              <I n="download"/> ส่งออก / พิมพ์
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="panel">
+        <div className="panel-h">
+          <h3>เอกสารตามข้อกำหนดกฎหมาย</h3>
+          <span className="sub" style={{marginLeft:'auto'}}>{docsLaws.length} กฎหมายมีรายการเอกสาร</span>
+        </div>
+        {docsLaws.length===0
+          ? <div style={{padding:'40px 20px',textAlign:'center',color:'var(--ink-faint)',fontSize:14}}>ยังไม่มีข้อมูลเอกสารที่บันทึกไว้ในคอลัมน์ "เอกสาร" ของข้อกำหนด</div>
+          : <div className="tablewrap"><table>
+              <thead><tr><th>รหัส / กฎหมาย</th><th>หมวด</th><th>เอกสารที่กำหนด</th><th>สถานะ</th></tr></thead>
+              <tbody>{docsLaws.map(l=>{
+                const docSet=[...new Set(l.reqs.filter(r=>r.documents).map(r=>r.documents))].join(' · ')
+                return (
+                  <tr key={l.id}>
+                    <td><div className="law-code">{l.code}</div><div className="law-title" style={{fontSize:12.5}}>{l.name.slice(0,70)}{l.name.length>70?'…':''}</div></td>
+                    <td><Tag c={l.cat} color={catMap[l.cat]?.color}/></td>
+                    <td style={{fontSize:12,color:'var(--ink-soft)',maxWidth:320,lineHeight:1.5}}>{docSet.slice(0,150)}</td>
+                    <td><Pill s={l.status}/></td>
+                  </tr>
+                )
+              })}</tbody>
+            </table></div>
+        }
+      </div>
+    </div>
+  )
 }
