@@ -88,6 +88,23 @@ export async function repealLaw(lawId, { repeal_date, repeal_reason, replaced_by
   })
 }
 
+export async function createLaw({ code, cat, name, hierarchy_level, ministry, effective_date, review_date }) {
+  const { data, error } = await supabase.from('lg_laws').insert({
+    code,
+    cat,
+    name,
+    hierarchy_level: Number(hierarchy_level),
+    ministry: ministry || null,
+    issue_date: effective_date || null,
+    review_date: review_date || null,
+    status: 'ok',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).select().single()
+  if (error) throw error
+  return { ...data, reqs: [] }
+}
+
 export async function restoreLaw(lawId) {
   const { error } = await supabase.from('lg_laws').update({
     status: 'ok',

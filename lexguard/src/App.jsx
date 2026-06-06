@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, hasSupabase, fetchAll,
          setRequirementStatus, recomputeLawStatus,
-         repealLaw, restoreLaw,
+         repealLaw, restoreLaw, createLaw,
          markCommSent, updateCommSchedule,
          dismissNotification,
          STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
@@ -107,6 +107,11 @@ export default function App(){
     catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
+  async function handleCreateLaw(fields){
+    try{ const newLaw=await createLaw(fields); setLaws(prev=>[...prev,newLaw]) }
+    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+  }
+
   async function handleMarkSent(commId, fileRef){
     try{
       await markCommSent(commId,fileRef)
@@ -184,10 +189,10 @@ export default function App(){
         <div className="content">
           {err && <div className="banner">{err}</div>}
           {view==='dashboard'     && <Dashboard     laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw}/>}
-          {view==='register'      && <Register      laws={activeLaws} catMap={catMap} search={search} onOpen={setOpenLaw}/>}
+          {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} allLaws={laws}/>}
           {view==='compliance'    && <Compliance    laws={activeLaws} cats={cats} stats={stats} onOpen={setOpenLaw}/>}
           {view==='improvements'  && <Improvements  laws={activeLaws} catMap={catMap} onOpen={setOpenLaw}/>}
-          {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw}/>}
+          {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
           {view==='documents'     && <Documents     laws={activeLaws} cats={cats} catMap={catMap}/>}
           {view==='analysis'      && <Analysis      laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw}/>}
@@ -266,19 +271,102 @@ function Dashboard({laws,cats,stats,catMap,onOpen}){
   </div>
 }
 
+/* ─────────────────────────── ADD LAW MODAL ───────────────────────── */
+function nextCode(allLaws, catCode) {
+  const nums = allLaws
+    .filter(l => l.cat === catCode)
+    .map(l => { const m = l.code.match(/(\d+)$/); return m ? parseInt(m[1], 10) : 0 })
+  const max = nums.length ? Math.max(...nums) : 0
+  return `${catCode}-${String(max + 1).padStart(3, '0')}`
+}
+
+function AddLawModal({ cats, allLaws, onSave, onClose }) {
+  const [catCode, setCatCode] = useState(cats[0]?.code || '')
+  const [level, setLevel] = useState('1')
+  const [name, setName] = useState('')
+  const [ministry, setMinistry] = useState('')
+  const [effectiveDate, setEffectiveDate] = useState('')
+  const [reviewDate, setReviewDate] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const previewCode = catCode ? nextCode(allLaws, catCode) : '—'
+  const valid = catCode && name.trim()
+
+  async function save() {
+    if (!valid) return
+    setSaving(true)
+    await onSave({ code: previewCode, cat: catCode, name: name.trim(), hierarchy_level: level, ministry, effective_date: effectiveDate, review_date: reviewDate })
+    setSaving(false)
+    onClose()
+  }
+
+  return (
+    <><div className="scrim" style={{zIndex:300}} onClick={onClose}/>
+    <div className="modal" style={{zIndex:301,width:540}}>
+      <div className="modal-head">
+        <h3>เพิ่มกฎหมายใหม่</h3>
+        <button className="close" onClick={onClose}><I n="close"/></button>
+      </div>
+      <div className="modal-body">
+        {/* code preview */}
+        <div style={{background:'var(--brand-tint)',border:'1px solid var(--brand)',borderRadius:9,padding:'10px 16px',marginBottom:8,display:'flex',alignItems:'center',gap:12}}>
+          <span style={{fontSize:12,color:'var(--brand)',fontWeight:600}}>รหัสกฎหมายที่จะได้รับ</span>
+          <span className="num" style={{fontSize:22,fontWeight:700,color:'var(--brand)',letterSpacing:-1,marginLeft:'auto'}}>{previewCode}</span>
+        </div>
+
+        <label className="form-label">หมวดกฎหมาย <span style={{color:'var(--bad)'}}>*</span></label>
+        <select className="form-input" value={catCode} onChange={e=>setCatCode(e.target.value)}>
+          {cats.map(c=><option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
+        </select>
+
+        <label className="form-label">ลำดับชั้น <span style={{color:'var(--bad)'}}>*</span></label>
+        <select className="form-input" value={level} onChange={e=>setLevel(e.target.value)}>
+          {LAW_TYPES.map(t=><option key={t.level} value={t.level}>ชั้น {t.level} — {t.label}</option>)}
+        </select>
+
+        <label className="form-label">ชื่อกฎหมาย <span style={{color:'var(--bad)'}}>*</span></label>
+        <textarea className="form-input" rows={3} placeholder="ชื่อกฎหมายฉบับเต็ม…" value={name} onChange={e=>setName(e.target.value)}/>
+
+        <label className="form-label">กระทรวง / หน่วยงาน</label>
+        <input className="form-input" type="text" placeholder="เช่น กระทรวงแรงงาน" value={ministry} onChange={e=>setMinistry(e.target.value)}/>
+
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <div>
+            <label className="form-label">วันที่บังคับใช้</label>
+            <input className="form-input" type="date" value={effectiveDate} onChange={e=>setEffectiveDate(e.target.value)}/>
+          </div>
+          <div>
+            <label className="form-label">กำหนดทบทวนถัดไป</label>
+            <input className="form-input" type="date" value={reviewDate} onChange={e=>setReviewDate(e.target.value)}/>
+          </div>
+        </div>
+      </div>
+      <div className="modal-foot">
+        <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
+        <button className="btn btn-primary" disabled={!valid||saving} onClick={save}>
+          <I n="save"/> {saving ? 'กำลังบันทึก…' : `บันทึก ${previewCode}`}
+        </button>
+      </div>
+    </div></>
+  )
+}
+
 /* ─────────────────────────── REGISTER ─────────────────────────── */
-function Register({laws,catMap,search,onOpen}){
+function Register({laws,cats,catMap,search,onOpen,onCreate,allLaws}){
   const [cat,setCat]=useState('all')
+  const [showAdd,setShowAdd]=useState(false)
   const catsList=[...new Set(laws.map(l=>l.cat))].sort()
   const q=search.toLowerCase()
   const rows=laws.filter(l=>(cat==='all'||l.cat===cat)&&(!q||l.name.toLowerCase().includes(q)||l.code.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)))
   const grouped=useMemo(()=>{ const byCat={}; rows.forEach(l=>{ const c=l.cat; if(!byCat[c])byCat[c]={}; const t=l.hierarchy_level||5; if(!byCat[c][t])byCat[c][t]=[]; byCat[c][t].push(l) }); return byCat },[rows])
   const activeCats=catsList.filter(c=>cat==='all'||c===cat)
   return <div className="view">
+    {showAdd && <AddLawModal cats={cats} allLaws={allLaws} onSave={onCreate} onClose={()=>setShowAdd(false)}/>}
     <div className="filterbar">
       <span className={'chip'+(cat==='all'?' active':'')} onClick={()=>setCat('all')}>ทุกหมวด ({laws.length})</span>
       {catsList.map(c=>(<span key={c} className={'chip'+(cat===c?' active':'')} onClick={()=>setCat(c)} style={cat===c?{borderColor:catMap[c]?.color,color:catMap[c]?.color}:{}}>{c} · {catMap[c]?.name} ({laws.filter(l=>l.cat===c).length})</span>))}
-      <span className="right">พบ {rows.length} ฉบับ</span>
+      <span className="right" style={{marginLeft:'auto'}}>พบ {rows.length} ฉบับ</span>
+      <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} onClick={()=>setShowAdd(true)}><I n="plus"/> เพิ่มกฎหมาย</button>
     </div>
     {activeCats.map(c=>(
       <div key={c} style={{marginBottom:20}}>
@@ -357,29 +445,78 @@ function Compliance({laws,cats,stats,onOpen}){
 }
 
 /* ─────────────────────────── REPEALED ─────────────────────────── */
-function Repealed({laws,catMap,search,onOpen}){
+function Repealed({laws,catMap,search,onOpen,onRestore}){
   const q=search.toLowerCase()
   const rows=laws.filter(l=>!q||l.name.toLowerCase().includes(q)||l.code.toLowerCase().includes(q))
-  return <div className="view">
-    <div className="ai-box" style={{marginBottom:16,borderLeftColor:'var(--bad)'}}>
-      <span className="ai-tag" style={{color:'var(--bad)'}}>กฎหมายที่ถูกยกเลิก / แทนที่</span>
-      <p style={{marginBottom:0}}>รายการต่อไปนี้ถูกบันทึกว่าไม่มีผลบังคับใช้แล้ว ไม่นับในสถิติความสอดคล้อง คลิกแต่ละรายการเพื่อดูรายละเอียดหรือกู้คืน</p>
+  const thDate = s => { if(!s) return '—'; const m=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; const d=new Date(s); return d.getDate()+' '+m[d.getMonth()]+' '+(d.getFullYear()+543) }
+
+  if (rows.length===0) return (
+    <div className="view">
+      <div className="panel" style={{padding:'60px 20px',textAlign:'center'}}>
+        <div style={{width:52,height:52,borderRadius:14,background:'#f0f0f0',color:'#aaa',display:'grid',placeItems:'center',margin:'0 auto 14px'}}><I n="ban" style={{width:24,height:24}}/></div>
+        <div style={{fontFamily:'Bai Jamjuree',fontSize:16,fontWeight:700}}>ยังไม่มีกฎหมายที่ถูกยกเลิก</div>
+        <div style={{fontSize:13,color:'var(--ink-faint)',marginTop:6}}>กฎหมายที่บันทึกการยกเลิกจะแสดงที่นี่</div>
+      </div>
     </div>
-    {rows.length===0 && <div className="panel"><div style={{textAlign:'center',color:'var(--ink-faint)',padding:40}}>ยังไม่มีกฎหมายที่ถูกบันทึกว่ายกเลิก</div></div>}
-    {rows.length>0 && (
-      <div className="panel"><div className="tablewrap"><table>
-        <thead><tr><th>รหัส / ชื่อกฎหมาย</th><th>หมวด</th><th>วันที่ยกเลิก</th><th>เหตุผล</th><th>แทนที่ด้วย</th></tr></thead>
-        <tbody>{rows.map(l=>(
-          <tr key={l.id} onClick={()=>onOpen(l)} style={{cursor:'pointer',opacity:.85}}>
-            <td><div className="law-code" style={{textDecoration:'line-through',color:'var(--ink-faint)'}}>{l.code}</div><div className="law-title" style={{fontSize:13,color:'var(--ink-soft)'}}>{l.name.slice(0,70)}{l.name.length>70?'…':''}</div></td>
-            <td><Tag c={l.cat} color={catMap[l.cat]?.color}/></td>
-            <td style={{fontSize:12.5,color:'var(--bad)',whiteSpace:'nowrap'}}>{l.repeal_date||'—'}</td>
-            <td style={{fontSize:12,color:'var(--ink-soft)',maxWidth:200}}>{l.repeal_reason?.slice(0,80)||'—'}</td>
-            <td style={{fontSize:12.5}}>{l.replaced_by_code||'—'}</td>
-          </tr>
-        ))}</tbody>
-      </table></div></div>
-    )}
+  )
+
+  return <div className="view">
+    {/* summary banner */}
+    <div style={{display:'flex',alignItems:'center',gap:16,padding:'14px 18px',background:'var(--bad-bg)',border:'1px solid #f5c0c0',borderRadius:12,marginBottom:20}}>
+      <div style={{width:40,height:40,borderRadius:11,background:'var(--bad)',color:'#fff',display:'grid',placeItems:'center',flexShrink:0}}><I n="ban" style={{width:20,height:20}}/></div>
+      <div>
+        <div style={{fontFamily:'Bai Jamjuree',fontWeight:700,fontSize:15,color:'var(--bad)'}}>{rows.length} กฎหมายที่ถูกยกเลิก / แทนที่</div>
+        <div style={{fontSize:12.5,color:'#a33',marginTop:2}}>รายการเหล่านี้ไม่นับในสถิติความสอดคล้อง — สามารถกู้คืนได้จากหน้ารายละเอียด</div>
+      </div>
+    </div>
+
+    {/* detail cards */}
+    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {rows.map(l=>{
+        const cat=catMap[l.cat]
+        return (
+          <div key={l.id} style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,overflow:'hidden',boxShadow:'var(--shadow-xs)'}}>
+            {/* card header */}
+            <div style={{padding:'14px 20px',background:'#fdf6f6',borderBottom:'1px solid #f5c0c0',display:'flex',alignItems:'flex-start',gap:14}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                  <span className="num" style={{fontSize:12,color:'var(--bad)',fontWeight:700,textDecoration:'line-through'}}>{l.code}</span>
+                  <Tag c={l.cat} color={cat?.color}/>
+                  <span className="pill p-repealed" style={{fontSize:10}}>ยกเลิกแล้ว</span>
+                </div>
+                <div style={{fontWeight:600,fontSize:14,color:'var(--ink-soft)',lineHeight:1.4,textDecoration:'line-through'}}>{l.name.slice(0,100)}{l.name.length>100?'…':''}</div>
+                <div style={{fontSize:12,color:'var(--ink-faint)',marginTop:3}}>{l.ministry||'—'}</div>
+              </div>
+              <div style={{display:'flex',gap:8,flexShrink:0}}>
+                <button className="btn btn-ghost" style={{padding:'5px 12px',fontSize:12}} onClick={()=>onOpen(l)}>ดูรายละเอียด</button>
+                <button className="btn btn-primary" style={{padding:'5px 12px',fontSize:12}} onClick={()=>onRestore(l)}><I n="check"/> กู้คืน</button>
+              </div>
+            </div>
+            {/* repeal details */}
+            <div style={{padding:'14px 20px',display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'12px 24px'}}>
+              <div>
+                <div style={{fontSize:11,color:'var(--ink-faint)',fontWeight:600,letterSpacing:.4,textTransform:'uppercase',marginBottom:3}}>วันที่มีผลยกเลิก</div>
+                <div style={{fontSize:13.5,fontWeight:600,color:'var(--bad)'}}>{thDate(l.repeal_date)}</div>
+              </div>
+              <div>
+                <div style={{fontSize:11,color:'var(--ink-faint)',fontWeight:600,letterSpacing:.4,textTransform:'uppercase',marginBottom:3}}>แทนที่ด้วย</div>
+                <div className="num" style={{fontSize:13.5,fontWeight:600,color:l.replaced_by_code?'var(--brand)':'var(--ink-faint)'}}>{l.replaced_by_code||'ไม่มีกฎหมายแทน'}</div>
+              </div>
+              <div>
+                <div style={{fontSize:11,color:'var(--ink-faint)',fontWeight:600,letterSpacing:.4,textTransform:'uppercase',marginBottom:3}}>อ้างอิง</div>
+                <div style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.repealed_by_authority||'—'}</div>
+              </div>
+              {l.repeal_reason && (
+                <div style={{gridColumn:'1/-1',paddingTop:10,borderTop:'1px solid var(--line-soft)'}}>
+                  <div style={{fontSize:11,color:'var(--ink-faint)',fontWeight:600,letterSpacing:.4,textTransform:'uppercase',marginBottom:4}}>เหตุผลการยกเลิก</div>
+                  <div style={{fontSize:13,color:'var(--ink-soft)',lineHeight:1.6}}>{l.repeal_reason}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
   </div>
 }
 
