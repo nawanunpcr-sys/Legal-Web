@@ -31,7 +31,6 @@ const NAV_GROUPS = [
   ]},
   { label: 'การดำเนินการ', items: [
     { id:'comm',          label:'การสื่อสาร (ISD-86)',   icon:'chat'    },
-    { id:'documents',     label:'จัดเก็บเอกสาร',         icon:'folder'  },
   ]},
   { label: 'วิเคราะห์ & AI', items: [
     { id:'analysis',      label:'วิเคราะห์ & สรุป',       icon:'spark'   },
@@ -48,7 +47,6 @@ const TITLES = {
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
   repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
   comm:          ['ตารางการสื่อสาร',        'การสื่อสารภายในและภายนอกองค์กร (ISD-86)'],
-  documents:     ['จัดเก็บเอกสาร',         'เอกสารกฎหมาย ต้นฉบับ สำเนา และรายงานราชการ'],
   analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
   staging:       ['นำเข้า / รออนุมัติ',    'รายการที่ AI สรุปไว้ รอกดเพิ่มเข้าทะเบียน'],
   updates:       ['อัปเดตกฎหมาย · ShawPat','เฝ้าระวังกฎหมายใหม่จาก ShawPat'],
@@ -262,7 +260,6 @@ export default function App(){
           {view==='improvements'  && <Improvements  laws={activeLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
-          {view==='documents'     && <Documents     laws={activeLaws} cats={cats} catMap={catMap}/>}
           {view==='analysis'      && <Analysis      laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw} onAnalyzed={reloadSkills} goView={setView}/>}
           {view==='staging'       && <Staging       batches={stagingBatches} catMap={catMap} onAdd={handleAddStaged} onDrop={handleDropStaged}/>}
           {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}
@@ -355,7 +352,6 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
   const [name, setName] = useState('')
   const [ministry, setMinistry] = useState('')
   const [effectiveDate, setEffectiveDate] = useState('')
-  const [reviewDate, setReviewDate] = useState('')
   const [saving, setSaving] = useState(false)
 
   const previewCode = catCode ? nextCode(allLaws, catCode) : '—'
@@ -364,7 +360,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
   async function save() {
     if (!valid) return
     setSaving(true)
-    await onSave({ code: previewCode, cat: catCode, name: name.trim(), hierarchy_level: level, ministry, effective_date: effectiveDate, review_date: reviewDate })
+    await onSave({ code: previewCode, cat: catCode, name: name.trim(), hierarchy_level: level, ministry, effective_date: effectiveDate, review_date: '' })
     setSaving(false)
     onClose()
   }
@@ -399,16 +395,8 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
         <label className="form-label">กระทรวง / หน่วยงาน</label>
         <input className="form-input" type="text" placeholder="เช่น กระทรวงแรงงาน" value={ministry} onChange={e=>setMinistry(e.target.value)}/>
 
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-          <div>
-            <label className="form-label">วันที่บังคับใช้</label>
-            <input className="form-input" type="date" value={effectiveDate} onChange={e=>setEffectiveDate(e.target.value)}/>
-          </div>
-          <div>
-            <label className="form-label">กำหนดทบทวนถัดไป</label>
-            <input className="form-input" type="date" value={reviewDate} onChange={e=>setReviewDate(e.target.value)}/>
-          </div>
-        </div>
+        <label className="form-label">วันที่บังคับใช้</label>
+        <input className="form-input" type="date" value={effectiveDate} onChange={e=>setEffectiveDate(e.target.value)}/>
       </div>
       <div className="modal-foot">
         <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { signIn, hasSupabase } from '../lib/supabase.js'
 
-// รหัสเข้าใช้งานแบบง่ายสำหรับทีม
+// รหัสเข้าใช้งานแบบง่ายสำหรับทีม (ไม่แสดงบนหน้าจอ)
 const SIMPLE_USER = '12345'
 const SIMPLE_PASS = '12345'
 
@@ -15,12 +15,7 @@ export default function Login({ onAuthed }) {
     e.preventDefault()
     setErr(''); setBusy(true)
     const u = user.trim()
-    // 1) รหัสง่ายสำหรับทีม
-    if (u === SIMPLE_USER && pw === SIMPLE_PASS) {
-      onAuthed('local')
-      return
-    }
-    // 2) เผื่อมีบัญชี Supabase จริง (อีเมล)
+    if (u === SIMPLE_USER && pw === SIMPLE_PASS) { onAuthed('local'); return }
     if (hasSupabase && u.includes('@')) {
       try { const s = await signIn(u, pw); onAuthed(s); return }
       catch (e2) { setErr(e2.message || 'เข้าสู่ระบบไม่สำเร็จ') }
@@ -32,29 +27,36 @@ export default function Login({ onAuthed }) {
 
   return (
     <div className="login">
-      <div className="login-bg" aria-hidden />
+      {/* IT / network animated backdrop */}
+      <div className="login-grid" aria-hidden />
+      <div className="login-aurora" aria-hidden />
+      <ul className="login-nodes" aria-hidden>{Array.from({ length: 12 }).map((_, i) => <li key={i} />)}</ul>
+
       <div className="login-wrap">
         <div className="login-card">
-          <div className="login-mark">CR</div>
-          <h1 className="login-title">ComplyRegister</h1>
-          <p className="login-tagline">ทะเบียนกฎหมาย SHE.<br /><span>เรียบง่าย. แม่นยำ. สอดคล้อง.</span></p>
+          {/* spinning globe + orbit (JasTel mark) */}
+          <div className="globe-stage">
+            <div className="globe"><span className="globe-shine" /></div>
+            <div className="orbit"><span className="orbit-dot" /></div>
+          </div>
+
+          <h1 className="login-title"><span className="j-orange">Jas</span><span className="j-blue">Tel</span></h1>
+          <p className="login-tagline">ระบบทะเบียนกฎหมาย SHE<br /><span>Safety · Health · Environment</span></p>
 
           <form className="login-form" onSubmit={submit}>
             <input className="login-input" type="text" placeholder="ชื่อผู้ใช้" autoComplete="username"
               value={user} onChange={e => setUser(e.target.value)} required />
             <input className="login-input" type="password" placeholder="รหัสผ่าน" autoComplete="current-password"
               value={pw} onChange={e => setPw(e.target.value)} required />
-
             {err && <div className="login-err">{err}</div>}
-
             <button className="login-btn" disabled={busy} type="submit">
               {busy ? 'กำลังดำเนินการ…' : 'เข้าสู่ระบบ'}
             </button>
           </form>
 
-          <div className="login-demo">รหัสเข้าใช้งาน: 12345 / 12345</div>
+          <a className="login-site" href="https://www.jastel.co.th/" target="_blank" rel="noreferrer">www.jastel.co.th</a>
         </div>
-        <div className="login-foot">© {new Date().getFullYear() + 543} ComplyRegister · จัสเทล เน็ทเวิร์ค</div>
+        <div className="login-foot">© {new Date().getFullYear() + 543} JasTel Network · ทะเบียนกฎหมาย SHE</div>
       </div>
     </div>
   )
