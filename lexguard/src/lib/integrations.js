@@ -55,9 +55,10 @@ export function exportLawsToExcel(laws, catMap = {}) {
 
 // ── PDF / Ratchakitcha law reader ───────────────────────────────
 // Reads a PDF/law URL (e.g. ratchakitcha.soc.go.th) and returns an
-// AI summary. Wired through Supabase Edge Function `read-law-pdf`
-// (backed by open-notebook). Falls back to a structured placeholder
-// when no backend is connected yet, so the UI stays fully testable.
+// AI summary. This is the integration point for your own Skill /
+// backend: deploy a Supabase Edge Function named `read-law` that
+// accepts { url } and returns { summary, suggested }. Until then it
+// returns a clear placeholder so the UI stays usable.
 export async function summarizeLawUrl(url) {
   if (!url || !/^https?:\/\//i.test(url)) {
     throw new Error('กรุณาใส่ลิงก์ที่ถูกต้อง (ขึ้นต้นด้วย http:// หรือ https://)')
@@ -65,28 +66,22 @@ export async function summarizeLawUrl(url) {
 
   if (hasSupabase && supabase.functions) {
     try {
-      const { data, error } = await supabase.functions.invoke('read-law-pdf', { body: { url } })
+      const { data, error } = await supabase.functions.invoke('read-law', { body: { url } })
       if (!error && data?.summary) return data
     } catch (_) { /* fall through to placeholder */ }
   }
 
-  // Placeholder summary — replaced by real open-notebook output once
-  // the backend Edge Function is deployed.
-  await new Promise(r => setTimeout(r, 900))
+  await new Promise(r => setTimeout(r, 400))
   const isRatcha = /ratchakitcha\.soc\.go\.th/i.test(url)
   return {
     pending: true,
     source: isRatcha ? 'ราชกิจจานุเบกษา' : 'เอกสาร PDF',
     url,
-    suggested: {
-      name: 'ร่าง: ' + (isRatcha ? 'ประกาศจากราชกิจจานุเบกษา' : 'กฎหมายจากเอกสารแนบ'),
-      ministry: '',
-      hierarchy_level: '4',
-      effective_date: '',
-    },
+    suggested: { name: '', ministry: '', hierarchy_level: '4', effective_date: '' },
     summary:
-      'ยังไม่ได้เชื่อมต่อบริการอ่านเอกสาร (open-notebook). เมื่อเชื่อมต่อแล้ว ระบบจะดึงข้อความจากไฟล์ PDF ที่ ' +
-      url + ' มาสรุปสาระสำคัญ ขอบเขตการบังคับใช้ และข้อกำหนดที่ต้องปฏิบัติโดยอัตโนมัติ พร้อมให้ลงทะเบียนเข้าทะเบียนกฎหมายได้ทันที',
+      'ยังไม่ได้เชื่อมต่อบริการอ่านเอกสาร — เมื่อสร้าง Skill / Edge Function ชื่อ "read-law" ' +
+      'ที่รับ { url } และคืน { summary, suggested } แล้ว ระบบจะดึงเนื้อหาจาก ' + url +
+      ' มาสรุปและให้ลงทะเบียนได้อัตโนมัติ',
     requirements: [],
   }
 }

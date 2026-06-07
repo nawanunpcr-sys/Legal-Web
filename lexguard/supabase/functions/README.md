@@ -1,23 +1,15 @@
 # Edge Functions
 
-## `read-law-pdf`
-Reads a PDF / law URL (e.g. ratchakitcha.soc.go.th) via a self-hosted
-[open-notebook](https://github.com/lfnovo/open-notebook) instance and returns an
-AI summary + suggested registry fields. Used by the **Analysis** page.
+## `read-law` (not included — build your own)
+The **Analysis → อ่านกฎหมายจากลิงก์/PDF** panel calls a Supabase Edge Function
+named `read-law` via `summarizeLawUrl()` in `src/lib/integrations.js`.
 
-**To connect open-notebook** set these Edge Function secrets
-(Dashboard → Project → Edge Functions → Manage secrets, or `supabase secrets set`):
+Build this yourself (e.g. as your own Skill / backend). Contract:
 
-| Secret | Example | Required |
-| --- | --- | --- |
-| `OPEN_NOTEBOOK_API_URL` | `https://your-open-notebook.example.com` | ✅ |
-| `OPEN_NOTEBOOK_PASSWORD` | the `OPEN_NOTEBOOK_PASSWORD` of your instance | if auth enabled |
-| `OPEN_NOTEBOOK_NOTEBOOK_ID` | a notebook id to attach sources to | ✅ |
-| `OPEN_NOTEBOOK_SUMMARY_TRANSFORMATION_ID` | transformation id for summarising | optional |
+- **Input:** `{ "url": "https://..." }`
+- **Output:** `{ "summary": "…", "suggested": { "name", "ministry", "hierarchy_level", "effective_date" } }`
 
-Until these are set the function returns a clearly-labelled placeholder so the UI
-still works. Run open-notebook with Docker (see its repo) and expose the API
-(default port `5055`) on a public URL reachable by Supabase.
+Until it is deployed the UI shows a clear placeholder, so everything else keeps working.
 
 ## `shawpat-updates`
 Scrapes <https://www.shawpat.or.th/th/other-service/osh-law> for newly released

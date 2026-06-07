@@ -733,7 +733,7 @@ function LawReaderPanel({cats,onCreate}){
 
   return (
     <div className="panel" style={{marginBottom:16}}>
-      <div className="panel-h"><h3>อ่านกฎหมายจากลิงก์ / PDF</h3><span className="sub" style={{marginLeft:'auto'}}>ราชกิจจานุเบกษา · open-notebook</span></div>
+      <div className="panel-h"><h3>อ่านกฎหมายจากลิงก์ / PDF</h3><span className="sub" style={{marginLeft:'auto'}}>ราชกิจจานุเบกษา</span></div>
       <div className="panel-b">
         <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
           <input className="form-input" style={{flex:1,minWidth:240,marginTop:0}}
