@@ -105,6 +105,7 @@ export default function App(){
     activeLaws.forEach(l=>{ if(l.status==='bad') out.push({type:'bad',law:l,text:l.code+' ยังไม่สอดคล้อง',sub:l.name.slice(0,60)}) })
     activeLaws.forEach(l=>{ if(l.review_date){ const d=daysTo(l.review_date); if(d>=0&&d<=200) out.push({type:'review',law:l,days:d,text:l.code+' ครบกำหนดทบทวนใน '+d+' วัน',sub:thDate(l.review_date)}) }})
     comms.forEach(c=>{ if(c.next_scheduled_date){ const d=daysTo(c.next_scheduled_date); const nb=c.notify_days_before||7; if(d>=0&&d<=nb) out.push({type:'comm',comm:c,days:d,text:'การสื่อสาร: '+c.topic.slice(0,50),sub:'ครบกำหนดใน '+d+' วัน — '+thDate(c.next_scheduled_date)}) }})
+    notifs.filter(n=>n.type==='law_update').slice(0,15).forEach(n=>out.push({type:'law_update',text:n.message,sub:thDate(n.created_at),link:n.link}))
     notifs.filter(n=>n.type==='comm_submitted').slice(0,3).forEach(n=>out.push({type:'submitted',text:n.message,sub:thDate(n.created_at)}))
     return out.sort((a,b)=>(a.type==='bad'?-1:0)-(b.type==='bad'?-1:0))
   },[activeLaws,comms,notifs])
@@ -832,6 +833,7 @@ const NOTIF_META = {
   review:    { label:'ครบกำหนดทบทวน', icon:'clock',    bg:'var(--review-bg)', fg:'var(--review)' },
   comm:      { label:'กำหนดสื่อสาร',   icon:'chat',     bg:'var(--brand-tint)',fg:'var(--brand)'  },
   submitted: { label:'ส่งเรียบร้อย',   icon:'check',    bg:'var(--ok-bg)',     fg:'var(--ok)'     },
+  law_update:{ label:'กฎหมายใหม่',     icon:'spark',    bg:'var(--brand-tint)',fg:'var(--brand)'  },
 }
 function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
   const [filter, setFilter] = useState('all')
@@ -874,7 +876,7 @@ function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
         {filtered.map((n,i)=>{
           const m=NOTIF_META[n.type]||{label:n.type,icon:'info',bg:'var(--brand-tint)',fg:'var(--brand)'}
           return (
-            <div key={i} className="notif-card" onClick={()=>{ if(n.law) onOpenLaw(n.law); else if(n.comm) onGoToView('comm') }}>
+            <div key={i} className="notif-card" onClick={()=>{ if(n.law) onOpenLaw(n.law); else if(n.comm) onGoToView('comm'); else if(n.link) window.open(n.link,'_blank','noreferrer') }}>
               <div className="notif-ico" style={{background:m.fg}}/>
               <div className="notif-body">
                 <div className="notif-title">{n.text}</div>
