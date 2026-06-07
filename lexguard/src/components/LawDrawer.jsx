@@ -101,7 +101,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
             <div className="sec">
               <div className="sec-t">
                 ข้อกำหนด & การประเมิน
-                <span style={{marginLeft:'auto',fontFamily:'Bai Jamjuree',color:p===100?'var(--ok)':'var(--bad)'}}>{p}%</span>
+                <span style={{marginLeft:'auto',color:p===100?'var(--ok)':'var(--bad)'}}>{p}%</span>
               </div>
               <p style={{fontSize:11.5,color:'var(--ink-faint)',marginBottom:10}}>คลิกกล่องสถานะเพื่อสลับ สอดคล้อง ↔ ยังไม่สอดคล้อง (บันทึกอัตโนมัติ)</p>
               {law.reqs.map(r=>(

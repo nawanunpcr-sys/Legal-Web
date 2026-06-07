@@ -389,7 +389,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,allLaws}){
     {activeCats.map(c=>(
       <div key={c} style={{marginBottom:20}}>
         <div className="hier-cat-header" style={{borderLeftColor:catMap[c]?.color||'var(--brand)'}}>
-          <span style={{color:catMap[c]?.color,fontWeight:700,fontFamily:'Bai Jamjuree'}}>{c}</span>
+          <span style={{color:catMap[c]?.color,fontWeight:700}}>{c}</span>
           <span style={{marginLeft:8,color:'var(--ink-soft)'}}>{catMap[c]?.name}</span>
           <span style={{marginLeft:'auto',fontSize:12,color:'var(--ink-faint)'}}>{rows.filter(l=>l.cat===c).length} ฉบับ</span>
         </div>
@@ -431,7 +431,7 @@ function MonthlyCheckPanel({ months, year, setYear, onToggle }) {
         <h3>การตรวจสอบรายเดือน</h3>
         <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
           <button className="month-yr-btn" onClick={()=>setYear(y=>y-1)}>‹</button>
-          <span style={{fontFamily:'Bai Jamjuree',fontSize:13,fontWeight:600,minWidth:60,textAlign:'center'}}>ปี {toBE(year)}</span>
+          <span style={{fontSize:13,fontWeight:600,minWidth:60,textAlign:'center'}}>ปี {toBE(year)}</span>
           <button className="month-yr-btn" onClick={()=>setYear(y=>y+1)}>›</button>
         </div>
         <span className="sub">{checkedCount}/12 เดือน</span>
@@ -478,7 +478,7 @@ function Compliance({laws,cats,stats,onOpen,months,monthYear,setMonthYear,onTogg
           return <details key={c.code} style={{marginBottom:12}} open={c.code==='LA'}>
             <summary style={{cursor:'pointer',display:'flex',alignItems:'center',gap:12,padding:'12px 14px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:8,listStyle:'none'}}>
               <span style={{width:8,height:8,borderRadius:2,background:c.color,flexShrink:0}}/>
-              <b style={{fontFamily:'Bai Jamjuree'}}>{c.code}</b><span style={{flex:1}}>{c.name}</span>
+              <b style={{}}>{c.code}</b><span style={{flex:1}}>{c.name}</span>
               <span className="num" style={{color:c.color,fontWeight:700}}>{p}%</span>
               <span style={{fontSize:12,color:'var(--ink-faint)'}}>{byCat[c.code].length} ฉบับ</span>
             </summary>
@@ -514,8 +514,8 @@ function Repealed({laws,catMap,search,onOpen,onRestore}){
   if (rows.length===0) return (
     <div className="view">
       <div className="panel" style={{padding:'60px 20px',textAlign:'center'}}>
-        <div style={{width:52,height:52,borderRadius:14,background:'#f0f0f0',color:'#aaa',display:'grid',placeItems:'center',margin:'0 auto 14px',fontSize:22,fontWeight:700}}>—</div>
-        <div style={{fontFamily:'Bai Jamjuree',fontSize:16,fontWeight:700}}>ยังไม่มีกฎหมายที่ถูกยกเลิก</div>
+        <div style={{width:52,height:52,borderRadius:14,background:'var(--surface-3)',color:'var(--ink-faint)',display:'grid',placeItems:'center',margin:'0 auto 14px',fontSize:22,fontWeight:700}}>—</div>
+        <div style={{fontSize:16,fontWeight:700}}>ยังไม่มีกฎหมายที่ถูกยกเลิก</div>
         <div style={{fontSize:13,color:'var(--ink-faint)',marginTop:6}}>กฎหมายที่บันทึกการยกเลิกจะแสดงที่นี่</div>
       </div>
     </div>
@@ -523,11 +523,11 @@ function Repealed({laws,catMap,search,onOpen,onRestore}){
 
   return <div className="view">
     {/* summary banner */}
-    <div style={{display:'flex',alignItems:'center',gap:16,padding:'14px 18px',background:'var(--bad-bg)',border:'1px solid #f5c0c0',borderRadius:12,marginBottom:20}}>
-      <div style={{width:40,height:40,borderRadius:11,background:'var(--bad)',color:'#fff',display:'grid',placeItems:'center',flexShrink:0,fontFamily:'Bai Jamjuree',fontSize:14,fontWeight:700}}>ยก</div>
+    <div style={{display:'flex',alignItems:'center',gap:16,padding:'14px 18px',background:'var(--bad-bg)',border:'1px solid var(--bad-bg)',borderRadius:12,marginBottom:20}}>
+      <div style={{width:40,height:40,borderRadius:11,background:'var(--bad)',color:'#fff',display:'grid',placeItems:'center',flexShrink:0,fontSize:14,fontWeight:700}}>ยก</div>
       <div>
-        <div style={{fontFamily:'Bai Jamjuree',fontWeight:700,fontSize:15,color:'var(--bad)'}}>{rows.length} กฎหมายที่ถูกยกเลิก / แทนที่</div>
-        <div style={{fontSize:12.5,color:'#a33',marginTop:2}}>รายการเหล่านี้ไม่นับในสถิติความสอดคล้อง — สามารถกู้คืนได้จากหน้ารายละเอียด</div>
+        <div style={{fontWeight:700,fontSize:15,color:'var(--bad)'}}>{rows.length} กฎหมายที่ถูกยกเลิก / แทนที่</div>
+        <div style={{fontSize:12.5,color:'var(--bad)',marginTop:2}}>รายการเหล่านี้ไม่นับในสถิติความสอดคล้อง — สามารถกู้คืนได้จากหน้ารายละเอียด</div>
       </div>
     </div>
 
@@ -538,7 +538,7 @@ function Repealed({laws,catMap,search,onOpen,onRestore}){
         return (
           <div key={l.id} style={{background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12,overflow:'hidden',boxShadow:'var(--shadow-xs)'}}>
             {/* card header */}
-            <div style={{padding:'14px 20px',background:'#fdf6f6',borderBottom:'1px solid #f5c0c0',display:'flex',alignItems:'flex-start',gap:14}}>
+            <div style={{padding:'14px 20px',background:'var(--bad-bg)',borderBottom:'1px solid var(--bad-bg)',display:'flex',alignItems:'flex-start',gap:14}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
                   <span className="num" style={{fontSize:12,color:'var(--bad)',fontWeight:700,textDecoration:'line-through'}}>{l.code}</span>
@@ -741,7 +741,7 @@ function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
     <div className="view">
       <div className="panel notif-empty">
         <div className="notif-empty-ic" style={{fontSize:22}}>✓</div>
-        <div style={{fontFamily:'Bai Jamjuree',fontSize:16,fontWeight:600,marginBottom:6}}>ไม่มีการแจ้งเตือน</div>
+        <div style={{fontSize:16,fontWeight:600,marginBottom:6}}>ไม่มีการแจ้งเตือน</div>
         <div style={{fontSize:13,color:'var(--ink-faint)'}}>ระบบจะแจ้งเตือนเมื่อมีข้อกำหนดที่ต้องติดตามหรือกำหนดการที่ใกล้ครบ</div>
       </div>
     </div>
@@ -795,7 +795,7 @@ function Improvements({ laws, catMap, onOpen }) {
         <div style={{width:56,height:56,borderRadius:12,background:'var(--ok-bg)',color:'var(--ok)',display:'grid',placeItems:'center',margin:'0 auto 16px',fontSize:24}}>
           ✓
         </div>
-        <div style={{fontFamily:'Bai Jamjuree',fontSize:18,fontWeight:700}}>ทุกข้อกำหนดสอดคล้องครบถ้วน</div>
+        <div style={{fontSize:18,fontWeight:700}}>ทุกข้อกำหนดสอดคล้องครบถ้วน</div>
         <div style={{fontSize:13,color:'var(--ink-faint)',marginTop:6}}>ไม่มีรายการที่ต้องปรับปรุงในขณะนี้</div>
       </div>
     </div>
@@ -844,7 +844,7 @@ function Improvements({ laws, catMap, onOpen }) {
 
 /* ─────────────────────────── DOCUMENTS ─────────────────────────── */
 const DOC_TYPES = [
-  { key:'F-259',  label:'แบบ F-259 ทะเบียนกฎหมาย',    desc:'ทะเบียนกฎหมาย SHE ประจำปีพร้อมข้อกำหนดทั้งหมด', color:'#0f6b58' },
+  { key:'F-259',  label:'แบบ F-259 ทะเบียนกฎหมาย',    desc:'ทะเบียนกฎหมาย SHE ประจำปีพร้อมข้อกำหนดทั้งหมด', color:'var(--brand)' },
   { key:'PD-60',  label:'เอกสาร PD-60 ข้อ 7',          desc:'กรอบเวลาตามกฎหมาย — เอกสารส่งราชการ',            color:'#4f72c4' },
   { key:'PD-05',  label:'เอกสาร PD-05 แผนปรับปรุง',    desc:'บันทึกการแก้ไขและปิดข้อ NC',                     color:'#cf8a12' },
   { key:'report', label:'รายงานผู้บริหาร (Mgmt Review)',desc:'AI ร่างรายงานและส่งออก PDF',                      color:'#1f9d6b' },
