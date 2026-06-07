@@ -36,7 +36,9 @@
   /* Aliases used by component rules */
   --faint: #a1a1a6;
   --red:   #ff3b30;
-  --mono:  ui-monospace, 'SF Mono', Menlo, monospace;
+  /* Unified type — one family across the whole app (numbers just get tabular figures) */
+  --sans:  -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', 'Anuphan', 'Noto Sans Thai', sans-serif;
+  --mono:  -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', 'Anuphan', 'Noto Sans Thai', sans-serif;
 
   /* Status — neutral-with-color */
   --ok:        #248a3d;
@@ -88,8 +90,8 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Tabular numerals via system mono */
-.num { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-variant-numeric: tabular-nums; letter-spacing: -.02em }
+/* Tabular numerals — same family as everything else, just aligned figures */
+.num { font-family: var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -.01em }
 
 /* ── Shell ──────────────────────────────────────────────────────── */
 .app { display: flex; min-height: 100vh }
@@ -450,16 +452,22 @@ body {
 .ring-wrap { display: flex; align-items: center; gap: 24px }
 .ring { position: relative; width: 134px; height: 134px; flex-shrink: 0 }
 .ring svg { transform: rotate(-90deg) }
-.ring .center { position: absolute; inset: 0; display: grid; place-items: center; text-align: center }
+.ring .center {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center;
+}
 .ring .pct {
-  font-family: var(--mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
   font-size: clamp(24px, 2vw, 30px);
   font-weight: 700;
   color: var(--brand);
-  letter-spacing: -2px;
+  letter-spacing: -.5px;
   line-height: 1;
 }
-.ring .pl { font-size: 9.5px; color: var(--ink-faint); margin-top: 2px }
+.ring .pl { font-size: 9.5px; color: var(--ink-faint); margin-top: 3px; letter-spacing: 0 }
 
 .legend { display: flex; flex-direction: column; gap: 10px; flex: 1 }
 .legend .row { display: flex; align-items: center; gap: 10px; font-size: 12px }
@@ -985,6 +993,107 @@ select.form-input { cursor: pointer }
   #print-report { display: block !important }
 }
 #print-report { display: none }
+
+/* ═══════════════════════════════════════════════════════════════
+   LOGIN — macOS / apple.com-inspired
+   ═══════════════════════════════════════════════════════════════ */
+.login {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #fbfbfd;
+}
+.login-bg {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #d9ecff 0%, rgba(217,236,255,0) 60%),
+    radial-gradient(900px 500px at 85% 110%, #e9e0ff 0%, rgba(233,224,255,0) 55%),
+    linear-gradient(180deg, #fbfbfd 0%, #f1f3f7 100%);
+  z-index: 0;
+}
+.login-wrap {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center;
+  width: 100%; padding: 40px 20px;
+}
+.login-card {
+  width: 100%; max-width: 380px;
+  background: rgba(255,255,255,.72);
+  backdrop-filter: saturate(180%) blur(30px);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  border: 1px solid rgba(255,255,255,.6);
+  border-radius: 22px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.04);
+  padding: 40px 36px 30px;
+  text-align: center;
+}
+.login-mark {
+  width: 56px; height: 56px;
+  margin: 0 auto 22px;
+  border-radius: 15px;
+  background: linear-gradient(145deg,#3a9bff,#0071e3);
+  color: #fff; font-weight: 700; font-size: 20px; letter-spacing: -.5px;
+  display: grid; place-items: center;
+  box-shadow: 0 8px 24px rgba(0,113,227,.4);
+}
+.login-title {
+  font-family: var(--sans);
+  font-size: 30px; font-weight: 700; letter-spacing: -.8px;
+  color: var(--ink);
+}
+.login-tagline {
+  font-size: 16px; color: var(--ink-soft); margin: 6px 0 26px; line-height: 1.4;
+}
+.login-tagline span { color: var(--ink-faint); font-size: 14px }
+.login-form { display: flex; flex-direction: column; gap: 10px }
+.login-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.9);
+  border-radius: 12px;
+  padding: 13px 15px;
+  font-size: 15px; font-family: var(--sans);
+  color: var(--ink); outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.login-input:focus { border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-tint) }
+.login-btn {
+  margin-top: 6px;
+  width: 100%;
+  border: none;
+  background: var(--brand);
+  color: #fff;
+  font-size: 15px; font-weight: 600; font-family: var(--sans);
+  padding: 13px; border-radius: 12px; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,113,227,.35);
+  transition: background .15s, transform .1s;
+}
+.login-btn:hover:not(:disabled) { background: var(--brand-mid) }
+.login-btn:active { transform: scale(.985) }
+.login-btn:disabled { opacity: .55; cursor: default }
+.login-switch {
+  margin-top: 18px;
+  border: none; background: none; cursor: pointer;
+  color: var(--brand); font-size: 13.5px; font-family: var(--sans);
+}
+.login-switch:hover { text-decoration: underline }
+.login-demo {
+  display: block; margin: 14px auto 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--ink-faint); font-size: 12.5px; font-family: var(--sans);
+}
+.login-demo:hover { color: var(--ink-soft) }
+.login-err {
+  background: var(--bad-bg); color: var(--bad);
+  border-radius: 9px; padding: 9px 12px; font-size: 12.5px; text-align: left;
+}
+.login-msg {
+  background: var(--ok-bg); color: var(--ok);
+  border-radius: 9px; padding: 9px 12px; font-size: 12.5px; text-align: left;
+}
+.login-foot { margin-top: 26px; font-size: 12px; color: var(--ink-faint) }
 
 /* ─── Reduced motion ─────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {

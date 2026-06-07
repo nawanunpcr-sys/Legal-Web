@@ -29,6 +29,33 @@ export const RECURRENCE_LABELS = {
   asneeded:  'ตามความจำเป็น',
 }
 
+// ---- Auth ----
+export async function getSession() {
+  if (!hasSupabase) return null
+  const { data } = await supabase.auth.getSession()
+  return data.session
+}
+export function onAuthChange(cb) {
+  if (!hasSupabase) return () => {}
+  const { data } = supabase.auth.onAuthStateChange((_e, session) => cb(session))
+  return () => data.subscription.unsubscribe()
+}
+export async function signIn(email, password) {
+  if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error) throw error
+  return data.session
+}
+export async function signUp(email, password) {
+  if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  const { data, error } = await supabase.auth.signUp({ email, password })
+  if (error) throw error
+  return data.session
+}
+export async function signOut() {
+  if (hasSupabase) await supabase.auth.signOut()
+}
+
 // ---- Data access ----
 export async function fetchAll() {
   const [

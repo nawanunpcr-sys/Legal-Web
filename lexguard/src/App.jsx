@@ -5,9 +5,12 @@ import { supabase, hasSupabase, fetchAll,
          markCommSent, updateCommSchedule,
          dismissNotification,
          fetchComplianceMonths, toggleMonthCheck,
+         getSession, onAuthChange, signOut,
          STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
 import LawDrawer from './components/LawDrawer.jsx'
+import Login from './components/Login.jsx'
 import { buildReport } from './components/report.jsx'
+import { exportLawsToExcel, summarizeLawUrl, fetchShawpatUpdates } from './lib/integrations.js'
 
 const prog = l => !l.reqs.length ? 100 : Math.round(l.reqs.filter(r=>r.status==='met').length/l.reqs.length*100)
 const thDate = s => { if(!s) return '—'; const m=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; const d=new Date(s); return d.getDate()+' '+m[d.getMonth()]+' '+(d.getFullYear()+543) }
@@ -48,6 +51,7 @@ const TITLES = {
 }
 
 export default function App(){
+  const [session,setSession] = useState(undefined) // undefined=checking, null=logged out
   const [view,setView]     = useState('dashboard')
   const [cats,setCats]     = useState([])
   const [laws,setLaws]     = useState([])
@@ -60,7 +64,17 @@ export default function App(){
   const [monthYear,setMonthYear] = useState(new Date().getFullYear())
   const [months,setMonths]   = useState([])
 
-  useEffect(()=>{ (async()=>{
+  // auth gate
+  useEffect(()=>{
+    if(!hasSupabase){ setSession(null); return }
+    getSession().then(s=>setSession(s||null))
+    const unsub = onAuthChange(s=>setSession(s||null))
+    return unsub
+  },[])
+
+  const authed = !!session || session==='demo'
+
+  useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
       const [d, mData] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear())])
@@ -69,7 +83,7 @@ export default function App(){
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
-  })() },[])
+  })() },[authed])
 
   useEffect(()=>{ (async()=>{
     if(!hasSupabase) return
@@ -150,6 +164,8 @@ export default function App(){
 
   function exportPDF(){ buildReport({laws:activeLaws,stats,catName:Object.fromEntries(cats.map(c=>[c.code,c.name]))}); window.print() }
 
+  if(session===undefined) return <div className="loading"><div className="spin"/>กำลังตรวจสอบสิทธิ์…</div>
+  if(!authed) return <Login onAuthed={s=>setSession(s)} onBypass={()=>setSession('demo')}/>
   if(loading) return <div className="loading"><div className="spin"/>กำลังโหลดข้อมูลจากฐานข้อมูล…</div>
 
   const title = TITLES[view] || ['—','']
@@ -197,23 +213,27 @@ export default function App(){
           {(view==='register'||view==='repealed') && (
             <div className="search"><input placeholder="ค้นหากฎหมาย, รหัส, กระทรวง…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
           )}
+          {(view==='register'||view==='dashboard') && (
+            <button className="btn btn-ghost no-print" onClick={()=>exportLawsToExcel(activeLaws,catMap)}>ส่งออก Excel</button>
+          )}
           <button className="btn btn-ghost no-print" onClick={exportPDF}>ส่งออก PDF</button>
           <button className="bell no-print" onClick={()=>setView('notifications')}>
             การแจ้งเตือน{bellNotifications.length>0&&<span className="dot">{bellNotifications.length}</span>}
           </button>
+          <button className="btn btn-ghost no-print" onClick={async()=>{ await signOut(); setSession(null) }}>ออกจากระบบ</button>
         </header>
 
         <div className="content">
           {err && <div className="banner">{err}</div>}
           {view==='dashboard'     && <Dashboard     laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw}/>}
-          {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} allLaws={laws}/>}
-          {view==='compliance'    && <Compliance    laws={activeLaws} cats={cats} stats={stats} onOpen={setOpenLaw}
+          {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} allLaws={laws}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}/>}
+          {view==='compliance'    && <Compliance    laws={activeLaws} cats={cats} stats={stats} onOpen={setOpenLaw}/>}
           {view==='improvements'  && <Improvements  laws={activeLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
           {view==='documents'     && <Documents     laws={activeLaws} cats={cats} catMap={catMap}/>}
-          {view==='analysis'      && <Analysis      laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw}/>}
+          {view==='analysis'      && <Analysis      laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw} onCreate={handleCreateLaw}/>}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={setView}/>}
         </div>
       </div>
@@ -269,7 +289,6 @@ function Dashboard({laws,cats,stats,catMap,onOpen}){
             <div className="row"><span className="dot" style={{background:'var(--ok)'}}/>ข้อกำหนดสอดคล้อง (C)<b className="num">{stats.met}</b></div>
             <div className="row"><span className="dot" style={{background:'var(--bad)'}}/>ยังไม่สอดคล้อง (NC)<b className="num">{stats.nc}</b></div>
             <div className="row"><span className="dot" style={{background:'var(--brand)'}}/>กฎหมายที่มีผลบังคับใช้<b className="num">{stats.total}</b></div>
-            <div className="row"><span className="dot" style={{background:'var(--gold)'}}/>เอกสารอ้างอิง<b className="num">F-259</b></div>
           </div></div></div></div>
       <div className="panel"><div className="panel-h"><h3>ความสอดคล้องตามหมวดกฎหมาย</h3></div>
         <div className="panel-b"><CatBars laws={laws} cats={cats}/></div></div>
@@ -370,7 +389,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 }
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
-function Register({laws,cats,catMap,search,onOpen,onCreate,allLaws}){
+function Register({laws,cats,catMap,search,onOpen,onCreate,allLaws,months,monthYear,setMonthYear,onToggleMonth}){
   const [cat,setCat]=useState('all')
   const [showAdd,setShowAdd]=useState(false)
   const catsList=[...new Set(laws.map(l=>l.cat))].sort()
@@ -380,6 +399,9 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,allLaws}){
   const activeCats=catsList.filter(c=>cat==='all'||c===cat)
   return <div className="view">
     {showAdd && <AddLawModal cats={cats} allLaws={allLaws} onSave={onCreate} onClose={()=>setShowAdd(false)}/>}
+    <div style={{marginBottom:16}}>
+      <MonthlyCheckPanel months={months} year={monthYear} setYear={setMonthYear} onToggle={onToggleMonth}/>
+    </div>
     <div className="filterbar">
       <span className={'chip'+(cat==='all'?' active':'')} onClick={()=>setCat('all')}>ทุกหมวด ({laws.length})</span>
       {catsList.map(c=>(<span key={c} className={'chip'+(cat===c?' active':'')} onClick={()=>setCat(c)} style={cat===c?{borderColor:catMap[c]?.color,color:catMap[c]?.color}:{}}>{c} · {catMap[c]?.name} ({laws.filter(l=>l.cat===c).length})</span>))}
@@ -458,7 +480,7 @@ function MonthlyCheckPanel({ months, year, setYear, onToggle }) {
   )
 }
 
-function Compliance({laws,cats,stats,onOpen,months,monthYear,setMonthYear,onToggleMonth}){
+function Compliance({laws,cats,stats,onOpen}){
   const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
   return <div className="view">
     <div className="grid" style={{gridTemplateColumns:'repeat(3,1fr)',marginBottom:16}}>
@@ -466,8 +488,6 @@ function Compliance({laws,cats,stats,onOpen,months,monthYear,setMonthYear,onTogg
       <div className="panel" style={{padding:18}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>ผ่านการประเมิน (C)</div><div className="num" style={{fontSize:28,fontWeight:700,color:'var(--ok)'}}>{stats.met}</div></div>
       <div className="panel" style={{padding:18}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>ยังไม่สอดคล้อง (NC)</div><div className="num" style={{fontSize:28,fontWeight:700,color:'var(--bad)'}}>{stats.nc}</div></div>
     </div>
-
-    <MonthlyCheckPanel months={months} year={monthYear} setYear={setMonthYear} onToggle={onToggleMonth}/>
 
     <div className="panel" style={{marginTop:14}}><div className="panel-h"><h3>สถานะรายหมวด / ลำดับชั้นกฎหมาย</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกที่กฎหมายเพื่อดูข้อกำหนดและแก้ไข</span></div>
       <div className="panel-b">
@@ -686,10 +706,97 @@ function Communication({comms,onMarkSent,onScheduleUpdate}){
 }
 
 /* ─────────────────────────── ANALYSIS ─────────────────────────── */
-function Analysis({laws,cats,stats,catMap,onOpen}){
+function LawReaderPanel({cats,onCreate}){
+  const [url,setUrl]=useState('')
+  const [busy,setBusy]=useState(false)
+  const [res,setRes]=useState(null)
+  const [err,setErr]=useState('')
+  const [registered,setRegistered]=useState(false)
+
+  async function read(){
+    setErr(''); setRes(null); setRegistered(false); setBusy(true)
+    try{ setRes(await summarizeLawUrl(url.trim())) }
+    catch(e){ setErr(e.message) }
+    setBusy(false)
+  }
+  async function register(){
+    const s=res?.suggested||{}
+    const cat=cats[0]?.code||'GEN'
+    await onCreate({
+      code: `${cat}-${String(Date.now()).slice(-3)}`, cat, name: s.name||('กฎหมายจาก '+url),
+      hierarchy_level: s.hierarchy_level||'4', ministry: s.ministry||'',
+      effective_date: s.effective_date||'', review_date:''
+    })
+    setRegistered(true)
+  }
+
+  return (
+    <div className="panel" style={{marginBottom:16}}>
+      <div className="panel-h"><h3>อ่านกฎหมายจากลิงก์ / PDF</h3><span className="sub" style={{marginLeft:'auto'}}>ราชกิจจานุเบกษา · open-notebook</span></div>
+      <div className="panel-b">
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          <input className="form-input" style={{flex:1,minWidth:240,marginTop:0}}
+            placeholder="วางลิงก์ PDF หรือ URL จาก ratchakitcha.soc.go.th…"
+            value={url} onChange={e=>setUrl(e.target.value)}/>
+          <button className="btn btn-primary" disabled={busy||!url.trim()} onClick={read}>
+            {busy?'กำลังอ่าน…':'อ่านและสรุป'}
+          </button>
+        </div>
+        {err && <div className="login-err" style={{marginTop:12}}>{err}</div>}
+        {res && (
+          <div style={{marginTop:14,border:'1px solid var(--line)',borderRadius:'var(--r)',padding:'14px 16px',background:'var(--surface-2)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+              <span className="pill" style={{background:'var(--brand-tint)',color:'var(--brand)'}}>{res.source}</span>
+              {res.pending && <span className="pill p-bad" style={{fontSize:10}}>ยังไม่เชื่อมต่อ backend</span>}
+            </div>
+            <div style={{fontSize:13,color:'var(--ink-soft)',lineHeight:1.7}}>{res.summary}</div>
+            <div style={{display:'flex',gap:8,marginTop:14}}>
+              <button className="btn btn-primary" disabled={registered} onClick={register}>
+                {registered?'ลงทะเบียนแล้ว ✓':'ลงทะเบียนกฎหมายนี้'}
+              </button>
+              <a className="btn btn-ghost" href={res.url} target="_blank" rel="noreferrer">เปิดต้นฉบับ</a>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ShawpatPanel(){
+  const [items,setItems]=useState([])
+  const [busy,setBusy]=useState(false)
+  async function load(){ setBusy(true); try{ setItems(await fetchShawpatUpdates()) }catch(_){} setBusy(false) }
+  useEffect(()=>{ load() },[])
+  return (
+    <div className="panel" style={{marginBottom:16}}>
+      <div className="panel-h"><h3>อัปเดตกฎหมายความปลอดภัย (ShawPat)</h3>
+        <button className="btn btn-ghost" style={{marginLeft:'auto',padding:'5px 12px',fontSize:12}} disabled={busy} onClick={load}>
+          {busy?'กำลังโหลด…':'รีเฟรช'}
+        </button>
+      </div>
+      <div className="panel-b">
+        {items.length===0 && <div style={{color:'var(--ink-faint)',fontSize:13,textAlign:'center',padding:20}}>ไม่มีรายการอัปเดต</div>}
+        {items.map(it=>(
+          <a key={it.id} href={it.url} target="_blank" rel="noreferrer" className="insight" style={{textDecoration:'none'}}>
+            <div className="ii" style={{background:'var(--brand)'}}/>
+            <div>
+              <span className="ic-code">{it.source} · {thDate(it.date)}{it.pending?' · ตัวอย่าง':''}</span>
+              <h4>{it.title}</h4>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Analysis({laws,cats,stats,catMap,onOpen,onCreate}){
   const bad=laws.filter(l=>l.status==='bad')
   const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
   return <div className="view">
+    <LawReaderPanel cats={cats} onCreate={onCreate}/>
+    <ShawpatPanel/>
     <div className="ai-box" style={{marginBottom:20}}>
       <span className="ai-tag">บทสรุปผู้บริหาร</span>
       <p>จากทะเบียนกฎหมาย SHE ของ <b>บริษัท จัสเทล เน็ทเวิร์ค</b> (F-259, รอบ 1 ปี 2569) มีกฎหมายที่มีผลบังคับใช้ทั้งสิ้น <b>{stats.total} ฉบับ</b> ใน {cats.length} หมวด รวมข้อกำหนดที่ต้องปฏิบัติ <b>{stats.req} ข้อ</b> โดยมีอัตราความสอดคล้องโดยรวม <b>{stats.pct}%</b> ({stats.met} ข้อ) คงเหลือข้อกำหนดที่ยังไม่สอดคล้องเพียง <b>{stats.nc} ข้อ</b></p>
