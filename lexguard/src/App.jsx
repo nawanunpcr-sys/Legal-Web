@@ -5,12 +5,13 @@ import { supabase, hasSupabase, fetchAll,
          markCommSent, updateCommSchedule,
          dismissNotification,
          fetchComplianceMonths, toggleMonthCheck,
+         fetchStaging, fetchUpdates, addStagedLaw, dismissStaged, setUpdateStatus,
          getSession, onAuthChange, signOut,
          STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
 import LawDrawer from './components/LawDrawer.jsx'
 import Login from './components/Login.jsx'
 import { buildReport } from './components/report.jsx'
-import { exportLawsToExcel, summarizeLawUrl, fetchShawpatUpdates } from './lib/integrations.js'
+import { exportLawsToExcel } from './lib/integrations.js'
 
 const prog = l => !l.reqs.length ? 100 : Math.round(l.reqs.filter(r=>r.status==='met').length/l.reqs.length*100)
 const thDate = s => { if(!s) return '—'; const m=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; const d=new Date(s); return d.getDate()+' '+m[d.getMonth()]+' '+(d.getFullYear()+543) }
@@ -32,8 +33,10 @@ const NAV_GROUPS = [
     { id:'comm',          label:'การสื่อสาร (ISD-86)',   icon:'chat'    },
     { id:'documents',     label:'จัดเก็บเอกสาร',         icon:'folder'  },
   ]},
-  { label: 'วิเคราะห์', items: [
-    { id:'analysis',      label:'วิเคราะห์ & AI',         icon:'spark'   },
+  { label: 'วิเคราะห์ & AI', items: [
+    { id:'analysis',      label:'วิเคราะห์ & สรุป',       icon:'spark'   },
+    { id:'staging',       label:'นำเข้า / รออนุมัติ',     icon:'inbox'   },
+    { id:'updates',       label:'อัปเดตกฎหมาย',          icon:'update'  },
     { id:'notifications', label:'การแจ้งเตือน',           icon:'bell'    },
   ]},
 ]
@@ -46,7 +49,9 @@ const TITLES = {
   repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
   comm:          ['ตารางการสื่อสาร',        'การสื่อสารภายในและภายนอกองค์กร (ISD-86)'],
   documents:     ['จัดเก็บเอกสาร',         'เอกสารกฎหมาย ต้นฉบับ สำเนา และรายงานราชการ'],
-  analysis:      ['วิเคราะห์ & สรุป AI',   'ข้อค้นพบและข้อเสนอแนะจากการประเมิน'],
+  analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
+  staging:       ['นำเข้า / รออนุมัติ',    'รายการที่ AI สรุปไว้ รอกดเพิ่มเข้าทะเบียน'],
+  updates:       ['อัปเดตกฎหมาย · ShawPat','เฝ้าระวังกฎหมายใหม่จาก ShawPat'],
   notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
 }
 
@@ -63,6 +68,8 @@ export default function App(){
   const [openLaw,setOpenLaw] = useState(null)
   const [monthYear,setMonthYear] = useState(new Date().getFullYear())
   const [months,setMonths]   = useState([])
+  const [staging,setStaging] = useState([])
+  const [updates,setUpdates] = useState([])
 
   // auth gate
   useEffect(()=>{
@@ -74,12 +81,17 @@ export default function App(){
 
   const authed = !!session || session==='demo'
 
+  async function reloadSkills(){
+    try{ const [s,u] = await Promise.all([fetchStaging(), fetchUpdates()]); setStaging(s); setUpdates(u) }
+    catch(e){ console.warn('skills reload error',e) }
+  }
+
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear())])
+      const [d, mData, s, u] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates()])
       setCats(d.cats); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData)
+      setMonths(mData); setStaging(s); setUpdates(u)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -94,6 +106,21 @@ export default function App(){
   const catMap      = useMemo(()=>Object.fromEntries(cats.map(c=>[c.code,c])),[cats])
   const activeLaws  = useMemo(()=>laws.filter(l=>l.status!=='repealed'),[laws])
   const repealedLaws= useMemo(()=>laws.filter(l=>l.status==='repealed'),[laws])
+  const stagingBatches = useMemo(()=>{ const g={}; staging.forEach(r=>{(g[r.law_code]=g[r.law_code]||[]).push(r)}); return Object.entries(g) },[staging])
+  const newUpdates  = useMemo(()=>updates.filter(u=>u.status==='new'),[updates])
+
+  async function handleAddStaged(code, rows){
+    try{ await addStagedLaw(rows); const d=await fetchAll(); setLaws(d.laws); await reloadSkills() }
+    catch(e){ alert('เพิ่มเข้าทะเบียนไม่สำเร็จ: '+e.message) }
+  }
+  async function handleDropStaged(rows){
+    try{ await dismissStaged(rows.map(r=>r.id)); await reloadSkills() }
+    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+  }
+  async function handleMarkUpdate(id, status){
+    try{ await setUpdateStatus(id,status); await reloadSkills() }
+    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+  }
 
   const stats = useMemo(()=>{
     let req=0,met=0; activeLaws.forEach(l=>l.reqs.forEach(r=>{req++;if(r.status==='met')met++}))
@@ -105,10 +132,10 @@ export default function App(){
     activeLaws.forEach(l=>{ if(l.status==='bad') out.push({type:'bad',law:l,text:l.code+' ยังไม่สอดคล้อง',sub:l.name.slice(0,60)}) })
     activeLaws.forEach(l=>{ if(l.review_date){ const d=daysTo(l.review_date); if(d>=0&&d<=200) out.push({type:'review',law:l,days:d,text:l.code+' ครบกำหนดทบทวนใน '+d+' วัน',sub:thDate(l.review_date)}) }})
     comms.forEach(c=>{ if(c.next_scheduled_date){ const d=daysTo(c.next_scheduled_date); const nb=c.notify_days_before||7; if(d>=0&&d<=nb) out.push({type:'comm',comm:c,days:d,text:'การสื่อสาร: '+c.topic.slice(0,50),sub:'ครบกำหนดใน '+d+' วัน — '+thDate(c.next_scheduled_date)}) }})
-    notifs.filter(n=>n.type==='law_update').slice(0,15).forEach(n=>out.push({type:'law_update',text:n.message,sub:thDate(n.created_at),link:n.link}))
+    newUpdates.slice(0,15).forEach(u=>out.push({type:'law_update',goView:'updates',text:'กฎหมายใหม่: '+u.title.slice(0,55),sub:'จาก ShawPat'+(u.published_date?' · '+u.published_date:'')}))
     notifs.filter(n=>n.type==='comm_submitted').slice(0,3).forEach(n=>out.push({type:'submitted',text:n.message,sub:thDate(n.created_at)}))
     return out.sort((a,b)=>(a.type==='bad'?-1:0)-(b.type==='bad'?-1:0))
-  },[activeLaws,comms,notifs])
+  },[activeLaws,comms,notifs,newUpdates])
 
   async function toggleReq(law, req){
     const next = req.status==='met' ? 'unmet' : 'met'
@@ -189,6 +216,8 @@ export default function App(){
                 n.id==='compliance'    ? (stats.nc||null)         :
                 n.id==='improvements'  ? (stats.nc||null)         :
                 n.id==='repealed'      ? (repealedLaws.length||null) :
+                n.id==='staging'       ? (stagingBatches.length||null) :
+                n.id==='updates'       ? (newUpdates.length||null)   :
                 n.id==='notifications' ? (bellNotifications.length||null) : null
               return (
                 <button key={n.id} className={'nav-item'+(view===n.id?' active':'')}
@@ -234,7 +263,9 @@ export default function App(){
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
           {view==='documents'     && <Documents     laws={activeLaws} cats={cats} catMap={catMap}/>}
-          {view==='analysis'      && <Analysis      laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw} onCreate={handleCreateLaw}/>}
+          {view==='analysis'      && <Analysis      laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw} onAnalyzed={reloadSkills} goView={setView}/>}
+          {view==='staging'       && <Staging       batches={stagingBatches} catMap={catMap} onAdd={handleAddStaged} onDrop={handleDropStaged}/>}
+          {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={setView}/>}
         </div>
       </div>
@@ -706,98 +737,44 @@ function Communication({comms,onMarkSent,onScheduleUpdate}){
   </div>
 }
 
-/* ─────────────────────────── ANALYSIS ─────────────────────────── */
-function LawReaderPanel({cats,onCreate}){
-  const [url,setUrl]=useState('')
+/* ─────────────────────────── ANALYSIS (Skill: fetch + analyze) ─── */
+function AnalyzePanel({onAnalyzed,goView}){
+  const [src,setSrc]=useState('')
   const [busy,setBusy]=useState(false)
-  const [res,setRes]=useState(null)
-  const [err,setErr]=useState('')
-  const [registered,setRegistered]=useState(false)
-
-  async function read(){
-    setErr(''); setRes(null); setRegistered(false); setBusy(true)
-    try{ setRes(await summarizeLawUrl(url.trim())) }
-    catch(e){ setErr(e.message) }
+  const [msg,setMsg]=useState(null)
+  async function analyze(){
+    if(!src.trim()) return
+    setBusy(true); setMsg(null)
+    try{
+      const r=await fetch('/api/law-analyze',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source:src})})
+      const d=await r.json()
+      if(!r.ok) setMsg({err:d.error||'วิเคราะห์ไม่สำเร็จ'})
+      else{ setMsg({ok:`สรุปได้ ${d.count} ข้อกำหนด: ${d.law?.name||''} — ส่งไปที่หน้า “นำเข้า / รออนุมัติ” แล้ว`}); setSrc(''); onAnalyzed&&onAnalyzed() }
+    }catch(e){ setMsg({err:'เรียก API ไม่สำเร็จ (ต้อง deploy บน Vercel พร้อมตั้ง ANTHROPIC_API_KEY): '+e.message}) }
     setBusy(false)
   }
-  async function register(){
-    const s=res?.suggested||{}
-    const cat=cats[0]?.code||'GEN'
-    await onCreate({
-      code: `${cat}-${String(Date.now()).slice(-3)}`, cat, name: s.name||('กฎหมายจาก '+url),
-      hierarchy_level: s.hierarchy_level||'4', ministry: s.ministry||'',
-      effective_date: s.effective_date||'', review_date:''
-    })
-    setRegistered(true)
-  }
-
   return (
     <div className="panel" style={{marginBottom:16}}>
-      <div className="panel-h"><h3>อ่านกฎหมายจากลิงก์ / PDF</h3><span className="sub" style={{marginLeft:'auto'}}>ราชกิจจานุเบกษา</span></div>
+      <div className="panel-h"><h3>วิเคราะห์กฎหมายเข้าทะเบียน</h3><span className="sub" style={{marginLeft:'auto'}}>Skill: fetch + analyze</span></div>
       <div className="panel-b">
-        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-          <input className="form-input" style={{flex:1,minWidth:240,marginTop:0}}
-            placeholder="วางลิงก์ PDF หรือ URL จาก ratchakitcha.soc.go.th…"
-            value={url} onChange={e=>setUrl(e.target.value)}/>
-          <button className="btn btn-primary" disabled={busy||!url.trim()} onClick={read}>
-            {busy?'กำลังอ่าน…':'อ่านและสรุป'}
-          </button>
+        <p style={{fontSize:12.5,color:'var(--ink-faint)',marginBottom:10,lineHeight:1.6}}>วาง URL ราชกิจจาฯ / กฤษฎีกา / ShawPat หรือวางตัวบทกฎหมายเป็นข้อความ ระบบจะสรุปเป็นข้อ ๆ (ใคร · ทำอะไร · ที่ไหน · อย่างไร · เอกสาร · ความถี่) แล้วส่งไปพักที่หน้า “นำเข้า / รออนุมัติ” ให้คุณกดเพิ่มเอง</p>
+        <textarea className="form-input" rows={4} placeholder="วาง URL หรือตัวบทกฎหมายที่นี่…" value={src} onChange={e=>setSrc(e.target.value)} style={{marginTop:0}}/>
+        <div style={{display:'flex',gap:8,alignItems:'center',marginTop:12}}>
+          <button className="btn btn-primary" disabled={busy||!src.trim()} onClick={analyze}>{busy?'กำลังวิเคราะห์…':'วิเคราะห์ & เตรียมเข้าทะเบียน'}</button>
+          {msg?.ok && <button className="btn btn-ghost" onClick={()=>goView&&goView('staging')}>ไปหน้านำเข้า / รออนุมัติ →</button>}
         </div>
-        {err && <div className="login-err" style={{marginTop:12}}>{err}</div>}
-        {res && (
-          <div style={{marginTop:14,border:'1px solid var(--line)',borderRadius:'var(--r)',padding:'14px 16px',background:'var(--surface-2)'}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-              <span className="pill" style={{background:'var(--brand-tint)',color:'var(--brand)'}}>{res.source}</span>
-              {res.pending && <span className="pill p-bad" style={{fontSize:10}}>ยังไม่เชื่อมต่อ backend</span>}
-            </div>
-            <div style={{fontSize:13,color:'var(--ink-soft)',lineHeight:1.7}}>{res.summary}</div>
-            <div style={{display:'flex',gap:8,marginTop:14}}>
-              <button className="btn btn-primary" disabled={registered} onClick={register}>
-                {registered?'ลงทะเบียนแล้ว ✓':'ลงทะเบียนกฎหมายนี้'}
-              </button>
-              <a className="btn btn-ghost" href={res.url} target="_blank" rel="noreferrer">เปิดต้นฉบับ</a>
-            </div>
-          </div>
-        )}
+        {msg?.ok && <div style={{marginTop:12}} className="login-msg">{msg.ok}</div>}
+        {msg?.err && <div style={{marginTop:12}} className="login-err">{msg.err}</div>}
       </div>
     </div>
   )
 }
 
-function ShawpatPanel(){
-  const [items,setItems]=useState([])
-  const [busy,setBusy]=useState(false)
-  async function load(){ setBusy(true); try{ setItems(await fetchShawpatUpdates()) }catch(_){} setBusy(false) }
-  useEffect(()=>{ load() },[])
-  return (
-    <div className="panel" style={{marginBottom:16}}>
-      <div className="panel-h"><h3>อัปเดตกฎหมายความปลอดภัย (ShawPat)</h3>
-        <button className="btn btn-ghost" style={{marginLeft:'auto',padding:'5px 12px',fontSize:12}} disabled={busy} onClick={load}>
-          {busy?'กำลังโหลด…':'รีเฟรช'}
-        </button>
-      </div>
-      <div className="panel-b">
-        {items.length===0 && <div style={{color:'var(--ink-faint)',fontSize:13,textAlign:'center',padding:20}}>ไม่มีรายการอัปเดต</div>}
-        {items.map(it=>(
-          <a key={it.id} href={it.url} target="_blank" rel="noreferrer" className="insight" style={{textDecoration:'none'}}>
-            <div className="ii" style={{background:'var(--brand)'}}/>
-            <div>
-              <span className="ic-code">{it.source} · {thDate(it.date)}{it.pending?' · ตัวอย่าง':''}</span>
-              <h4>{it.title}</h4>
-            </div>
-          </a>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function Analysis({laws,cats,stats,catMap,onOpen,onCreate}){
+function Analysis({laws,cats,stats,catMap,onOpen,onAnalyzed,goView}){
   const bad=laws.filter(l=>l.status==='bad')
   const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
   return <div className="view">
-    <LawReaderPanel cats={cats} onCreate={onCreate}/>
-    <ShawpatPanel/>
+    <AnalyzePanel onAnalyzed={onAnalyzed} goView={goView}/>
     <div className="ai-box" style={{marginBottom:20}}>
       <span className="ai-tag">บทสรุปผู้บริหาร</span>
       <p>จากทะเบียนกฎหมาย SHE ของ <b>บริษัท จัสเทล เน็ทเวิร์ค</b> (F-259, รอบ 1 ปี 2569) มีกฎหมายที่มีผลบังคับใช้ทั้งสิ้น <b>{stats.total} ฉบับ</b> ใน {cats.length} หมวด รวมข้อกำหนดที่ต้องปฏิบัติ <b>{stats.req} ข้อ</b> โดยมีอัตราความสอดคล้องโดยรวม <b>{stats.pct}%</b> ({stats.met} ข้อ) คงเหลือข้อกำหนดที่ยังไม่สอดคล้องเพียง <b>{stats.nc} ข้อ</b></p>
@@ -824,6 +801,103 @@ function Analysis({laws,cats,stats,catMap,onOpen,onCreate}){
         </div></div>
       </div>
     </div>
+  </div>
+}
+
+/* ─────────────────── STAGING (นำเข้า / รออนุมัติ) ─────────────────── */
+function Staging({batches,catMap,onAdd,onDrop}){
+  if(batches.length===0) return (
+    <div className="view">
+      <div className="panel" style={{padding:'60px 20px',textAlign:'center'}}>
+        <div style={{fontSize:16,fontWeight:600}}>ไม่มีรายการรออนุมัติ</div>
+        <div style={{fontSize:13,color:'var(--ink-faint)',marginTop:6}}>เมื่อใช้หน้า “วิเคราะห์” สรุปกฎหมาย รายการจะมาพักที่นี่ ให้คุณกดเพิ่มเข้าทะเบียนเอง</div>
+      </div>
+    </div>
+  )
+  return <div className="view">
+    {batches.map(([code,rows])=>{ const f=rows[0]; return (
+      <div className="panel" key={code} style={{marginBottom:14}}>
+        <div className="panel-h">
+          <span className="law-code">{code}</span>
+          <span style={{fontWeight:600,fontSize:14}}>{f.law_name||code}</span>
+          <span className="sub" style={{marginLeft:'auto'}}>{f.cat?catMap[f.cat]?.name||f.cat:''}{f.ministry?' · '+f.ministry:''} · {rows.length} ข้อกำหนด</span>
+        </div>
+        <div className="panel-b">
+          {rows.map(r=>(
+            <div key={r.id} style={{padding:'10px 0',borderBottom:'1px solid var(--line-soft)'}}>
+              <div style={{fontSize:13,fontWeight:450,lineHeight:1.5}}>
+                {r.section_ref && <b className="law-code" style={{marginRight:7}}>{r.section_ref}</b>}{r.req_text}
+              </div>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:6}}>
+                {r.responsible &&<span className="meta-chip">ใคร: {r.responsible}</span>}
+                {r.applicability&&<span className="meta-chip">ที่ไหน: {r.applicability}</span>}
+                {r.method      &&<span className="meta-chip">อย่างไร: {r.method}</span>}
+                {r.documents   &&<span className="meta-chip">เอกสาร: {r.documents}</span>}
+                {r.frequency   &&<span className="meta-chip">ความถี่: {r.frequency}</span>}
+                {r.other_terms &&<span className="meta-chip">อื่น ๆ: {r.other_terms}</span>}
+              </div>
+            </div>
+          ))}
+          <div style={{display:'flex',gap:8,marginTop:14,alignItems:'center'}}>
+            <button className="btn btn-primary" onClick={()=>onAdd(code,rows)}>เพิ่มเข้าทะเบียน</button>
+            <button className="btn btn-ghost" onClick={()=>onDrop(rows)}>ไม่เพิ่ม</button>
+            {f.source_url && <a className="btn btn-ghost" href={f.source_url} target="_blank" rel="noreferrer">ดูแหล่งที่มา</a>}
+          </div>
+        </div>
+      </div>
+    )})}
+  </div>
+}
+
+/* ─────────────────── UPDATES (Skill: update-watch) ──────────────── */
+function Updates({updates,onMark,onScanned}){
+  const live=updates.filter(u=>u.status!=='dismissed')
+  const [busy,setBusy]=useState(false)
+  const [msg,setMsg]=useState(null)
+  const UL={ new:'ใหม่', read:'อ่านแล้ว', imported:'เพิ่มแล้ว' }
+  async function scan(){
+    setBusy(true); setMsg(null)
+    try{
+      const r=await fetch('/api/law-update',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({})})
+      const d=await r.json()
+      if(!r.ok) setMsg({err:d.error||'ตรวจไม่สำเร็จ'})
+      else{ setMsg({ok:`ตรวจพบ ${d.scanned} รายการบน ShawPat · ใหม่ ${d.new} รายการ`}); onScanned&&onScanned() }
+    }catch(e){ setMsg({err:'เรียก API ไม่สำเร็จ (ต้อง deploy บน Vercel พร้อมตั้ง ANTHROPIC_API_KEY): '+e.message}) }
+    setBusy(false)
+  }
+  return <div className="view">
+    <div className="panel" style={{marginBottom:14}}>
+      <div className="panel-h">
+        <h3>เฝ้าระวังกฎหมายใหม่จาก ShawPat</h3>
+        <button className="btn btn-primary" style={{marginLeft:'auto'}} disabled={busy} onClick={scan}>{busy?'กำลังตรวจ…':'ตรวจหากฎหมายใหม่'}</button>
+      </div>
+      <div className="panel-b" style={{paddingTop:0}}>
+        <p style={{fontSize:12.5,color:'var(--ink-faint)',lineHeight:1.6}}>Skill: update-watch — ดึงหน้า shawpat.or.th/th/safety-law เทียบกับทะเบียน แล้วเพิ่มของใหม่เป็นการแจ้งเตือน</p>
+        {msg?.ok && <div className="login-msg" style={{marginTop:10}}>{msg.ok}</div>}
+        {msg?.err && <div className="login-err" style={{marginTop:10}}>{msg.err}</div>}
+      </div>
+    </div>
+    {live.length===0 && <div className="panel" style={{padding:'50px 20px',textAlign:'center',color:'var(--ink-faint)'}}>ยังไม่มีกฎหมายใหม่ — กด “ตรวจหากฎหมายใหม่” เพื่อดึงรายการจาก ShawPat</div>}
+    {live.map(u=>(
+      <div className="panel" key={u.id} style={{marginBottom:10,opacity:u.status==='new'?1:.66}}>
+        <div className="panel-b">
+          <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:6,flexWrap:'wrap'}}>
+            <span className={'pill '+(u.status==='new'?'p-bad':'')}>{UL[u.status]||u.status}</span>
+            {u.category_guess && <span className="tag">คาดหมวด {u.category_guess}</span>}
+            <span className="tag">ที่มา {u.source}</span>
+          </div>
+          <div style={{fontSize:14,fontWeight:600,lineHeight:1.45}}>{u.title}</div>
+          {u.published_date && <div style={{fontSize:12,color:'var(--ink-faint)',marginTop:3}}>ประกาศ {u.published_date}</div>}
+          {u.summary && <div style={{fontSize:12.5,color:'var(--ink-soft)',marginTop:6,lineHeight:1.6}}>{u.summary}</div>}
+          <div style={{display:'flex',gap:8,marginTop:12,alignItems:'center',flexWrap:'wrap'}}>
+            {u.status==='new' && <button className="btn btn-ghost" onClick={()=>onMark(u.id,'read')}>อ่านแล้ว</button>}
+            <button className="btn btn-primary" onClick={()=>onMark(u.id,'imported')}>ทำเครื่องหมายว่าเพิ่มแล้ว</button>
+            <button className="btn btn-ghost" onClick={()=>onMark(u.id,'dismissed')}>ไม่เกี่ยวข้อง</button>
+            {u.ref_url && <a className="btn btn-ghost" href={u.ref_url} target="_blank" rel="noreferrer">เปิดหน้ากฎหมาย</a>}
+          </div>
+        </div>
+      </div>
+    ))}
   </div>
 }
 
@@ -876,7 +950,7 @@ function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
         {filtered.map((n,i)=>{
           const m=NOTIF_META[n.type]||{label:n.type,icon:'info',bg:'var(--brand-tint)',fg:'var(--brand)'}
           return (
-            <div key={i} className="notif-card" onClick={()=>{ if(n.law) onOpenLaw(n.law); else if(n.comm) onGoToView('comm'); else if(n.link) window.open(n.link,'_blank','noreferrer') }}>
+            <div key={i} className="notif-card" onClick={()=>{ if(n.law) onOpenLaw(n.law); else if(n.comm) onGoToView('comm'); else if(n.goView) onGoToView(n.goView); else if(n.link) window.open(n.link,'_blank','noreferrer') }}>
               <div className="notif-ico" style={{background:m.fg}}/>
               <div className="notif-body">
                 <div className="notif-title">{n.text}</div>

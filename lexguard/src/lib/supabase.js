@@ -187,6 +187,49 @@ export async function dismissNotification(id) {
   await supabase.from('lg_notification_log').update({ dismissed_at: new Date().toISOString() }).eq('id', id)
 }
 
+// ---- AI Skills: staging (import/approve) + update watcher ----
+export async function fetchStaging() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_import_staging').select('*').eq('status', 'proposed').order('id')
+  return data || []
+}
+export async function fetchUpdates() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_law_updates').select('*').neq('status', 'dismissed').order('detected_at', { ascending: false })
+  return data || []
+}
+// Promote a staged batch (one law_code group) into the live registry
+export async function addStagedLaw(rows) {
+  const first = rows[0]
+  let { data: law } = await supabase.from('lg_laws').select('id').eq('code', first.law_code).maybeSingle()
+  if (!law) {
+    const { data: ins, error } = await supabase.from('lg_laws').insert({
+      code: first.law_code, cat: first.cat || 'LA', ministry: first.ministry || '',
+      name: first.law_name || first.law_code, issue_date: first.issue_date || null,
+      status: 'bad', review_date: null,
+    }).select('id').single()
+    if (error) throw error
+    law = ins
+  }
+  const reqRows = rows.map((r, i) => ({
+    law_id: law.id, seq: r.req_seq ?? i,
+    text: (r.section_ref ? r.section_ref + ': ' : '') + (r.req_text || ''),
+    status: 'unmet', responsible: r.responsible || '', frequency: r.frequency || '',
+    documents: r.documents || '', note: [r.applicability, r.method, r.other_terms].filter(Boolean).join(' · '),
+  }))
+  const { error: e2 } = await supabase.from('lg_requirements').insert(reqRows)
+  if (e2) throw e2
+  const { data: allReq } = await supabase.from('lg_requirements').select('status').eq('law_id', law.id)
+  await recomputeLawStatus(law.id, allReq || [])
+  await supabase.from('lg_import_staging').update({ status: 'added' }).in('id', rows.map(r => r.id))
+}
+export async function dismissStaged(ids) {
+  await supabase.from('lg_import_staging').update({ status: 'dismissed' }).in('id', ids)
+}
+export async function setUpdateStatus(id, status) {
+  await supabase.from('lg_law_updates').update({ status }).eq('id', id)
+}
+
 // ---- Monthly compliance check-off ----
 export async function fetchComplianceMonths(year) {
   if (!hasSupabase) return []

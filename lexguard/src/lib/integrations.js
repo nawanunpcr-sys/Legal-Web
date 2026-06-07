@@ -1,7 +1,6 @@
 // ───────────────────────────────────────────────────────────────
 // Integrations & export helpers
 // ───────────────────────────────────────────────────────────────
-import { hasSupabase, supabase } from './supabase.js'
 
 const TH_MONTHS_FULL = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -51,55 +50,4 @@ export function exportLawsToExcel(laws, catMap = {}) {
   a.download = `LexRegistry_${today.toISOString().slice(0, 10)}.xls`
   document.body.appendChild(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
-// ── PDF / Ratchakitcha law reader ───────────────────────────────
-// Reads a PDF/law URL (e.g. ratchakitcha.soc.go.th) and returns an
-// AI summary. This is the integration point for your own Skill /
-// backend: deploy a Supabase Edge Function named `read-law` that
-// accepts { url } and returns { summary, suggested }. Until then it
-// returns a clear placeholder so the UI stays usable.
-export async function summarizeLawUrl(url) {
-  if (!url || !/^https?:\/\//i.test(url)) {
-    throw new Error('กรุณาใส่ลิงก์ที่ถูกต้อง (ขึ้นต้นด้วย http:// หรือ https://)')
-  }
-
-  if (hasSupabase && supabase.functions) {
-    try {
-      const { data, error } = await supabase.functions.invoke('read-law', { body: { url } })
-      if (!error && data?.summary) return data
-    } catch (_) { /* fall through to placeholder */ }
-  }
-
-  await new Promise(r => setTimeout(r, 400))
-  const isRatcha = /ratchakitcha\.soc\.go\.th/i.test(url)
-  return {
-    pending: true,
-    source: isRatcha ? 'ราชกิจจานุเบกษา' : 'เอกสาร PDF',
-    url,
-    suggested: { name: '', ministry: '', hierarchy_level: '4', effective_date: '' },
-    summary:
-      'ยังไม่ได้เชื่อมต่อบริการอ่านเอกสาร — เมื่อสร้าง Skill / Edge Function ชื่อ "read-law" ' +
-      'ที่รับ { url } และคืน { summary, suggested } แล้ว ระบบจะดึงเนื้อหาจาก ' + url +
-      ' มาสรุปและให้ลงทะเบียนได้อัตโนมัติ',
-    requirements: [],
-  }
-}
-
-// ── ShawPat OSH-law updates feed ────────────────────────────────
-// Pulls law updates from shawpat.or.th/th/other-service/osh-law via
-// Supabase Edge Function `shawpat-updates`. Returns cached/sample rows
-// until the scraper backend is connected.
-export async function fetchShawpatUpdates() {
-  if (hasSupabase && supabase.functions) {
-    try {
-      const { data, error } = await supabase.functions.invoke('shawpat-updates')
-      if (!error && Array.isArray(data?.items)) return data.items
-    } catch (_) { /* fall through */ }
-  }
-  // Sample feed (placeholder until scraper is connected)
-  return [
-    { id: 's1', title: 'ตัวอย่าง: ประกาศกรมสวัสดิการและคุ้มครองแรงงาน เรื่องหลักเกณฑ์ความปลอดภัย', date: '2026-05-20', source: 'ShawPat · OSH Law', url: 'https://www.shawpat.or.th/th/other-service/osh-law', pending: true },
-    { id: 's2', title: 'ตัวอย่าง: กฎกระทรวงกำหนดมาตรฐานการตรวจสุขภาพลูกจ้าง', date: '2026-04-11', source: 'ShawPat · OSH Law', url: 'https://www.shawpat.or.th/th/other-service/osh-law', pending: true },
-  ]
 }
