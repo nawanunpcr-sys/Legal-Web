@@ -308,15 +308,41 @@ export default function App(){
 }
 
 /* ─────────────────────────── DASHBOARD ─────────────────────────── */
-function Ring({pct}){
+function Ring({pct,met=0,nc=0}){
   const r=62, c=2*Math.PI*r
-  // show 1 decimal unless it's a whole number (e.g. 100, or 98.8)
-  const txt = Number.isInteger(pct) ? pct : pct.toFixed(1)
-  return <div className="ring"><svg width="150" height="150" viewBox="0 0 150 150">
-    <circle cx="75" cy="75" r={r} fill="none" stroke="var(--line-soft)" strokeWidth="14"/>
-    <circle cx="75" cy="75" r={r} fill="none" stroke="var(--brand)" strokeWidth="14" strokeLinecap="round"
-      strokeDasharray={c} strokeDashoffset={c-(c*pct/100)} style={{transition:'stroke-dashoffset 1s'}}/>
-  </svg><div className="center"><div className="pct">{txt}%</div><div className="pl">สอดคล้อง</div></div></div>
+  const req = met+nc
+  const metFrac = req? met/req : 1
+  const ncFrac  = req? nc/req  : 0
+  const gap = req && nc>0 ? 3 : 0
+  const [hover,setHover]=useState(null)
+  const fmt = n => Number.isInteger(n)?n:n.toFixed(1)
+  const center =
+    hover==='met' ? {big:met, lab:'ข้อสอดคล้อง', col:'var(--ok)'} :
+    hover==='nc'  ? {big:nc,  lab:'ยังไม่สอดคล้อง', col:'var(--bad)'} :
+                    {big:fmt(pct)+'%', lab:'สอดคล้อง', col:'var(--brand)'}
+  return <div className="ring">
+    <svg width="150" height="150" viewBox="0 0 150 150">
+      <defs>
+        <linearGradient id="rgOk" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#3ad07e"/><stop offset="1" stopColor="#1f9d57"/></linearGradient>
+        <linearGradient id="rgBad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ff6b5e"/><stop offset="1" stopColor="#d6342a"/></linearGradient>
+      </defs>
+      <circle cx="75" cy="75" r={r} fill="none" stroke="var(--line-soft)" strokeWidth="13"/>
+      <circle cx="75" cy="75" r={r} fill="none" stroke="url(#rgOk)" strokeLinecap="round"
+        strokeWidth={hover==='met'?17:13}
+        strokeDasharray={`${Math.max(0,c*metFrac-gap)} ${c}`} strokeDashoffset={0}
+        style={{transition:'stroke-dashoffset 1s var(--ease-out), stroke-width .18s',cursor:'pointer'}}
+        onMouseEnter={()=>setHover('met')} onMouseLeave={()=>setHover(null)}/>
+      {nc>0 && <circle cx="75" cy="75" r={r} fill="none" stroke="url(#rgBad)" strokeLinecap="round"
+        strokeWidth={hover==='nc'?17:13}
+        strokeDasharray={`${Math.max(0,c*ncFrac-gap)} ${c}`} strokeDashoffset={-c*metFrac}
+        style={{transition:'stroke-dashoffset 1s var(--ease-out), stroke-width .18s',cursor:'pointer'}}
+        onMouseEnter={()=>setHover('nc')} onMouseLeave={()=>setHover(null)}/>}
+    </svg>
+    <div className="center">
+      <div className="pct" style={{color:center.col}}>{center.big}</div>
+      <div className="pl">{center.lab}</div>
+    </div>
+  </div>
 }
 function CatBars({laws,cats}){
   const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
@@ -496,7 +522,7 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[]}){
 
     <div className="cols">
       <div className="panel"><div className="panel-h"><h3>อัตราความสอดคล้อง</h3><span className="sub" style={{marginLeft:'auto'}}>{winLabel}</span></div>
-        <div className="panel-b"><div className="ring-wrap"><Ring pct={stats.pct}/>
+        <div className="panel-b"><div className="ring-wrap"><Ring pct={stats.pct} met={stats.met} nc={stats.nc}/>
           <div className="legend">
             <div className="row"><span className="dot" style={{background:'var(--ok)'}}/>ข้อกำหนดสอดคล้อง (C)<b className="num">{stats.met}</b></div>
             <div className="row"><span className="dot" style={{background:'var(--bad)'}}/>ยังไม่สอดคล้อง (NC)<b className="num">{stats.nc}</b></div>
