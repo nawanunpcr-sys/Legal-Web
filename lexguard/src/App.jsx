@@ -14,6 +14,14 @@ import { buildReport } from './components/report.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
 
 const prog = l => !l.reqs.length ? 100 : Math.round(l.reqs.filter(r=>r.status==='met').length/l.reqs.length*100)
+// Extract a Buddhist-era (พ.ศ.) year from the messy free-text issue_date
+const lawBEYear = s => {
+  if(!s) return null
+  const four = String(s).match(/25\d\d/); if(four) return +four[0]
+  const nums = String(s).match(/\d{1,4}/g); if(!nums) return null
+  for(let i=nums.length-1;i>=0;i--){ const n=+nums[i]; if(n>=40&&n<=80) return 2500+n }
+  return null
+}
 const thDate = s => { if(!s) return '—'; const m=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; const d=new Date(s); return d.getDate()+' '+m[d.getMonth()]+' '+(d.getFullYear()+543) }
 const daysTo = s => Math.ceil((new Date(s)-new Date())/86400000)
 const Pill = ({s}) => <span className={'pill '+(STATUS[s]?.cls||'p-ok')}>{STATUS[s]?.label||s}</span>
@@ -295,6 +303,54 @@ function CatBars({laws,cats}){
       <div className="track"><div className="fill" style={{width:p+'%',background:c.color}}/></div></div>
   })
 }
+function YearSummary({laws}){
+  const { years, maxCount } = useMemo(()=>{
+    const m={}
+    laws.forEach(l=>{
+      const y=lawBEYear(l.issue_date)
+      const key = y || 0
+      const o = m[key] || (m[key]={count:0,req:0,met:0})
+      o.count++
+      l.reqs.forEach(r=>{ o.req++; if(r.status==='met') o.met++ })
+    })
+    const entries=Object.entries(m).map(([k,v])=>({year:+k, ...v, pct:v.req?Math.round(v.met/v.req*100):100}))
+    // numbered years ascending, "unknown" (0) last
+    entries.sort((a,b)=> (a.year===0?1:b.year===0?-1:a.year-b.year))
+    return { years:entries, maxCount: Math.max(1,...entries.map(e=>e.count)) }
+  },[laws])
+
+  return (
+    <div className="panel" style={{marginTop:16}}>
+      <div className="panel-h"><h3>สรุปกฎหมายและความสอดคล้องรายปี (พ.ศ.)</h3>
+        <span className="sub" style={{marginLeft:'auto'}}>จำนวนกฎหมายที่ออก และอัตราความสอดคล้องในแต่ละปี</span></div>
+      <div className="tablewrap"><table>
+        <thead><tr><th style={{width:110}}>ปี (พ.ศ.)</th><th>จำนวนกฎหมายที่ออก</th><th style={{width:90}}>ข้อกำหนด</th><th style={{width:200}}>ความสอดคล้อง</th></tr></thead>
+        <tbody>
+          {years.map(y=>(
+            <tr key={y.year} style={{cursor:'default'}}>
+              <td><b className="num">{y.year===0?'ไม่ระบุปี':y.year}</b></td>
+              <td>
+                <div className="mini-prog">
+                  <div className="track" style={{flex:'none',width:'62%'}}><div className="fill" style={{width:(y.count/maxCount*100)+'%',background:'var(--brand)'}}/></div>
+                  <span className="num">{y.count} ฉบับ</span>
+                </div>
+              </td>
+              <td className="num" style={{fontSize:12.5,color:'var(--ink-soft)'}}>{y.met}/{y.req}</td>
+              <td>
+                <div className="mini-prog">
+                  <div className="track"><div className="fill" style={{width:y.pct+'%',background:y.pct===100?'var(--ok)':y.pct>=70?'var(--review)':'var(--bad)'}}/></div>
+                  <span className="num" style={{color:y.pct===100?'var(--ok)':y.pct<70?'var(--bad)':'var(--ink-soft)'}}>{y.pct}%</span>
+                </div>
+              </td>
+            </tr>
+          ))}
+          {years.length===0 && <tr><td colSpan="4" style={{textAlign:'center',color:'var(--ink-faint)',padding:24}}>ยังไม่มีข้อมูลกฎหมาย</td></tr>}
+        </tbody>
+      </table></div>
+    </div>
+  )
+}
+
 function Dashboard({laws,cats,stats,catMap,onOpen}){
   const bad=laws.filter(l=>l.status==='bad')
   const cards=[
@@ -322,6 +378,7 @@ function Dashboard({laws,cats,stats,catMap,onOpen}){
       <div className="panel"><div className="panel-h"><h3>ความสอดคล้องตามหมวดกฎหมาย</h3></div>
         <div className="panel-b"><CatBars laws={laws} cats={cats}/></div></div>
     </div>
+    <YearSummary laws={laws}/>
     <div className="panel" style={{marginTop:16}}>
       <div className="panel-h"><h3>รายการที่ยังไม่สอดคล้อง — ต้องติดตาม</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกเพื่อดูรายละเอียด</span></div>
       <div className="tablewrap"><table><thead><tr><th>รหัส / ชื่อกฎหมาย</th><th>หมวด</th><th>กระทรวง</th><th>สถานะ</th></tr></thead><tbody>
