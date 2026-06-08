@@ -226,7 +226,9 @@ export default function App(){
   return (
     <div className={'app'+(navOpen?'':' nav-collapsed')}>
       <aside className={'sidebar'+(navOpen?'':' collapsed')}>
-        <div className="brand">
+        <div className="brand" role="button" tabIndex={0} title="กลับหน้าหลัก"
+          onClick={()=>setView('dashboard')}
+          onKeyDown={e=>{ if(e.key==='Enter'||e.key===' ') setView('dashboard') }}>
           <div className="brand-mark">CR</div>
           <h1>ComplyRegister</h1>
           <span>ทะเบียนกฎหมาย SHE</span>
