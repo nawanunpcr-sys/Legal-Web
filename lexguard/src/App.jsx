@@ -321,7 +321,7 @@ function Ring({pct,met=0,nc=0}){
   const center =
     hover==='met' ? {big:met, lab:'ข้อสอดคล้อง', col:'var(--ok)'} :
     hover==='nc'  ? {big:nc,  lab:'ยังไม่สอดคล้อง', col:'var(--bad)'} :
-                    {big:fmt(pct)+'%', lab:'สอดคล้อง', col:'var(--brand)'}
+                    {big:fmt(pct)+'%', lab:'สอดคล้อง', col:'var(--ok)'}
   return <div className="ring">
     <svg width="150" height="150" viewBox="0 0 150 150">
       <defs>
@@ -528,7 +528,6 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[]}){
           <div className="legend">
             <div className="row"><span className="dot" style={{background:'var(--ok)'}}/>ข้อกำหนดสอดคล้อง (C)<b className="num">{stats.met}</b></div>
             <div className="row"><span className="dot" style={{background:'var(--bad)'}}/>ยังไม่สอดคล้อง (NC)<b className="num">{stats.nc}</b></div>
-            <div className="row"><span className="dot" style={{background:'var(--brand)'}}/>กฎหมายในช่วงที่เลือก<b className="num">{stats.total}</b></div>
           </div></div></div></div>
       <div className="panel"><div className="panel-h"><h3>ความสอดคล้องตามหมวดกฎหมาย</h3></div>
         <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div></div>
