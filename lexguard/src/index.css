@@ -102,6 +102,7 @@ body {
 .sidebar {
   width: 244px;
   flex-shrink: 0;
+  transition: width .28s var(--ease-out), opacity .2s var(--ease-out);
   background: var(--sb-bg);
   backdrop-filter: saturate(180%) blur(24px);
   -webkit-backdrop-filter: saturate(180%) blur(24px);
@@ -227,10 +228,30 @@ body {
 .side-foot .nm { font-size: 12px; color: var(--ink); font-weight: 600; line-height: 1.2 }
 .side-foot .rl { font-size: 11px; color: var(--sb-dim); margin-top: 1px }
 
+/* collapsed sidebar */
+.sidebar.collapsed { width: 0; opacity: 0; overflow: hidden; border-right: none; pointer-events: none }
+
 /* ═══════════════════════════════════════════════════════════════
    MAIN AREA
    ═══════════════════════════════════════════════════════════════ */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0 }
+
+/* sidebar toggle button (topbar) */
+.navtoggle {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  display: inline-flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3.5px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.03);
+  transition: border-color .15s, background .15s;
+}
+.navtoggle:hover { border-color: var(--brand); background: var(--brand-tint) }
+.navtoggle span { display: block; width: 16px; height: 2px; border-radius: 2px; background: var(--ink-soft) }
+.navtoggle:hover span { background: var(--brand) }
 
 /* topbar — vibrancy blur, clean, structurally simple */
 .topbar {
