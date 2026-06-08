@@ -358,7 +358,7 @@ function Timeline({laws,catMap,onOpen,curBE,fromBE}){
 
   return (
     <div className="panel" style={{marginTop:16}}>
-      <div className="panel-h"><h3>ไทม์ไลน์การเปลี่ยนแปลงกฎหมาย</h3>
+      <div className="panel-h"><h3>ไทม์ไลน์การเปลี่ยนแปลงกฎหมาย (3 ปีย้อนหลัง)</h3>
         <div style={{display:'flex',gap:5,marginLeft:'auto'}}>
           <span className={'chip'+(mode==='added'?' active':'')} onClick={()=>setMode('added')}>กฎหมายที่เพิ่ม/ออกใหม่</span>
           <span className={'chip'+(mode==='repealed'?' active':'')} onClick={()=>setMode('repealed')}>กฎหมายที่ยกเลิก</span>
@@ -442,12 +442,10 @@ function ActivityTimeline({activity,onOpenLaw,lawById}){
 function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[]}){
   const lawById = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
   const curBE = new Date().getFullYear()+543
-  const [win,setWin]=useState(3)   // 3 | 5 | 0 (=ทั้งหมด)
-  const fromBE = win===0 ? -Infinity : curBE-win+1
+  const tlFromBE = curBE-2   // ไทม์ไลน์: 3 ปีย้อนหลัง
 
-  const inWin = l => win===0 ? true : (()=>{ const y=lawBEYear(l.issue_date); return y!=null && y>=fromBE })()
   const active = useMemo(()=>laws.filter(l=>l.status!=='repealed'),[laws])
-  const fLaws  = useMemo(()=>active.filter(inWin),[active,win])
+  const fLaws  = active   // ช่วงเวลา: ทั้งหมด
 
   const stats = useMemo(()=>{
     let req=0,met=0; fLaws.forEach(l=>l.reqs.forEach(r=>{req++;if(r.status==='met')met++}))
@@ -456,11 +454,11 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[]}){
 
   const bad=fLaws.filter(l=>l.status==='bad')
   const newUpdates=updates.filter(u=>u.status==='new')
-  const winLabel = win===0?'ทั้งหมด':`${win} ปีล่าสุด (พ.ศ. ${curBE-win+1}–${curBE})`
+  const winLabel = 'ทั้งหมด'
   const cards=[
-    {cls:'s-total', lab:'กฎหมายในช่วงที่เลือก', val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด'},
+    {cls:'s-total', lab:'กฎหมายทั้งหมด',          val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด'},
     {cls:'s-ok',    lab:'ข้อกำหนดที่สอดคล้อง',  val:stats.met,   unit:'ข้อ',  delta:stats.pct.toFixed(1)+'% ของข้อกำหนด'},
-    {cls:'s-warn',  lab:'ข้อกำหนดทั้งหมด',       val:stats.req,   unit:'ข้อ',  delta:'ในช่วงที่เลือก'},
+    {cls:'s-warn',  lab:'ข้อกำหนดทั้งหมด',       val:stats.req,   unit:'ข้อ',  delta:'ประเมินครบทุกข้อ'},
     {cls:'s-bad',   lab:'ยังไม่สอดคล้อง',        val:stats.nc,    unit:'ข้อ',  delta:'ต้องติดตาม'},
   ]
   const recent = activity.slice(0,4)
@@ -488,14 +486,6 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[]}){
       </div>
     </div>
 
-    <div className="filterbar">
-      <span style={{fontSize:12.5,color:'var(--ink-faint)',marginRight:4}}>ช่วงเวลา:</span>
-      <span className={'chip'+(win===3?' active':'')} onClick={()=>setWin(3)}>3 ปีล่าสุด</span>
-      <span className={'chip'+(win===5?' active':'')} onClick={()=>setWin(5)}>5 ปีล่าสุด</span>
-      <span className={'chip'+(win===0?' active':'')} onClick={()=>setWin(0)}>ทั้งหมด</span>
-      <span className="right">{winLabel}</span>
-    </div>
-
     <div className="grid stats">
       {cards.map((c,i)=>(<div className={'stat '+c.cls} key={i}>
         <div className="lab">{c.lab}</div>
@@ -517,7 +507,7 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[]}){
     </div>
 
     <ActivityTimeline activity={activity} onOpenLaw={onOpen} lawById={lawById}/>
-    <Timeline laws={laws} catMap={catMap} onOpen={onOpen} curBE={curBE} fromBE={fromBE}/>
+    <Timeline laws={laws} catMap={catMap} onOpen={onOpen} curBE={curBE} fromBE={tlFromBE}/>
 
     <div className="panel" style={{marginTop:16}}>
       <div className="panel-h"><h3>รายการที่ยังไม่สอดคล้อง — ต้องติดตาม</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกเพื่อดูรายละเอียด</span></div>
