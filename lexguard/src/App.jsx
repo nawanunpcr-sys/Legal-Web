@@ -6,6 +6,7 @@ import { supabase, hasSupabase, fetchAll,
          dismissNotification,
          fetchComplianceMonths, toggleMonthCheck,
          fetchStaging, fetchUpdates, addStagedLaw, dismissStaged, setUpdateStatus,
+         logActivity, fetchActivity,
          getSession, onAuthChange, signOut,
          STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
 import LawDrawer from './components/LawDrawer.jsx'
@@ -76,6 +77,7 @@ export default function App(){
   const [months,setMonths]   = useState([])
   const [staging,setStaging] = useState([])
   const [updates,setUpdates] = useState([])
+  const [activity,setActivity] = useState([])
 
   // auth gate
   useEffect(()=>{
@@ -88,16 +90,16 @@ export default function App(){
   const authed = !!session || session==='demo'
 
   async function reloadSkills(){
-    try{ const [s,u] = await Promise.all([fetchStaging(), fetchUpdates()]); setStaging(s); setUpdates(u) }
+    try{ const [s,u,a] = await Promise.all([fetchStaging(), fetchUpdates(), fetchActivity()]); setStaging(s); setUpdates(u); setActivity(a) }
     catch(e){ console.warn('skills reload error',e) }
   }
 
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, s, u] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates()])
+      const [d, mData, s, u, a] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity()])
       setCats(d.cats); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setStaging(s); setUpdates(u)
+      setMonths(mData); setStaging(s); setUpdates(u); setActivity(a)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -152,22 +154,38 @@ export default function App(){
       return {...l,reqs,status}
     }))
     setOpenLaw(prev=>prev&&prev.id===law.id?{...prev,reqs:prev.reqs.map(r=>r.id===req.id?{...r,status:next}:r),status:prev.reqs.map(r=>r.id===req.id?{...r,status:next}:r).some(r=>r.status==='unmet')?'bad':'ok'}:prev)
-    try{ await setRequirementStatus(req.id,next); await recomputeLawStatus(law.id,law.reqs.map(r=>r.id===req.id?{...r,status:next}:r)) }
+    try{
+      await setRequirementStatus(req.id,next); await recomputeLawStatus(law.id,law.reqs.map(r=>r.id===req.id?{...r,status:next}:r))
+      await logActivity({ action:'requirement', law_id:law.id, law_code:law.code, law_name:law.name, detail:(next==='met'?'ปรับเป็นสอดคล้อง: ':'ปรับเป็นยังไม่สอดคล้อง: ')+(req.text||'').slice(0,80) })
+      fetchActivity().then(setActivity)
+    }
     catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleRepeal(law, data){
-    try{ await repealLaw(law.id,data); setLaws(prev=>prev.map(l=>l.id===law.id?{...l,status:'repealed',...data}:l)); setOpenLaw(null) }
+    try{
+      await repealLaw(law.id,data); setLaws(prev=>prev.map(l=>l.id===law.id?{...l,status:'repealed',...data}:l)); setOpenLaw(null)
+      await logActivity({ action:'repeal', law_id:law.id, law_code:law.code, law_name:law.name, detail:data?.repeal_reason||'ยกเลิก/แทนที่' })
+      fetchActivity().then(setActivity)
+    }
     catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleRestore(law){
-    try{ await restoreLaw(law.id); setLaws(prev=>prev.map(l=>l.id===law.id?{...l,status:'ok',repeal_date:null,repeal_reason:null,replaced_by_code:null,repealed_by_authority:null}:l)); setOpenLaw(null) }
+    try{
+      await restoreLaw(law.id); setLaws(prev=>prev.map(l=>l.id===law.id?{...l,status:'ok',repeal_date:null,repeal_reason:null,replaced_by_code:null,repealed_by_authority:null}:l)); setOpenLaw(null)
+      await logActivity({ action:'restore', law_id:law.id, law_code:law.code, law_name:law.name, detail:'กู้คืนกฎหมาย' })
+      fetchActivity().then(setActivity)
+    }
     catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleCreateLaw(fields){
-    try{ const newLaw=await createLaw(fields); setLaws(prev=>[...prev,newLaw]) }
+    try{
+      const newLaw=await createLaw(fields); setLaws(prev=>[...prev,newLaw])
+      await logActivity({ action:'create', law_id:newLaw.id, law_code:newLaw.code, law_name:newLaw.name, detail:'เพิ่มกฎหมายใหม่เข้าทะเบียน' })
+      fetchActivity().then(setActivity)
+    }
     catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
@@ -261,7 +279,7 @@ export default function App(){
 
         <div className="content">
           {err && <div className="banner">{err}</div>}
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches}/>}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity}/>}
           {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} allLaws={laws}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}/>}
           {view==='compliance'    && <Compliance    laws={activeLaws} cats={cats} stats={stats} onOpen={setOpenLaw}/>}
@@ -408,7 +426,50 @@ function Timeline({laws,catMap,onOpen,curBE,fromBE}){
   )
 }
 
-function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]}){
+const ACT_META = {
+  create:      { t:'เพิ่มใหม่',   c:'var(--ok)'    },
+  import:      { t:'นำเข้า (AI)', c:'var(--brand)' },
+  repeal:      { t:'ยกเลิก',      c:'var(--bad)'   },
+  restore:     { t:'กู้คืน',       c:'var(--review)'},
+  requirement: { t:'แก้สถานะ',    c:'var(--warn)'  },
+}
+function ActivityTimeline({activity,onOpenLaw,lawById}){
+  const days = useMemo(()=>{
+    const g={}
+    activity.forEach(a=>{ const d=(a.created_at||'').slice(0,10); (g[d]=g[d]||[]).push(a) })
+    return Object.entries(g).sort((a,b)=>b[0].localeCompare(a[0]))
+  },[activity])
+  const fullDate = s => { if(!s) return ''; const m=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; const d=new Date(s); return d.getDate()+' '+m[d.getMonth()]+' '+(d.getFullYear()+543) }
+  const hhmm = s => { const d=new Date(s); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0') }
+  return (
+    <div className="panel" style={{marginTop:16}}>
+      <div className="panel-h"><h3>ไทม์ไลน์เหตุการณ์ (ตามวันที่จริง)</h3>
+        <span className="sub" style={{marginLeft:'auto'}}>บันทึกอัตโนมัติทุกครั้งที่เพิ่ม / แก้ / ยกเลิก / นำเข้า</span></div>
+      <div className="panel-b">
+        {days.length===0 && <div style={{textAlign:'center',color:'var(--ink-faint)',padding:24,fontSize:13}}>ยังไม่มีเหตุการณ์ — เมื่อมีการเพิ่ม/แก้/ยกเลิกกฎหมาย จะบันทึกที่นี่พร้อมวันเวลา</div>}
+        {days.map(([date,items])=>(
+          <div key={date} className="tl-year">
+            <div className="tl-head"><span className="tl-dot"/><b style={{fontSize:14}}>{fullDate(date)}</b><span className="sub" style={{marginLeft:10}}>{items.length} เหตุการณ์</span></div>
+            <div className="tl-items">
+              {items.map(a=>{ const m=ACT_META[a.action]||{t:a.action,c:'var(--ink-faint)'}; const law=lawById[a.law_id]
+                return (
+                  <div key={a.id} className="tl-row" onClick={()=>law&&onOpenLaw(law)}>
+                    <span className="tl-tag" style={{background:m.c}}>{m.t}</span>
+                    <span className="num" style={{fontSize:11,color:'var(--ink-faint)',minWidth:38}}>{hhmm(a.created_at)}</span>
+                    {a.law_code && <span className="law-code" style={{minWidth:58}}>{a.law_code}</span>}
+                    <span style={{flex:1,fontSize:13}}>{a.detail||a.law_name}</span>
+                  </div>
+                )})}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[]}){
+  const lawById = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
   const curBE = new Date().getFullYear()+543
   const [win,setWin]=useState(3)   // 3 | 5 | 0 (=ทั้งหมด)
   const fromBE = win===0 ? -Infinity : curBE-win+1
@@ -470,6 +531,7 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]}){
         <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div></div>
     </div>
 
+    <ActivityTimeline activity={activity} onOpenLaw={onOpen} lawById={lawById}/>
     <YearSummary laws={fLaws}/>
     <Timeline laws={laws} catMap={catMap} onOpen={onOpen} curBE={curBE} fromBE={fromBE}/>
 

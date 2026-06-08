@@ -187,6 +187,19 @@ export async function dismissNotification(id) {
   await supabase.from('lg_notification_log').update({ dismissed_at: new Date().toISOString() }).eq('id', id)
 }
 
+// ---- Activity log (real dated timeline) ----
+export async function logActivity({ action, law_id = null, law_code = '', law_name = '', detail = '' }) {
+  if (!hasSupabase) return
+  try {
+    await supabase.from('lg_activity_log').insert({ action, law_id, law_code, law_name, detail })
+  } catch (e) { console.warn('logActivity failed', e) }
+}
+export async function fetchActivity(limit = 60) {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_activity_log').select('*').order('created_at', { ascending: false }).limit(limit)
+  return data || []
+}
+
 // ---- AI Skills: staging (import/approve) + update watcher ----
 export async function fetchStaging() {
   if (!hasSupabase) return []
@@ -222,6 +235,7 @@ export async function addStagedLaw(rows) {
   const { data: allReq } = await supabase.from('lg_requirements').select('status').eq('law_id', law.id)
   await recomputeLawStatus(law.id, allReq || [])
   await supabase.from('lg_import_staging').update({ status: 'added' }).in('id', rows.map(r => r.id))
+  await logActivity({ action: 'import', law_id: law.id, law_code: first.law_code, law_name: first.law_name || first.law_code, detail: `นำเข้าจาก AI · ${rows.length} ข้อกำหนด` })
 }
 export async function dismissStaged(ids) {
   await supabase.from('lg_import_staging').update({ status: 'dismissed' }).in('id', ids)
