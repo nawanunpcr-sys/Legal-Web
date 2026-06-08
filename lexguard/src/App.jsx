@@ -485,8 +485,8 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[]}){
   const winLabel = 'ทั้งหมด'
   const cards=[
     {cls:'s-total', lab:'กฎหมายทั้งหมด',          val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด'},
-    {cls:'s-ok',    lab:'ข้อกำหนดที่สอดคล้อง',  val:stats.met,   unit:'ข้อ',  delta:stats.pct.toFixed(1)+'% ของข้อกำหนด'},
     {cls:'s-warn',  lab:'ข้อกำหนดทั้งหมด',       val:stats.req,   unit:'ข้อ',  delta:'ประเมินครบทุกข้อ'},
+    {cls:'s-ok',    lab:'ข้อกำหนดที่สอดคล้อง',  val:stats.met,   unit:'ข้อ',  delta:stats.pct.toFixed(1)+'% ของข้อกำหนด'},
     {cls:'s-bad',   lab:'ยังไม่สอดคล้อง',        val:stats.nc,    unit:'ข้อ',  delta:'ต้องติดตาม'},
   ]
   const recent = activity.slice(0,4)
