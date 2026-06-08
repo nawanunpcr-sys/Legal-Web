@@ -261,7 +261,7 @@ export default function App(){
 
         <div className="content">
           {err && <div className="banner">{err}</div>}
-          {view==='dashboard'     && <Dashboard     laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw}/>}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches}/>}
           {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} allLaws={laws}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}/>}
           {view==='compliance'    && <Compliance    laws={activeLaws} cats={cats} stats={stats} onOpen={setOpenLaw}/>}
@@ -351,15 +351,95 @@ function YearSummary({laws}){
   )
 }
 
-function Dashboard({laws,cats,stats,catMap,onOpen}){
-  const bad=laws.filter(l=>l.status==='bad')
+const beYearFromDate = d => { if(!d) return null; const x=new Date(d); return isNaN(x)?null:x.getFullYear()+543 }
+
+function Timeline({laws,catMap,onOpen,curBE,fromBE}){
+  const byYear = useMemo(()=>{
+    const ev=[]
+    laws.forEach(l=>{
+      if(l.status!=='repealed'){
+        const y=lawBEYear(l.issue_date)
+        if(y!=null && y>=fromBE) ev.push({year:y, kind:y===curBE?'new':'effective', law:l})
+      }
+      const ry=beYearFromDate(l.repeal_date)
+      if(ry!=null && ry>=fromBE) ev.push({year:ry, kind:'repealed', law:l})
+    })
+    const g={}; ev.forEach(e=>{(g[e.year]=g[e.year]||[]).push(e)})
+    return Object.entries(g).map(([y,items])=>({
+      year:+y, items,
+      nNew:items.filter(i=>i.kind==='new').length,
+      nEff:items.filter(i=>i.kind==='effective').length,
+      nRep:items.filter(i=>i.kind==='repealed').length,
+    })).sort((a,b)=>b.year-a.year)
+  },[laws,fromBE,curBE])
+
+  const KIND={ new:{t:'ใหม่',c:'var(--ok)'}, effective:{t:'บังคับใช้',c:'var(--brand)'}, repealed:{t:'ยกเลิก',c:'var(--bad)'} }
+
+  return (
+    <div className="panel" style={{marginTop:16}}>
+      <div className="panel-h"><h3>ไทม์ไลน์การเปลี่ยนแปลงกฎหมาย</h3>
+        <span className="sub" style={{marginLeft:'auto'}}>เพิ่มใหม่ · บังคับใช้ · ยกเลิก — ตามปีที่มีผล</span></div>
+      <div className="panel-b">
+        {byYear.length===0 && <div style={{textAlign:'center',color:'var(--ink-faint)',padding:24,fontSize:13}}>ไม่มีรายการในช่วงปีที่เลือก</div>}
+        {byYear.map(yr=>(
+          <div key={yr.year} className="tl-year">
+            <div className="tl-head">
+              <span className="tl-dot"/>
+              <b className="num" style={{fontSize:15}}>{yr.year}</b>
+              <span className="sub" style={{marginLeft:10}}>
+                {yr.nNew>0 && <span style={{color:'var(--ok)'}}>ใหม่ {yr.nNew} · </span>}
+                บังคับใช้ {yr.nEff} ฉบับ{yr.nRep>0 && <span style={{color:'var(--bad)'}}> · ยกเลิก {yr.nRep}</span>}
+              </span>
+            </div>
+            <div className="tl-items">
+              {yr.items.slice(0,40).map((e,i)=>(
+                <div key={i} className="tl-row" onClick={()=>onOpen(e.law)}>
+                  <span className="tl-tag" style={{background:KIND[e.kind].c}}>{KIND[e.kind].t}</span>
+                  <span className="law-code" style={{minWidth:58}}>{e.law.code}</span>
+                  <span style={{flex:1,fontSize:13}}>{e.law.name.slice(0,80)}{e.law.name.length>80?'…':''}</span>
+                  <Tag c={e.law.cat} color={catMap[e.law.cat]?.color}/>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]}){
+  const curBE = new Date().getFullYear()+543
+  const [win,setWin]=useState(3)   // 3 | 5 | 0 (=ทั้งหมด)
+  const fromBE = win===0 ? -Infinity : curBE-win+1
+
+  const inWin = l => win===0 ? true : (()=>{ const y=lawBEYear(l.issue_date); return y!=null && y>=fromBE })()
+  const active = useMemo(()=>laws.filter(l=>l.status!=='repealed'),[laws])
+  const fLaws  = useMemo(()=>active.filter(inWin),[active,win])
+
+  const stats = useMemo(()=>{
+    let req=0,met=0; fLaws.forEach(l=>l.reqs.forEach(r=>{req++;if(r.status==='met')met++}))
+    return { total:fLaws.length, req, met, nc:req-met, pct:req?Math.round(met/req*100):100 }
+  },[fLaws])
+
+  const bad=fLaws.filter(l=>l.status==='bad')
+  const newUpdates=updates.filter(u=>u.status==='new')
+  const winLabel = win===0?'ทั้งหมด':`${win} ปีล่าสุด (พ.ศ. ${curBE-win+1}–${curBE})`
   const cards=[
-    {cls:'s-total', lab:'กฎหมายที่มีผลบังคับใช้', val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด'},
-    {cls:'s-ok',    lab:'ข้อกำหนดที่สอดคล้อง',    val:stats.met,   unit:'ข้อ',  delta:stats.pct+'% ของข้อกำหนด'},
-    {cls:'s-warn',  lab:'ข้อกำหนดทั้งหมด',         val:stats.req,   unit:'ข้อ',  delta:'ประเมินครบทุกข้อ'},
-    {cls:'s-bad',   lab:'ยังไม่สอดคล้อง',          val:stats.nc,    unit:'ข้อ',  delta:'ต้องติดตาม'},
+    {cls:'s-total', lab:'กฎหมายในช่วงที่เลือก', val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด'},
+    {cls:'s-ok',    lab:'ข้อกำหนดที่สอดคล้อง',  val:stats.met,   unit:'ข้อ',  delta:stats.pct+'% ของข้อกำหนด'},
+    {cls:'s-warn',  lab:'ข้อกำหนดทั้งหมด',       val:stats.req,   unit:'ข้อ',  delta:'ในช่วงที่เลือก'},
+    {cls:'s-bad',   lab:'ยังไม่สอดคล้อง',        val:stats.nc,    unit:'ข้อ',  delta:'ต้องติดตาม'},
   ]
   return <div className="view">
+    <div className="filterbar">
+      <span style={{fontSize:12.5,color:'var(--ink-faint)',marginRight:4}}>ช่วงเวลา:</span>
+      <span className={'chip'+(win===3?' active':'')} onClick={()=>setWin(3)}>3 ปีล่าสุด</span>
+      <span className={'chip'+(win===5?' active':'')} onClick={()=>setWin(5)}>5 ปีล่าสุด</span>
+      <span className={'chip'+(win===0?' active':'')} onClick={()=>setWin(0)}>ทั้งหมด</span>
+      <span className="right">{winLabel}</span>
+    </div>
+
     <div className="grid stats">
       {cards.map((c,i)=>(<div className={'stat '+c.cls} key={i}>
         <div className="lab">{c.lab}</div>
@@ -367,18 +447,32 @@ function Dashboard({laws,cats,stats,catMap,onOpen}){
         <div className="delta">{c.delta}</div>
       </div>))}
     </div>
+
+    {(newUpdates.length>0 || staging.length>0) && (
+      <div className="panel" style={{marginTop:12}}>
+        <div className="panel-h"><h3>ความเคลื่อนไหวล่าสุด</h3><span className="sub" style={{marginLeft:'auto'}}>อัปเดตรายวัน</span></div>
+        <div className="panel-b" style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+          {newUpdates.length>0 && <span className="pill p-bad">กฎหมายใหม่จาก ShawPat {newUpdates.length} รายการ</span>}
+          {staging.length>0 && <span className="pill" style={{background:'var(--brand-tint)',color:'var(--brand)'}}>รออนุมัตินำเข้า {staging.length} ฉบับ</span>}
+        </div>
+      </div>
+    )}
+
     <div className="cols">
-      <div className="panel"><div className="panel-h"><h3>อัตราความสอดคล้องโดยรวม</h3><span className="sub" style={{marginLeft:'auto'}}>รอบ 1 (ม.ค.–มี.ค.) 2569</span></div>
+      <div className="panel"><div className="panel-h"><h3>อัตราความสอดคล้อง</h3><span className="sub" style={{marginLeft:'auto'}}>{winLabel}</span></div>
         <div className="panel-b"><div className="ring-wrap"><Ring pct={stats.pct}/>
           <div className="legend">
             <div className="row"><span className="dot" style={{background:'var(--ok)'}}/>ข้อกำหนดสอดคล้อง (C)<b className="num">{stats.met}</b></div>
             <div className="row"><span className="dot" style={{background:'var(--bad)'}}/>ยังไม่สอดคล้อง (NC)<b className="num">{stats.nc}</b></div>
-            <div className="row"><span className="dot" style={{background:'var(--brand)'}}/>กฎหมายที่มีผลบังคับใช้<b className="num">{stats.total}</b></div>
+            <div className="row"><span className="dot" style={{background:'var(--brand)'}}/>กฎหมายในช่วงที่เลือก<b className="num">{stats.total}</b></div>
           </div></div></div></div>
       <div className="panel"><div className="panel-h"><h3>ความสอดคล้องตามหมวดกฎหมาย</h3></div>
-        <div className="panel-b"><CatBars laws={laws} cats={cats}/></div></div>
+        <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div></div>
     </div>
-    <YearSummary laws={laws}/>
+
+    <YearSummary laws={fLaws}/>
+    <Timeline laws={laws} catMap={catMap} onOpen={onOpen} curBE={curBE} fromBE={fromBE}/>
+
     <div className="panel" style={{marginTop:16}}>
       <div className="panel-h"><h3>รายการที่ยังไม่สอดคล้อง — ต้องติดตาม</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกเพื่อดูรายละเอียด</span></div>
       <div className="tablewrap"><table><thead><tr><th>รหัส / ชื่อกฎหมาย</th><th>หมวด</th><th>กระทรวง</th><th>สถานะ</th></tr></thead><tbody>
