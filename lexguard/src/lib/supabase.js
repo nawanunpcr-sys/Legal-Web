@@ -244,6 +244,61 @@ export async function setUpdateStatus(id, status) {
   await supabase.from('lg_law_updates').update({ status }).eq('id', id)
 }
 
+// ---- CAR / OFI ----
+export async function fetchCars() {
+  if (!hasSupabase) return []
+  const [{ data: cars }, { data: fus }, { data: aps }] = await Promise.all([
+    supabase.from('lg_car').select('*').order('id', { ascending: false }),
+    supabase.from('lg_car_followups').select('*').order('seq'),
+    supabase.from('lg_car_approvals').select('*').order('seq'),
+  ])
+  const fuBy = {}, apBy = {}
+  ;(fus || []).forEach(f => { (fuBy[f.car_id] = fuBy[f.car_id] || []).push(f) })
+  ;(aps || []).forEach(a => { (apBy[a.car_id] = apBy[a.car_id] || []).push(a) })
+  return (cars || []).map(c => ({ ...c, followups: fuBy[c.id] || [], approvals: apBy[c.id] || [] }))
+}
+export function nextCoNumber(cars) {
+  const max = (cars || []).reduce((m, c) => {
+    const n = parseInt(String(c.running_no || c.co_no || '').replace(/\D/g, ''), 10)
+    return isNaN(n) ? m : Math.max(m, n)
+  }, 0)
+  const n = max + 1
+  const run = String(n).padStart(6, '0')
+  return { running_no: run, co_no: 'CO' + run, ofi_no: 'OFI-' + run }
+}
+export async function saveCar(car, followups = [], approvals = []) {
+  const payload = {
+    co_no: car.co_no || null, ofi_no: car.ofi_no || null, running_no: car.running_no || null,
+    year: car.year ? Number(car.year) : null, status: car.status || 'open',
+    record_type: car.record_type || null, owner: car.owner || null,
+    issue_date: car.issue_date || null, auditor: car.auditor || null, supervisor: car.supervisor || null,
+    team: car.team || null, division: car.division || null, department: car.department || null,
+    finding: car.finding || null, corrective_action: car.corrective_action || null,
+    due_date: car.due_date || null, updated_at: new Date().toISOString(),
+  }
+  let carId = car.id
+  if (carId) {
+    const { error } = await supabase.from('lg_car').update(payload).eq('id', carId); if (error) throw error
+  } else {
+    const { data, error } = await supabase.from('lg_car').insert(payload).select('id').single(); if (error) throw error
+    carId = data.id
+  }
+  await supabase.from('lg_car_followups').delete().eq('car_id', carId)
+  await supabase.from('lg_car_approvals').delete().eq('car_id', carId)
+  const fu = followups.filter(f => f.check_date || f.result || f.follower || f.assessor || f.verifier)
+    .map((f, i) => ({ car_id: carId, seq: i, check_date: f.check_date || null, follower: f.follower || null,
+      assessor: f.assessor || null, verifier: f.verifier || null, result: f.result || null, conclusion: f.conclusion || null }))
+  const ap = approvals.filter(a => a.step || a.approver || a.approve_date)
+    .map((a, i) => ({ car_id: carId, seq: i, step: a.step || null, approve_date: a.approve_date || null,
+      approver: a.approver || null, status: a.status || 'approved' }))
+  if (fu.length) await supabase.from('lg_car_followups').insert(fu)
+  if (ap.length) await supabase.from('lg_car_approvals').insert(ap)
+  return carId
+}
+export async function deleteCar(id) {
+  const { error } = await supabase.from('lg_car').delete().eq('id', id); if (error) throw error
+}
+
 // ---- Monthly compliance check-off ----
 export async function fetchComplianceMonths(year) {
   if (!hasSupabase) return []

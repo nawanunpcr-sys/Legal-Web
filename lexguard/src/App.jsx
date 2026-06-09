@@ -6,10 +6,11 @@ import { supabase, hasSupabase, fetchAll,
          dismissNotification,
          fetchComplianceMonths, toggleMonthCheck,
          fetchStaging, fetchUpdates, addStagedLaw, dismissStaged, setUpdateStatus,
-         logActivity, fetchActivity,
+         logActivity, fetchActivity, fetchCars,
          getSession, onAuthChange, signOut,
          STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
 import LawDrawer from './components/LawDrawer.jsx'
+import CarOfi from './components/CarOfi.jsx'
 import Login from './components/Login.jsx'
 import { buildReport } from './components/report.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
@@ -40,6 +41,7 @@ const NAV_GROUPS = [
   ]},
   { label: 'การดำเนินการ', items: [
     { id:'comm',          label:'การสื่อสาร (ISD-86)',   icon:'chat'    },
+    { id:'car',           label:'CAR / OFI',             icon:'alert'   },
   ]},
   { label: 'วิเคราะห์ & AI', items: [
     { id:'analysis',      label:'วิเคราะห์ & สรุป',       icon:'spark'   },
@@ -56,6 +58,7 @@ const TITLES = {
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
   repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
   comm:          ['ตารางการสื่อสาร',        'การสื่อสารภายในและภายนอกองค์กร (ISD-86)'],
+  car:           ['CAR / OFI',              'คำขอให้ปฏิบัติการแก้ไข และโอกาสในการปรับปรุง'],
   analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
   staging:       ['นำเข้า / รออนุมัติ',    'รายการที่ AI สรุปไว้ รอกดเพิ่มเข้าทะเบียน'],
   updates:       ['อัปเดตกฎหมาย · ShawPat','เฝ้าระวังกฎหมายใหม่จาก ShawPat'],
@@ -79,6 +82,7 @@ export default function App(){
   const [staging,setStaging] = useState([])
   const [updates,setUpdates] = useState([])
   const [activity,setActivity] = useState([])
+  const [cars,setCars]       = useState([])
 
   // auth gate
   useEffect(()=>{
@@ -94,13 +98,14 @@ export default function App(){
     try{ const [s,u,a] = await Promise.all([fetchStaging(), fetchUpdates(), fetchActivity()]); setStaging(s); setUpdates(u); setActivity(a) }
     catch(e){ console.warn('skills reload error',e) }
   }
+  async function loadCars(){ try{ setCars(await fetchCars()) }catch(e){ console.warn('cars reload',e) } }
 
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, s, u, a] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity()])
+      const [d, mData, s, u, a, cs] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchCars()])
       setCats(d.cats); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setStaging(s); setUpdates(u); setActivity(a)
+      setMonths(mData); setStaging(s); setUpdates(u); setActivity(a); setCars(cs)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -141,10 +146,11 @@ export default function App(){
     activeLaws.forEach(l=>{ if(l.status==='bad') out.push({type:'bad',law:l,text:l.code+' ยังไม่สอดคล้อง',sub:l.name.slice(0,60)}) })
     activeLaws.forEach(l=>{ if(l.review_date){ const d=daysTo(l.review_date); if(d>=0&&d<=200) out.push({type:'review',law:l,days:d,text:l.code+' ครบกำหนดทบทวนใน '+d+' วัน',sub:thDate(l.review_date)}) }})
     comms.forEach(c=>{ if(c.next_scheduled_date){ const d=daysTo(c.next_scheduled_date); const nb=c.notify_days_before||7; if(d>=0&&d<=nb) out.push({type:'comm',comm:c,days:d,text:'การสื่อสาร: '+c.topic.slice(0,50),sub:'ครบกำหนดใน '+d+' วัน — '+thDate(c.next_scheduled_date)}) }})
+    cars.forEach(c=>{ if(c.status!=='closed'&&c.due_date){ const d=daysTo(c.due_date); if(d<0) out.push({type:'bad',goView:'car',text:'CAR เกินกำหนดแก้ไข: '+(c.co_no||''),sub:(c.finding||'').slice(0,55)}); else if(d<=60) out.push({type:'review',goView:'car',days:d,text:'CAR ใกล้ครบกำหนด: '+(c.co_no||''),sub:'อีก '+d+' วัน — '+thDate(c.due_date)}) }})
     newUpdates.slice(0,15).forEach(u=>out.push({type:'law_update',goView:'updates',text:'กฎหมายใหม่: '+u.title.slice(0,55),sub:'จาก ShawPat'+(u.published_date?' · '+u.published_date:'')}))
     notifs.filter(n=>n.type==='comm_submitted').slice(0,3).forEach(n=>out.push({type:'submitted',text:n.message,sub:thDate(n.created_at)}))
     return out.sort((a,b)=>(a.type==='bad'?-1:0)-(b.type==='bad'?-1:0))
-  },[activeLaws,comms,notifs,newUpdates])
+  },[activeLaws,comms,notifs,newUpdates,cars])
 
   async function toggleReq(law, req){
     const next = req.status==='met' ? 'unmet' : 'met'
@@ -243,6 +249,7 @@ export default function App(){
                 n.id==='compliance'    ? (stats.nc||null)         :
                 n.id==='improvements'  ? (stats.nc||null)         :
                 n.id==='repealed'      ? (repealedLaws.length||null) :
+                n.id==='car'           ? (cars.filter(c=>c.status!=='closed').length||null) :
                 n.id==='staging'       ? (stagingBatches.length||null) :
                 n.id==='updates'       ? (newUpdates.length||null)   :
                 n.id==='notifications' ? (bellNotifications.length||null) : null
@@ -292,6 +299,7 @@ export default function App(){
           {view==='improvements'  && <Improvements  laws={activeLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
+          {view==='car'           && <CarOfi        cars={cars} onReload={loadCars}/>}
           {view==='analysis'      && <Analysis      laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw} onAnalyzed={reloadSkills} goView={setView}/>}
           {view==='staging'       && <Staging       batches={stagingBatches} catMap={catMap} onAdd={handleAddStaged} onDrop={handleDropStaged}/>}
           {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}
