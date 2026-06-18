@@ -22,11 +22,24 @@ export const STATUS = {
 }
 
 export const RECURRENCE_LABELS = {
-  once:      'ครั้งเดียว',
-  monthly:   'รายเดือน',
-  quarterly: 'รายไตรมาส',
-  annually:  'รายปี',
-  asneeded:  'ตามความจำเป็น',
+  once:         'ครั้งเดียว',
+  monthly:      'รายเดือน',
+  quarterly:    'รายไตรมาส',
+  semiannually: 'ปีละ 2 ครั้ง',
+  annually:     'รายปี',
+  asneeded:     'ตามความจำเป็น',
+}
+
+// Advance a date by one recurrence interval (returns Date or null)
+export function advanceByRecurrence(baseDate, recurrence) {
+  const d = new Date(baseDate)
+  switch (recurrence) {
+    case 'monthly':      d.setMonth(d.getMonth() + 1); return d
+    case 'quarterly':    d.setMonth(d.getMonth() + 3); return d
+    case 'semiannually': d.setMonth(d.getMonth() + 6); return d
+    case 'annually':     d.setFullYear(d.getFullYear() + 1); return d
+    default:             return null  // once / asneeded
+  }
 }
 
 // ---- Auth ----
@@ -309,6 +322,85 @@ export async function fetchComplianceMonths(year) {
     .order('month')
   if (error) throw error
   return data || []
+}
+
+// ---- Government report submissions ----
+export async function fetchReports() {
+  if (!hasSupabase) return []
+  const { data, error } = await supabase.from('lg_reports').select('*').order('next_due_date', { nullsFirst: false })
+  if (error) throw error
+  return data || []
+}
+
+export async function saveReport(r) {
+  const payload = {
+    title: r.title, law_id: r.law_id || null, law_code: r.law_code || null,
+    authority: r.authority || null, responsible: r.responsible || null,
+    format: r.format || null, retention: r.retention || null, category: r.category || null,
+    timeline_text: r.timeline_text || null, trigger_type: r.trigger_type || 'fixed',
+    recurrence: r.recurrence || 'annually', offset_days: r.offset_days ?? null,
+    event_date: r.event_date || null, next_due_date: r.next_due_date || null,
+    notify_days_before: r.notify_days_before ?? 30, note: r.note || null,
+    updated_at: new Date().toISOString(),
+  }
+  if (r.id) {
+    const { error } = await supabase.from('lg_reports').update(payload).eq('id', r.id)
+    if (error) throw error
+    return r.id
+  }
+  const { data, error } = await supabase.from('lg_reports').insert(payload).select('id').single()
+  if (error) throw error
+  return data.id
+}
+
+export async function deleteReport(id) {
+  const { error } = await supabase.from('lg_reports').delete().eq('id', id)
+  if (error) throw error
+}
+
+// Set the trigger (event) date for event-based reports → compute next_due_date
+export async function setReportEvent(id, eventDate, offsetDays) {
+  const due = new Date(eventDate)
+  due.setDate(due.getDate() + (offsetDays || 0))
+  const next_due_date = due.toISOString().slice(0, 10)
+  const { error } = await supabase.from('lg_reports')
+    .update({ event_date: eventDate, next_due_date, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+  return next_due_date
+}
+
+// Mark a report as submitted → advance to next occurrence (calendar) or clear (event/once)
+export async function markReportSubmitted(id, fileRef) {
+  const { data: r, error: fe } = await supabase.from('lg_reports')
+    .select('recurrence,trigger_type,next_due_date').eq('id', id).single()
+  if (fe) throw fe
+
+  let next = null
+  if (r.trigger_type === 'fixed') {
+    const base = r.next_due_date ? new Date(r.next_due_date) : new Date()
+    const adv = advanceByRecurrence(base, r.recurrence)
+    next = adv ? adv.toISOString().slice(0, 10) : null
+  }
+  // event-based: clear due date until the next trigger date is entered
+
+  const patch = {
+    last_submitted_at: new Date().toISOString(),
+    file_reference: fileRef || null,
+    next_due_date: next,
+    event_date: r.trigger_type === 'event' ? null : undefined,
+    updated_at: new Date().toISOString(),
+  }
+  if (patch.event_date === undefined) delete patch.event_date
+  const { error } = await supabase.from('lg_reports').update(patch).eq('id', id)
+  if (error) throw error
+
+  await supabase.from('lg_notification_log').insert({
+    type: 'report_submitted', ref_id: id, ref_type: 'report',
+    message: `บันทึกการส่งรายงานเรียบร้อย${fileRef ? ` — ${fileRef}` : ''}`,
+    due_date: next,
+  })
+  return next
 }
 
 export async function toggleMonthCheck(year, month, checked) {
