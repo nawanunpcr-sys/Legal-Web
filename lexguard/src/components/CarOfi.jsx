@@ -56,6 +56,7 @@ export default function CarOfi({ cars, onReload }) {
               {c.year && <span className="tag">ปี {c.year}</span>}
               {c.owner && <span style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>Owner: {c.owner}</span>}
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => carExcel(c)}>Excel</button>
                 <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => carPDF(c)}>PDF</button>
                 <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setModal({ ...c, followups: c.followups || [], approvals: c.approvals || [] })}>แก้ไข</button>
                 <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => remove(c)}>ลบ</button>
@@ -210,4 +211,82 @@ function carPDF(c) {
   if (!w) { alert('กรุณาอนุญาต pop-up เพื่อออก PDF'); return }
   w.document.write(html); w.document.close()
   setTimeout(() => w.print(), 350)
+}
+
+/* ───── Excel (fixed-width locked table, prints without shifting) ───── */
+function carExcel(c) {
+  // base cell styles — fixed borders, wrap text, force text format so cells don't reflow
+  const B = "border:0.5pt solid #8a8a8a;padding:4px 8px;vertical-align:top;mso-number-format:'\\@';white-space:normal"
+  const K = B + ";background:#f0f3f7;font-weight:700;color:#333"
+  const HEAD = B + ";background:#0071e3;color:#fff;font-weight:700"
+  const TITLE = B + ";background:#fff;font-size:16pt;font-weight:700;border:none"
+  const td = (v, s = B, span = 1) => `<td colspan="${span}" style="${s}">${esc(v ?? '—')}</td>`
+  const kv = (k1, v1, k2, v2) => `<tr>${td(k1, K)}${td(v1, B)}${td(k2, K)}${td(v2, B)}</tr>`
+  const sec = t => `<tr>${td(t, HEAD, 4)}</tr>`
+  const full = (v, s = B) => `<tr>${td(v, s, 4)}</tr>`
+
+  let body = ''
+  body += `<tr>${td('ใบ CAR / OFI — ' + (c.co_no || ''), TITLE, 4)}</tr>`
+  body += full(`${c.ofi_no || ''}  ·  ปี ${c.year || ''}  ·  สถานะ ${c.status === 'closed' ? 'Closed' : 'Open'}  ·  Running ${c.running_no || ''}`, B + ';border:none;color:#666')
+  body += sec('ข้อมูลการตรวจประเมิน')
+  body += kv('วันที่ออก CAR', thDate(c.issue_date), 'Owner', c.owner)
+  body += kv('ผู้ตรวจประเมิน', c.auditor, 'หัวหน้างาน', c.supervisor)
+  body += kv('ทีม', c.team, 'หน่วยงาน', c.division)
+  body += kv('แผนก', c.department, 'กำหนดเสร็จ', thDate(c.due_date))
+  body += sec('ประเด็น'); body += full(c.finding)
+  body += sec('แนวทางการแก้ไข'); body += full(c.corrective_action)
+
+  ;(c.followups || []).forEach((r, i) => {
+    body += sec('การติดตามผลครั้งที่ ' + (i + 1))
+    body += kv('วันที่ตรวจ', thDate(r.check_date), 'ผู้ติดตาม', r.follower)
+    body += kv('ผู้ประเมิน', r.assessor, 'ผู้ทวนสอบ', r.verifier)
+    body += `<tr>${td('ผลการตรวจ', K)}${td(r.result, B, 3)}</tr>`
+    body += `<tr>${td('สรุป', K)}${td(r.conclusion, B, 3)}</tr>`
+  })
+
+  if ((c.approvals || []).length) {
+    body += sec('Approval History')
+    body += `<tr>${td('ขั้นตอน', HEAD)}${td('วันที่', HEAD)}${td('ผู้อนุมัติ', HEAD)}${td('สถานะ', HEAD)}</tr>`
+    c.approvals.forEach(a => {
+      body += `<tr>${td(a.step, B)}${td(thDate(a.approve_date), B)}${td(a.approver, B)}${td(a.status === 'approved' ? 'Approved' : 'Pending', B)}</tr>`
+    })
+  }
+  body += `<tr><td colspan="4" style="border:none;height:30px"></td></tr>`
+  body += `<tr>${td('ผู้ติดตาม', B + ';text-align:center')}${td('ผู้ประเมิน', B + ';text-align:center', 2)}${td('ผู้ทวนสอบ', B + ';text-align:center')}</tr>`
+
+  const html =
+`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8">
+<!--[if gte mso 9]><xml>
+ <x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+  <x:Name>CAR ${esc(c.co_no || '')}</x:Name>
+  <x:WorksheetOptions>
+   <x:Print><x:ValidPrinterInfo/><x:FitWidth>1</x:FitWidth><x:FitHeight>0</x:FitHeight></x:Print>
+   <x:FitToPage/><x:DoNotDisplayGridlines/>
+  </x:WorksheetOptions>
+ </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook>
+</xml><![endif]-->
+<style>
+ table{border-collapse:collapse;table-layout:fixed;width:720px;font-family:'Tahoma','Sarabun',sans-serif;font-size:10.5pt}
+ col{mso-width-source:userset}
+ td{word-wrap:break-word;overflow:hidden}
+</style></head>
+<body>
+<table>
+ <colgroup>
+  <col style="width:150px;mso-width-alt:5400">
+  <col style="width:210px;mso-width-alt:7600">
+  <col style="width:150px;mso-width-alt:5400">
+  <col style="width:210px;mso-width-alt:7600">
+ </colgroup>
+ ${body}
+</table>
+</body></html>`
+
+  const blob = new Blob(['﻿', html], { type: 'application/vnd.ms-excel;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = `${c.co_no || 'CAR'}.xls`
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
