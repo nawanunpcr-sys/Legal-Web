@@ -108,6 +108,15 @@ export async function setRequirementStatus(reqId, status) {
   if (error) throw error
 }
 
+// Bulk: set all requirements of given laws to met/unmet, then sync law status
+export async function bulkSetCompliance(lawIds, met = true) {
+  if (!lawIds.length) return
+  const status = met ? 'met' : 'unmet'
+  const { error } = await supabase.from('lg_requirements').update({ status }).in('law_id', lawIds)
+  if (error) throw error
+  await supabase.from('lg_laws').update({ status: met ? 'ok' : 'bad', updated_at: new Date().toISOString() }).in('id', lawIds)
+}
+
 export async function recomputeLawStatus(lawId, reqs) {
   const anyUnmet = reqs.some(r => r.status === 'unmet')
   const status = anyUnmet ? 'bad' : 'ok'

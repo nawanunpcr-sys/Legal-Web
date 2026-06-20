@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, hasSupabase, fetchAll,
-         setRequirementStatus, recomputeLawStatus,
+         setRequirementStatus, recomputeLawStatus, bulkSetCompliance,
          repealLaw, restoreLaw, createLaw, createLawFull, uploadLawDoc,
          markCommSent, updateCommSchedule,
          dismissNotification,
@@ -224,6 +224,15 @@ export default function App(){
     catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
+  async function handleBulkCompliance(ids, met){
+    if(!ids.length) return
+    try{
+      await bulkSetCompliance(ids, met)
+      const d=await fetchAll(); setLaws(d.laws)
+      toast(`อัปเดต ${ids.length} ฉบับเป็น${met?'สอดคล้อง':'ยังไม่สอดคล้อง'}แล้ว`,'success')
+    }catch(e){ toast('อัปเดตไม่สำเร็จ: '+e.message) }
+  }
+
   async function handleCreateLaw(fields){
     try{
       const newLaw=await createLaw(fields); setLaws(prev=>[...prev,newLaw])
@@ -384,9 +393,9 @@ export default function App(){
         <div className="content">
           {err && <div className="banner">{err}</div>}
           {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} reports={reports} onGoReports={()=>setView('reports')}/>}
-          {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} allLaws={laws}
+          {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}/>}
-          {view==='compliance'    && <Compliance    laws={activeLaws} cats={cats} stats={stats} onOpen={setOpenLaw}/>}
+          {view==='compliance'    && <Compliance    laws={activeLaws} cats={cats} stats={stats} onOpen={setOpenLaw} onToggle={toggleReq}/>}
           {view==='improvements'  && <Improvements  laws={activeLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
@@ -757,9 +766,14 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 }
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
-function Register({laws,cats,catMap,search,onOpen,onCreate,allLaws,months,monthYear,setMonthYear,onToggleMonth}){
+function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months,monthYear,setMonthYear,onToggleMonth}){
   const [cat,setCat]=usePersist('cr_reg_cat','all')
   const [showAdd,setShowAdd]=useState(false)
+  const [sel,setSel]=useState(new Set())
+  const toggleSel=id=>setSel(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n })
+  const clearSel=()=>setSel(new Set())
+  async function bulk(met){ await onBulk([...sel],met); clearSel() }
+  function exportSel(){ const m=Object.fromEntries(cats.map(c=>[c.code,c])); exportLawsToExcel(laws.filter(l=>sel.has(l.id)),m); }
   const catsList=[...new Set(laws.map(l=>l.cat))].sort()
   const q=search.toLowerCase()
   const rows=laws.filter(l=>(cat==='all'||l.cat===cat)&&(!q||l.name.toLowerCase().includes(q)||l.code.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)))
@@ -777,6 +791,15 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,allLaws,months,monthY
       <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>ส่งออกที่กรอง</button>
       <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} onClick={()=>setShowAdd(true)}>+ เพิ่มกฎหมาย</button>
     </div>
+    {sel.size>0 && (
+      <div className="bulkbar">
+        <b>เลือก {sel.size} ฉบับ</b>
+        <button className="btn btn-ghost" onClick={()=>bulk(true)}>ทำเครื่องหมายสอดคล้องทั้งหมด</button>
+        <button className="btn btn-ghost" onClick={()=>bulk(false)}>ทำเครื่องหมายยังไม่สอดคล้อง</button>
+        <button className="btn btn-ghost" onClick={exportSel}>ส่งออกที่เลือก</button>
+        <button className="btn btn-ghost" style={{marginLeft:'auto'}} onClick={clearSel}>ล้างที่เลือก</button>
+      </div>
+    )}
     {activeCats.map(c=>(
       <div key={c} style={{marginBottom:20}}>
         <div className="hier-cat-header" style={{borderLeftColor:catMap[c]?.color||'var(--brand)'}}>
@@ -789,13 +812,14 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,allLaws,months,monthY
             <div className="hier-tier-label"><span className="tier-badge">ชั้น {t.level}</span>{t.label}</div>
             <div className="panel" style={{marginTop:0,borderTopLeftRadius:0,borderTopRightRadius:0}}>
               <div className="tablewrap"><table>
-                <thead><tr><th>รหัส / ชื่อกฎหมาย</th><th>กระทรวง</th><th>สถานะ</th><th>ความสอดคล้อง</th></tr></thead>
+                <thead><tr><th style={{width:34}}></th><th>รหัส / ชื่อกฎหมาย</th><th>กระทรวง</th><th>สถานะ</th><th>ความสอดคล้อง</th></tr></thead>
                 <tbody>{grouped[c][t.level].map(l=>{const p=prog(l);return(
-                  <tr key={l.id} onClick={()=>onOpen(l)}>
-                    <td><div className="law-code">{l.code}</div><div className="law-title">{l.name}</div></td>
-                    <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
-                    <td><Pill s={l.status}/></td>
-                    <td><div className="mini-prog"><div className="track"><div className="fill" style={{width:p+'%',background:p===100?'var(--ok)':'var(--bad)'}}/></div><span className="num">{p}%</span></div></td>
+                  <tr key={l.id} className={sel.has(l.id)?'row-sel':''}>
+                    <td onClick={e=>{e.stopPropagation();toggleSel(l.id)}} style={{textAlign:'center'}}><input type="checkbox" checked={sel.has(l.id)} onChange={()=>toggleSel(l.id)} onClick={e=>e.stopPropagation()}/></td>
+                    <td onClick={()=>onOpen(l)}><div className="law-code">{l.code}</div><div className="law-title">{l.name}</div></td>
+                    <td onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
+                    <td onClick={()=>onOpen(l)}><Pill s={l.status}/></td>
+                    <td onClick={()=>onOpen(l)}><div className="mini-prog"><div className="track"><div className="fill" style={{width:p+'%',background:p===100?'var(--ok)':'var(--bad)'}}/></div><span className="num">{p}%</span></div></td>
                   </tr>
                 )})}</tbody>
               </table></div>
@@ -849,7 +873,37 @@ function MonthlyCheckPanel({ months, year, setYear, onToggle }) {
   )
 }
 
-function Compliance({laws,cats,stats,onOpen}){
+function ComplianceLawRow({l,onToggle,onOpen}){
+  const [open,setOpen]=useState(false)
+  const met=l.reqs.filter(r=>r.status==='met').length
+  return (
+    <div style={{borderBottom:'1px solid var(--line-soft)'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',paddingLeft:8}}>
+        <button onClick={()=>setOpen(o=>!o)} title="กางข้อกำหนด" style={{border:'none',background:'none',cursor:'pointer',color:'var(--ink-faint)',width:18}}>{open?'▾':'▸'}</button>
+        <span className="law-code">{l.code}</span>
+        <span style={{fontSize:13,flex:1,cursor:'pointer'}} onClick={()=>setOpen(o=>!o)}>{l.name.slice(0,60)}{l.name.length>60?'…':''}</span>
+        <span style={{fontSize:12,color:'var(--ink-faint)'}} className="num">{met}/{l.reqs.length} ข้อ</span>
+        <Pill s={l.status}/>
+        <button className="btn btn-ghost" style={{padding:'2px 9px',fontSize:11}} onClick={()=>onOpen(l)}>เปิด</button>
+      </div>
+      {open && (
+        <div style={{paddingLeft:34,paddingBottom:10}}>
+          {l.reqs.length===0 && <div style={{fontSize:12,color:'var(--ink-faint)',padding:'4px 0'}}>ไม่มีข้อกำหนด</div>}
+          {l.reqs.map(r=>(
+            <div key={r.id} style={{display:'flex',gap:9,padding:'6px 0',alignItems:'flex-start'}}>
+              <button onClick={()=>onToggle(l,r)} title="สลับ สอดคล้อง/ยังไม่สอดคล้อง"
+                style={{flexShrink:0,width:22,height:22,borderRadius:5,border:'none',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',
+                  background:r.status==='met'?'var(--ok)':'var(--grayfill)',color:r.status==='met'?'#fff':'var(--ink-faint)'}}>{r.status==='met'?'C':'·'}</button>
+              <span style={{fontSize:12.5,flex:1,lineHeight:1.5,color:r.status==='met'?'var(--ink-soft)':'var(--ink)'}}>{r.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Compliance({laws,cats,stats,onOpen,onToggle}){
   const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
   return <div className="view">
     <div className="grid" style={{gridTemplateColumns:'repeat(3,1fr)',marginBottom:16}}>
@@ -878,12 +932,7 @@ function Compliance({laws,cats,stats,onOpen}){
                     <span className="tier-badge">ชั้น {tier.level}</span>{tier.label}
                   </div>
                   {byTier[tier.level].map(l=>(
-                    <div key={l.id} onClick={()=>onOpen(l)} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:'1px solid var(--line-soft)',cursor:'pointer',paddingLeft:12}}>
-                      <span className="law-code">{l.code}</span>
-                      <span style={{fontSize:13,flex:1}}>{l.name.slice(0,60)}{l.name.length>60?'…':''}</span>
-                      <span style={{fontSize:12,color:'var(--ink-faint)'}} className="num">{l.reqs.filter(r=>r.status==='met').length}/{l.reqs.length} ข้อ</span>
-                      <Pill s={l.status}/>
-                    </div>
+                    <ComplianceLawRow key={l.id} l={l} onToggle={onToggle} onOpen={onOpen}/>
                   ))}
                 </div>
               ))}
