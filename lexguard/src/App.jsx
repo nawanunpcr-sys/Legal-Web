@@ -647,8 +647,26 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],re
   const relTime = s => { const sec=Math.floor((Date.now()-new Date(s))/1000); if(sec<60)return'เมื่อสักครู่'; const mi=Math.floor(sec/60); if(mi<60)return mi+' นาทีก่อน'; const h=Math.floor(mi/60); if(h<24)return h+' ชม.ก่อน'; const d=Math.floor(h/24); return d+' วันก่อน' }
 
   return <div className="view">
-    {/* most up-to-date info — pinned at top */}
-    <div className="panel" style={{marginBottom:14,borderTop:'3px solid var(--brand)'}}>
+    <div className="grid stats">
+      {cards.map((c,i)=>(<div className={'stat hero '+c.cls} key={i}>
+        <div className="lab">{c.lab}</div>
+        <div className="val num">{c.val} <small>{c.unit}</small></div>
+        <div className="delta">{c.delta}</div>
+      </div>))}
+    </div>
+
+    <div className="cols">
+      <div className="panel"><div className="panel-h"><h3>อัตราความสอดคล้อง</h3><span className="sub" style={{marginLeft:'auto'}}>{winLabel}</span></div>
+        <div className="panel-b"><div className="ring-wrap"><Ring pct={stats.pct} met={stats.met} nc={stats.nc}/>
+          <div className="legend">
+            <div className="row"><span className="dot" style={{background:'var(--ok)'}}/>ข้อกำหนดสอดคล้อง (C)<b className="num">{stats.met}</b></div>
+            <div className="row"><span className="dot" style={{background:'var(--bad)'}}/>ยังไม่สอดคล้อง (NC)<b className="num">{stats.nc}</b></div>
+          </div></div></div></div>
+      <div className="panel"><div className="panel-h"><h3>ความสอดคล้องตามหมวดกฎหมาย</h3></div>
+        <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div></div>
+    </div>
+
+    <div className="panel" style={{marginTop:16,borderTop:'3px solid var(--brand)'}}>
       <div className="panel-h"><h3>อัปเดตล่าสุด</h3><span className="sub" style={{marginLeft:'auto'}}>ความเคลื่อนไหวรายวัน</span></div>
       <div className="panel-b">
         <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:recent.length?12:0}}>
@@ -666,25 +684,6 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],re
             </div>
           )})}
       </div>
-    </div>
-
-    <div className="grid stats">
-      {cards.map((c,i)=>(<div className={'stat '+c.cls} key={i}>
-        <div className="lab">{c.lab}</div>
-        <div className="val num">{c.val} <small>{c.unit}</small></div>
-        <div className="delta">{c.delta}</div>
-      </div>))}
-    </div>
-
-    <div className="cols">
-      <div className="panel"><div className="panel-h"><h3>อัตราความสอดคล้อง</h3><span className="sub" style={{marginLeft:'auto'}}>{winLabel}</span></div>
-        <div className="panel-b"><div className="ring-wrap"><Ring pct={stats.pct} met={stats.met} nc={stats.nc}/>
-          <div className="legend">
-            <div className="row"><span className="dot" style={{background:'var(--ok)'}}/>ข้อกำหนดสอดคล้อง (C)<b className="num">{stats.met}</b></div>
-            <div className="row"><span className="dot" style={{background:'var(--bad)'}}/>ยังไม่สอดคล้อง (NC)<b className="num">{stats.nc}</b></div>
-          </div></div></div></div>
-      <div className="panel"><div className="panel-h"><h3>ความสอดคล้องตามหมวดกฎหมาย</h3></div>
-        <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div></div>
     </div>
 
     <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports}/>
