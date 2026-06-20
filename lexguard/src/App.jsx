@@ -19,6 +19,11 @@ import { toast } from './lib/toast.js'
 import { buildReport } from './components/report.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
 
+function usePersist(key, def){
+  const [v,setV]=useState(()=>{ try{ const s=localStorage.getItem(key); return s==null?def:JSON.parse(s) }catch{ return def } })
+  useEffect(()=>{ try{ localStorage.setItem(key,JSON.stringify(v)) }catch{} },[key,v])
+  return [v,setV]
+}
 const prog = l => !l.reqs.length ? 100 : Math.round(l.reqs.filter(r=>r.status==='met').length/l.reqs.length*100)
 // Extract a Buddhist-era (พ.ศ.) year from the messy free-text issue_date
 const lawBEYear = s => {
@@ -83,6 +88,7 @@ export default function App(){
   const [loading,setLoading] = useState(true)
   const [err,setErr]       = useState('')
   const [search,setSearch] = useState('')
+  const [searchFocus,setSearchFocus] = useState(false)
   const [openLaw,setOpenLaw] = useState(null)
   const [monthYear,setMonthYear] = useState(new Date().getFullYear())
   const [months,setMonths]   = useState([])
@@ -136,6 +142,14 @@ export default function App(){
   const stagingBatches = useMemo(()=>{ const g={}; staging.forEach(r=>{(g[r.law_code]=g[r.law_code]||[]).push(r)}); return Object.entries(g) },[staging])
   const newUpdates  = useMemo(()=>updates.filter(u=>u.status==='new'),[updates])
   const suggest     = useMemo(()=>suggestionLists(laws,cars),[laws,cars])
+  const searchResults = useMemo(()=>{
+    const q=search.trim().toLowerCase(); if(q.length<2) return []
+    const out=[]
+    activeLaws.forEach(l=>{ if(l.code.toLowerCase().includes(q)||(l.name||'').toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)) out.push({kind:'law',law:l,label:l.code,sub:(l.name||'').slice(0,55)}) })
+    cars.forEach(c=>{ if((c.co_no||'').toLowerCase().includes(q)||(c.finding||'').toLowerCase().includes(q)) out.push({kind:'car',label:c.co_no||'CAR',sub:(c.finding||'').slice(0,55)}) })
+    reports.forEach(r=>{ if((r.title||'').toLowerCase().includes(q)) out.push({kind:'report',label:(r.title||'').slice(0,40),sub:'รายงานราชการ'}) })
+    return out.slice(0,12)
+  },[search,activeLaws,cars,reports])
 
   async function handleAddStaged(code, rows){
     try{ await addStagedLaw(rows); const d=await fetchAll(); setLaws(d.laws); await reloadSkills() }
@@ -329,9 +343,27 @@ export default function App(){
           </button>
           <div className="vt">{title[0]}<small>{title[1]}</small></div>
           <div className="spacer"/>
-          {(view==='register'||view==='repealed') && (
-            <div className="search"><input placeholder="ค้นหากฎหมาย, รหัส, กระทรวง…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
-          )}
+          <div className="search" style={{position:'relative'}}>
+            <input placeholder="ค้นหากฎหมาย / CAR / รายงาน…" value={search}
+              onChange={e=>setSearch(e.target.value)}
+              onFocus={()=>setSearchFocus(true)} onBlur={()=>setTimeout(()=>setSearchFocus(false),180)}/>
+            {searchFocus && searchResults.length>0 && (
+              <div className="search-results">
+                {searchResults.map((r,i)=>(
+                  <div key={i} className="sr-item" onMouseDown={()=>{
+                    if(r.kind==='law') setOpenLaw(r.law)
+                    else if(r.kind==='car') setView('car')
+                    else if(r.kind==='report') setView('reports')
+                    setSearch('')
+                  }}>
+                    <span className="sr-tag">{r.kind==='law'?'กฎหมาย':r.kind==='car'?'CAR':'รายงาน'}</span>
+                    <span className="sr-label">{r.label}</span>
+                    <span className="sr-sub">{r.sub}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           {(view==='register'||view==='dashboard') && (
             <button className="btn btn-ghost no-print" onClick={()=>exportLawsToExcel(activeLaws,catMap)}>ส่งออก Excel</button>
           )}
@@ -718,7 +750,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
 function Register({laws,cats,catMap,search,onOpen,onCreate,allLaws,months,monthYear,setMonthYear,onToggleMonth}){
-  const [cat,setCat]=useState('all')
+  const [cat,setCat]=usePersist('cr_reg_cat','all')
   const [showAdd,setShowAdd]=useState(false)
   const catsList=[...new Set(laws.map(l=>l.cat))].sort()
   const q=search.toLowerCase()

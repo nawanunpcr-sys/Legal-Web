@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { nextCoNumber, saveCar, deleteCar } from '../lib/supabase.js'
 import { toast } from '../lib/toast.js'
 
@@ -10,7 +10,8 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 
 export default function CarOfi({ cars, onReload, suggest }) {
   const [modal, setModal] = useState(null)   // null | car-object (edit) | {} (new)
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useState(() => { try { return localStorage.getItem('cr_car_filter') || 'all' } catch { return 'all' } })
+  useEffect(() => { try { localStorage.setItem('cr_car_filter', filter) } catch {} }, [filter])
 
   const stats = useMemo(() => ({
     total: cars.length,
