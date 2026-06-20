@@ -7,7 +7,7 @@ const daysTo = s => Math.ceil((new Date(s) - new Date()) / 86400000)
 const isOverdue = c => c.status !== 'closed' && c.due_date && daysTo(c.due_date) < 0
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-export default function CarOfi({ cars, onReload }) {
+export default function CarOfi({ cars, onReload, suggest }) {
   const [modal, setModal] = useState(null)   // null | car-object (edit) | {} (new)
   const [filter, setFilter] = useState('all')
 
@@ -73,7 +73,7 @@ export default function CarOfi({ cars, onReload }) {
         </div>
       ))}
 
-      {modal && <CarModal car={modal} cars={cars} onClose={() => setModal(null)} onSaved={() => { setModal(null); onReload() }} />}
+      {modal && <CarModal car={modal} cars={cars} suggest={suggest} onClose={() => setModal(null)} onSaved={() => { setModal(null); onReload() }} />}
     </div>
   )
 }
@@ -81,7 +81,9 @@ export default function CarOfi({ cars, onReload }) {
 /* ───── modal ───── */
 function Row({ label, children }) { return <div><label className="form-label">{label}</label>{children}</div> }
 
-function CarModal({ car, onClose, onSaved }) {
+function CarModal({ car, onClose, onSaved, suggest }) {
+  const sg = suggest || {}
+  const people = [...new Set([...(sg.responsibles || [])])]
   const [f, setF] = useState(car)
   const [fus, setFus] = useState(car.followups?.length ? car.followups : [])
   const [aps, setAps] = useState(car.approvals?.length ? car.approvals : [])
@@ -101,6 +103,10 @@ function CarModal({ car, onClose, onSaved }) {
       <div className="modal" style={{ zIndex: 301, width: 720 }}>
         <div className="modal-head"><h3>{car.id ? 'แก้ไข' : 'เพิ่ม'} CAR / OFI</h3><button className="close" onClick={onClose}>×</button></div>
         <div className="modal-body">
+          <datalist id="dl-people">{people.map(x => <option key={x} value={x} />)}</datalist>
+          <datalist id="dl-team">{(sg.teams || []).map(x => <option key={x} value={x} />)}</datalist>
+          <datalist id="dl-div">{(sg.divisions || []).map(x => <option key={x} value={x} />)}</datalist>
+          <datalist id="dl-dept">{(sg.departments || []).map(x => <option key={x} value={x} />)}</datalist>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
             <Row label="CO No."><input className="form-input" value={f.co_no || ''} onChange={e => set('co_no', e.target.value)} /></Row>
             <Row label="OFI No."><input className="form-input" value={f.ofi_no || ''} onChange={e => set('ofi_no', e.target.value)} /></Row>
@@ -108,17 +114,17 @@ function CarModal({ car, onClose, onSaved }) {
             <Row label="ปี (ค.ศ.)"><input className="form-input" type="number" value={f.year || ''} onChange={e => set('year', e.target.value)} /></Row>
             <Row label="สถานะ"><select className="form-input" value={f.status} onChange={e => set('status', e.target.value)}><option value="open">Open</option><option value="closed">Closed</option></select></Row>
             <Row label="Record Type"><input className="form-input" value={f.record_type || ''} onChange={e => set('record_type', e.target.value)} placeholder="เช่น Open CAR / Closed OFI" /></Row>
-            <Row label="Owner"><input className="form-input" value={f.owner || ''} onChange={e => set('owner', e.target.value)} /></Row>
+            <Row label="Owner"><input className="form-input" list="dl-people" value={f.owner || ''} onChange={e => set('owner', e.target.value)} /></Row>
           </div>
 
           <div className="sec-t" style={{ marginTop: 16 }}>ข้อมูลการตรวจประเมิน</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
             <Row label="วันที่ออก CAR"><input className="form-input" type="date" value={f.issue_date || ''} onChange={e => set('issue_date', e.target.value)} /></Row>
-            <Row label="ผู้ตรวจประเมิน"><input className="form-input" value={f.auditor || ''} onChange={e => set('auditor', e.target.value)} /></Row>
-            <Row label="หัวหน้างาน"><input className="form-input" value={f.supervisor || ''} onChange={e => set('supervisor', e.target.value)} /></Row>
-            <Row label="ทีม"><input className="form-input" value={f.team || ''} onChange={e => set('team', e.target.value)} /></Row>
-            <Row label="หน่วยงาน"><input className="form-input" value={f.division || ''} onChange={e => set('division', e.target.value)} /></Row>
-            <Row label="แผนก"><input className="form-input" value={f.department || ''} onChange={e => set('department', e.target.value)} /></Row>
+            <Row label="ผู้ตรวจประเมิน"><input className="form-input" list="dl-people" value={f.auditor || ''} onChange={e => set('auditor', e.target.value)} /></Row>
+            <Row label="หัวหน้างาน"><input className="form-input" list="dl-people" value={f.supervisor || ''} onChange={e => set('supervisor', e.target.value)} /></Row>
+            <Row label="ทีม"><input className="form-input" list="dl-team" value={f.team || ''} onChange={e => set('team', e.target.value)} /></Row>
+            <Row label="หน่วยงาน"><input className="form-input" list="dl-div" value={f.division || ''} onChange={e => set('division', e.target.value)} /></Row>
+            <Row label="แผนก"><input className="form-input" list="dl-dept" value={f.department || ''} onChange={e => set('department', e.target.value)} /></Row>
           </div>
 
           <Row label="ประเด็น"><textarea className="form-input" rows={2} value={f.finding || ''} onChange={e => set('finding', e.target.value)} /></Row>
@@ -133,9 +139,9 @@ function CarModal({ car, onClose, onSaved }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}><b style={{ fontSize: 12.5 }}>ครั้งที่ {i + 1}</b><button className="btn btn-ghost" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => setFus(p => p.filter((_, j) => j !== i))}>ลบ</button></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
                 <Row label="วันที่ตรวจ"><input className="form-input" type="date" value={r.check_date || ''} onChange={e => setFu(i, 'check_date', e.target.value)} /></Row>
-                <Row label="ผู้ติดตาม"><input className="form-input" value={r.follower || ''} onChange={e => setFu(i, 'follower', e.target.value)} /></Row>
-                <Row label="ผู้ประเมิน"><input className="form-input" value={r.assessor || ''} onChange={e => setFu(i, 'assessor', e.target.value)} /></Row>
-                <Row label="ผู้ทวนสอบ"><input className="form-input" value={r.verifier || ''} onChange={e => setFu(i, 'verifier', e.target.value)} /></Row>
+                <Row label="ผู้ติดตาม"><input className="form-input" list="dl-people" value={r.follower || ''} onChange={e => setFu(i, 'follower', e.target.value)} /></Row>
+                <Row label="ผู้ประเมิน"><input className="form-input" list="dl-people" value={r.assessor || ''} onChange={e => setFu(i, 'assessor', e.target.value)} /></Row>
+                <Row label="ผู้ทวนสอบ"><input className="form-input" list="dl-people" value={r.verifier || ''} onChange={e => setFu(i, 'verifier', e.target.value)} /></Row>
               </div>
               <Row label="ผลการตรวจ"><textarea className="form-input" rows={2} value={r.result || ''} onChange={e => setFu(i, 'result', e.target.value)} /></Row>
               <Row label="สรุป"><input className="form-input" value={r.conclusion || ''} onChange={e => setFu(i, 'conclusion', e.target.value)} placeholder="เช่น ปิดประเด็น" /></Row>
