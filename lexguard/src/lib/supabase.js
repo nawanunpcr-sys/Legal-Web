@@ -174,6 +174,16 @@ export async function createLawFull({ code, cat, name, hierarchy_level, ministry
   return { ...data, reqs: [] }
 }
 
+// Upload an original law document (PDF) to Storage → returns public URL
+export async function uploadLawDoc(file) {
+  if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  const safe = file.name.replace(/[^\w.\-]+/g, '_')
+  const path = `${Date.now()}_${safe}`
+  const { error } = await supabase.storage.from('law-docs').upload(path, file, { upsert: false, contentType: file.type || undefined })
+  if (error) throw error
+  return supabase.storage.from('law-docs').getPublicUrl(path).data.publicUrl
+}
+
 // Suggestion lists for dropdowns (dedup, sorted)
 export function suggestionLists(laws = [], cars = []) {
   const uniq = arr => [...new Set(arr.filter(x => x && String(x).trim()).map(x => String(x).trim()))].sort()

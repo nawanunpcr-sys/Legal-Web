@@ -39,7 +39,7 @@ function RepealModal({ law, onConfirm, onClose }){
   )
 }
 
-export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, onRestore, prog, thDate }){
+export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, onRestore, onDuplicate, prog, thDate }){
   const [showRepealModal, setShowRepealModal] = useState(false)
   const p = prog(law)
   const isRepealed = law.status === 'repealed'
@@ -135,6 +135,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
                 <dt>กระทรวง/หน่วยงาน</dt><dd>{law.ministry||'—'}</dd>
                 {law.issue_date && <><dt>วันที่ประกาศ/บังคับใช้</dt><dd>{law.issue_date}</dd></>}
                 {!isRepealed && <><dt>กำหนดทบทวนถัดไป</dt><dd className="num">{thDate(law.review_date)}</dd></>}
+                {law.source_url && <><dt>ต้นฉบับ</dt><dd><a href={law.source_url} target="_blank" rel="noreferrer" style={{color:'var(--brand)'}}>เปิดเอกสาร ↗</a></dd></>}
                 <dt>สถานะ</dt><dd><span className={'pill '+(STATUS[law.status]?.cls||'p-ok')}>{STATUS[law.status]?.label||law.status}</span></dd>
               </dl>
             </div>
@@ -145,6 +146,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
           <button className="btn btn-ghost" style={{flex:1}} onClick={onClose}>ปิด</button>
           {!isRepealed && (
             <>
+              {onDuplicate && <button className="btn btn-ghost" style={{flex:1}} onClick={()=>onDuplicate(law)}>ทำซ้ำ</button>}
               <button className="btn btn-danger" style={{flex:1}} onClick={()=>setShowRepealModal(true)}>บันทึกการยกเลิก</button>
               <button className="btn btn-primary" style={{flex:1}} onClick={()=>window.print()}>พิมพ์ PDF</button>
             </>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, hasSupabase, fetchAll,
          setRequirementStatus, recomputeLawStatus,
-         repealLaw, restoreLaw, createLaw, createLawFull,
+         repealLaw, restoreLaw, createLaw, createLawFull, uploadLawDoc,
          markCommSent, updateCommSchedule,
          dismissNotification,
          fetchComplianceMonths, toggleMonthCheck,
@@ -208,6 +208,19 @@ export default function App(){
     catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
+  async function handleDuplicate(law){
+    const code = nextCode(laws, law.cat)
+    if(!confirm(`ทำซ้ำ ${law.code} → ${code} ?`)) return
+    try{
+      const nl = await handleCreateFull(
+        { code, cat:law.cat, name:'(สำเนา) '+law.name, hierarchy_level:law.hierarchy_level||'4',
+          ministry:law.ministry||'', announce_date:law.issue_date||'', effective_date:law.effective_date||'',
+          doc_list:law.doc_list||'', source_url:law.source_url||'' },
+        (law.reqs||[]).map(r=>({text:r.text,status:r.status,responsible:r.responsible,frequency:r.frequency,documents:r.documents})))
+      setOpenLaw(nl)
+    }catch(e){ alert('ทำซ้ำไม่สำเร็จ: '+e.message) }
+  }
+
   async function handleCreateFull(fields, reqs){
     const newLaw=await createLawFull(fields, reqs)
     setLaws(prev=>[...prev,newLaw])
@@ -340,7 +353,7 @@ export default function App(){
 
       {openLaw && (
         <LawDrawer law={openLaw} catMap={catMap} onClose={()=>setOpenLaw(null)}
-          onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore}
+          onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate}
           prog={prog} thDate={thDate}/>
       )}
       <div id="print-report"/>
@@ -1156,6 +1169,7 @@ function ManualAddPanel({cats,allLaws,onCreateFull,suggest}){
   const [review,setReview]=useState('')
   const [docs,setDocs]=useState('')
   const [srcUrl,setSrcUrl]=useState('')
+  const [uploading,setUploading]=useState(false)
   const [reqs,setReqs]=useState([{text:'',status:'met'}])
   const [busy,setBusy]=useState(false)
   const [msg,setMsg]=useState(null)
@@ -1202,8 +1216,16 @@ function ManualAddPanel({cats,allLaws,onCreateFull,suggest}){
           <div><label className="form-label">รอบทบทวนถัดไป</label><input className="form-input" type="date" value={review} onChange={e=>setReview(e.target.value)}/></div>
           <div><label className="form-label">เอกสาร/แบบฟอร์ม</label><input className="form-input" value={docs} onChange={e=>setDocs(e.target.value)} placeholder="แบบ จป., รายงาน"/></div>
         </div>
-        <label className="form-label">ลิงก์ต้นฉบับ (URL ราชกิจจาฯ / PDF)</label>
-        <input className="form-input" value={srcUrl} onChange={e=>setSrcUrl(e.target.value)} placeholder="https://ratchakitcha.soc.go.th/…"/>
+        <label className="form-label">ลิงก์ต้นฉบับ (URL ราชกิจจาฯ / PDF) หรืออัปโหลดไฟล์</label>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <input className="form-input" style={{marginTop:0}} value={srcUrl} onChange={e=>setSrcUrl(e.target.value)} placeholder="https://ratchakitcha.soc.go.th/… หรืออัปโหลด PDF"/>
+          <label className="btn btn-ghost" style={{whiteSpace:'nowrap',cursor:'pointer'}}>
+            {uploading?'กำลังอัปโหลด…':'อัปโหลด PDF'}
+            <input type="file" accept="application/pdf,image/*" style={{display:'none'}} disabled={uploading}
+              onChange={async e=>{ const f=e.target.files?.[0]; if(!f)return; setUploading(true); try{ const url=await uploadLawDoc(f); setSrcUrl(url) }catch(err){ alert('อัปโหลดไม่สำเร็จ: '+err.message) } setUploading(false); e.target.value='' }}/>
+          </label>
+        </div>
+        {srcUrl && <a href={srcUrl} target="_blank" rel="noreferrer" style={{fontSize:12,color:'var(--brand)',marginTop:4,display:'inline-block'}}>เปิดไฟล์/ลิงก์ที่แนบ ↗</a>}
 
         <div className="sec-t" style={{marginTop:14,display:'flex'}}>สาระสำคัญ (ข้อย่อย)
           <button className="btn btn-ghost" style={{marginLeft:'auto',padding:'3px 10px',fontSize:12}} onClick={()=>setReqs(p=>[...p,{text:'',status:'met'}])}>+ เพิ่มข้อ</button>
