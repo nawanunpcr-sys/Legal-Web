@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { nextCoNumber, saveCar, deleteCar } from '../lib/supabase.js'
+import { toast } from '../lib/toast.js'
 
 const TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
 const thDate = s => { if (!s) return '—'; const d = new Date(s); if (isNaN(d)) return s; return d.getDate() + ' ' + TH[d.getMonth()] + ' ' + (d.getFullYear() + 543) }
@@ -26,7 +27,7 @@ export default function CarOfi({ cars, onReload, suggest }) {
 
   async function remove(c) {
     if (!confirm(`ลบ ${c.co_no || 'รายการนี้'}?`)) return
-    try { await deleteCar(c.id); onReload() } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message) }
+    try { await deleteCar(c.id); onReload() } catch (e) { toast('ลบไม่สำเร็จ: ' + e.message) }
   }
 
   return (
@@ -95,7 +96,7 @@ function CarModal({ car, onClose, onSaved, suggest }) {
   async function save() {
     setSaving(true)
     try { await saveCar(f, fus, aps); onSaved() }
-    catch (e) { alert('บันทึกไม่สำเร็จ: ' + e.message); setSaving(false) }
+    catch (e) { toast('บันทึกไม่สำเร็จ: ' + e.message); setSaving(false) }
   }
 
   return (
@@ -214,7 +215,7 @@ function carPDF(c) {
     <div class="sign"><div>ผู้ติดตาม</div><div>ผู้ประเมิน</div><div>ผู้ทวนสอบ</div></div>
   </body></html>`
   const w = window.open('', '_blank')
-  if (!w) { alert('กรุณาอนุญาต pop-up เพื่อออก PDF'); return }
+  if (!w) { toast('กรุณาอนุญาต pop-up เพื่อออก PDF'); return }
   w.document.write(html); w.document.close()
   setTimeout(() => w.print(), 350)
 }

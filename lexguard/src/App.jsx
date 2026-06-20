@@ -14,6 +14,8 @@ import LawDrawer from './components/LawDrawer.jsx'
 import CarOfi from './components/CarOfi.jsx'
 import Reports from './components/Reports.jsx'
 import Login from './components/Login.jsx'
+import Toaster from './components/Toaster.jsx'
+import { toast } from './lib/toast.js'
 import { buildReport } from './components/report.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
 
@@ -71,8 +73,9 @@ const TITLES = {
 
 export default function App(){
   const [session,setSession] = useState(undefined) // undefined=checking, null=logged out
-  const [navOpen,setNavOpen] = useState(true)
-  const [view,setView]     = useState('dashboard')
+  const [navOpen,setNavOpen] = useState(()=>{ try{ return localStorage.getItem('cr_nav')!=='0' }catch{ return true } })
+  const [view,setView]     = useState(()=>{ try{ return localStorage.getItem('cr_view')||'dashboard' }catch{ return 'dashboard' } })
+  const [dark,setDark]     = useState(()=>{ try{ return localStorage.getItem('cr_dark')==='1' }catch{ return false } })
   const [cats,setCats]     = useState([])
   const [laws,setLaws]     = useState([])
   const [comms,setComms]   = useState([])
@@ -98,6 +101,10 @@ export default function App(){
   },[])
 
   const authed = !!session || session==='demo'
+
+  useEffect(()=>{ try{ localStorage.setItem('cr_view',view) }catch{} },[view])
+  useEffect(()=>{ try{ localStorage.setItem('cr_nav',navOpen?'1':'0') }catch{} },[navOpen])
+  useEffect(()=>{ document.documentElement.setAttribute('data-theme',dark?'dark':'light'); try{ localStorage.setItem('cr_dark',dark?'1':'0') }catch{} },[dark])
 
   async function reloadSkills(){
     try{ const [s,u,a] = await Promise.all([fetchStaging(), fetchUpdates(), fetchActivity()]); setStaging(s); setUpdates(u); setActivity(a) }
@@ -132,15 +139,15 @@ export default function App(){
 
   async function handleAddStaged(code, rows){
     try{ await addStagedLaw(rows); const d=await fetchAll(); setLaws(d.laws); await reloadSkills() }
-    catch(e){ alert('เพิ่มเข้าทะเบียนไม่สำเร็จ: '+e.message) }
+    catch(e){ toast('เพิ่มเข้าทะเบียนไม่สำเร็จ: '+e.message) }
   }
   async function handleDropStaged(rows){
     try{ await dismissStaged(rows.map(r=>r.id)); await reloadSkills() }
-    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
   async function handleMarkUpdate(id, status){
     try{ await setUpdateStatus(id,status); await reloadSkills() }
-    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   const stats = useMemo(()=>{
@@ -176,7 +183,7 @@ export default function App(){
       await logActivity({ action:'requirement', law_id:law.id, law_code:law.code, law_name:law.name, detail:(next==='met'?'ปรับเป็นสอดคล้อง: ':'ปรับเป็นยังไม่สอดคล้อง: ')+(req.text||'').slice(0,80) })
       fetchActivity().then(setActivity)
     }
-    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleRepeal(law, data){
@@ -185,7 +192,7 @@ export default function App(){
       await logActivity({ action:'repeal', law_id:law.id, law_code:law.code, law_name:law.name, detail:data?.repeal_reason||'ยกเลิก/แทนที่' })
       fetchActivity().then(setActivity)
     }
-    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleRestore(law){
@@ -194,7 +201,7 @@ export default function App(){
       await logActivity({ action:'restore', law_id:law.id, law_code:law.code, law_name:law.name, detail:'กู้คืนกฎหมาย' })
       fetchActivity().then(setActivity)
     }
-    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleCreateLaw(fields){
@@ -203,7 +210,7 @@ export default function App(){
       await logActivity({ action:'create', law_id:newLaw.id, law_code:newLaw.code, law_name:newLaw.name, detail:'เพิ่มกฎหมายใหม่เข้าทะเบียน' })
       fetchActivity().then(setActivity)
     }
-    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleDuplicate(law){
@@ -216,7 +223,7 @@ export default function App(){
           doc_list:law.doc_list||'', source_url:law.source_url||'' },
         (law.reqs||[]).map(r=>({text:r.text,status:r.status,responsible:r.responsible,frequency:r.frequency,documents:r.documents})))
       setOpenLaw(nl)
-    }catch(e){ alert('ทำซ้ำไม่สำเร็จ: '+e.message) }
+    }catch(e){ toast('ทำซ้ำไม่สำเร็จ: '+e.message) }
   }
 
   async function handleCreateFull(fields, reqs){
@@ -232,21 +239,21 @@ export default function App(){
       await markCommSent(commId,fileRef)
       const {data}=await supabase.from('lg_communications').select('*').eq('id',commId).single()
       if(data) setComms(prev=>prev.map(c=>c.id===commId?data:c))
-    } catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    } catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleCommScheduleUpdate(commId, patch){
     try{ await updateCommSchedule(commId,patch); setComms(prev=>prev.map(c=>c.id===commId?{...c,...patch}:c)) }
-    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleReportSetEvent(id, eventDate, offsetDays){
     try{ await setReportEvent(id, eventDate, offsetDays); await loadReports() }
-    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
   async function handleReportSubmit(id, fileRef){
     try{ await markReportSubmitted(id, fileRef); await loadReports() }
-    catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
+    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleToggleMonth(year, month){
@@ -258,14 +265,19 @@ export default function App(){
       if(hit) return prev.map(m=>m.year===year&&m.month===month ? {...m,checked:nowChecked,checked_at:checkedAt} : m)
       return [...prev, {year,month,checked:nowChecked,checked_at:checkedAt}]
     })
-    if(hasSupabase){ try{ await toggleMonthCheck(year,month,nowChecked) }catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) } }
+    if(hasSupabase){ try{ await toggleMonthCheck(year,month,nowChecked) }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) } }
   }
 
   function exportPDF(){ buildReport({laws:activeLaws,stats,catName:Object.fromEntries(cats.map(c=>[c.code,c.name]))}); window.print() }
 
   if(session===undefined) return <div className="loading"><div className="spin"/>กำลังตรวจสอบสิทธิ์…</div>
   if(!authed) return <Login onAuthed={s=>setSession(s)} onBypass={()=>setSession('demo')}/>
-  if(loading) return <div className="loading"><div className="spin"/>กำลังโหลดข้อมูลจากฐานข้อมูล…</div>
+  if(loading) return (
+    <div style={{minHeight:'100vh',background:'var(--paper)'}}>
+      <div className="sk-grid">{Array.from({length:4}).map((_,i)=><div key={i} className="sk sk-card"/>)}</div>
+      {Array.from({length:5}).map((_,i)=><div key={i} className="sk sk-row"/>)}
+    </div>
+  )
 
   const title = TITLES[view] || ['—','']
 
@@ -327,6 +339,7 @@ export default function App(){
           <button className="bell no-print" onClick={()=>setView('notifications')}>
             การแจ้งเตือน{bellNotifications.length>0&&<span className="dot">{bellNotifications.length}</span>}
           </button>
+          <button className="btn btn-ghost no-print" title={dark?'โหมดสว่าง':'โหมดมืด'} onClick={()=>setDark(d=>!d)}>{dark?'☀︎':'☾'}</button>
           <button className="btn btn-ghost no-print" onClick={async()=>{ await signOut(); setSession(null) }}>ออกจากระบบ</button>
         </header>
 
@@ -354,6 +367,7 @@ export default function App(){
           prog={prog} thDate={thDate}/>
       )}
       <div id="print-report"/>
+      <Toaster/>
     </div>
   )
 }
@@ -1219,7 +1233,7 @@ function ManualAddPanel({cats,allLaws,onCreateFull,suggest}){
           <label className="btn btn-ghost" style={{whiteSpace:'nowrap',cursor:'pointer'}}>
             {uploading?'กำลังอัปโหลด…':'อัปโหลด PDF'}
             <input type="file" accept="application/pdf,image/*" style={{display:'none'}} disabled={uploading}
-              onChange={async e=>{ const f=e.target.files?.[0]; if(!f)return; setUploading(true); try{ const url=await uploadLawDoc(f); setSrcUrl(url) }catch(err){ alert('อัปโหลดไม่สำเร็จ: '+err.message) } setUploading(false); e.target.value='' }}/>
+              onChange={async e=>{ const f=e.target.files?.[0]; if(!f)return; setUploading(true); try{ const url=await uploadLawDoc(f); setSrcUrl(url) }catch(err){ toast('อัปโหลดไม่สำเร็จ: '+err.message) } setUploading(false); e.target.value='' }}/>
           </label>
         </div>
         {srcUrl && <a href={srcUrl} target="_blank" rel="noreferrer" style={{fontSize:12,color:'var(--brand)',marginTop:4,display:'inline-block'}}>เปิดไฟล์/ลิงก์ที่แนบ ↗</a>}
@@ -1476,54 +1490,3 @@ function Improvements({ laws, catMap, onOpen }) {
   )
 }
 
-/* ─────────────────────────── DOCUMENTS ─────────────────────────── */
-const DOC_TYPES = [
-  { key:'F-259',  label:'แบบ F-259 ทะเบียนกฎหมาย',    desc:'ทะเบียนกฎหมาย SHE ประจำปีพร้อมข้อกำหนดทั้งหมด', color:'var(--brand)' },
-  { key:'PD-60',  label:'เอกสาร PD-60 ข้อ 7',          desc:'กรอบเวลาตามกฎหมาย — เอกสารส่งราชการ',            color:'#4f72c4' },
-  { key:'PD-05',  label:'เอกสาร PD-05 แผนปรับปรุง',    desc:'บันทึกการแก้ไขและปิดข้อ NC',                     color:'#cf8a12' },
-  { key:'report', label:'รายงานผู้บริหาร (Mgmt Review)',desc:'AI ร่างรายงานและส่งออก PDF',                      color:'#1f9d6b' },
-]
-function Documents({ laws, cats, catMap }) {
-  const docsLaws = laws.filter(l=>l.reqs.some(r=>r.documents))
-  return (
-    <div className="view">
-      <div className="grid" style={{gridTemplateColumns:'repeat(2,1fr)',gap:14,marginBottom:20}}>
-        {DOC_TYPES.map(d=>(
-          <div key={d.key} className="panel doc-card" style={{padding:22,borderTop:`3px solid ${d.color}`}}>
-            <div>
-              <div className="doc-title">{d.label}</div>
-              <div style={{fontSize:12.5,color:'var(--ink-faint)',marginTop:5,lineHeight:1.55}}>{d.desc}</div>
-            </div>
-            <button className="btn btn-ghost" style={{marginTop:16,width:'100%',justifyContent:'center'}}
-              onClick={()=>{ if(d.key==='report'||d.key==='F-259') window.print() }}>
-              ส่งออก / พิมพ์
-            </button>
-          </div>
-        ))}
-      </div>
-      <div className="panel">
-        <div className="panel-h">
-          <h3>เอกสารตามข้อกำหนดกฎหมาย</h3>
-          <span className="sub" style={{marginLeft:'auto'}}>{docsLaws.length} กฎหมายมีรายการเอกสาร</span>
-        </div>
-        {docsLaws.length===0
-          ? <div style={{padding:'40px 20px',textAlign:'center',color:'var(--ink-faint)',fontSize:14}}>ยังไม่มีข้อมูลเอกสารที่บันทึกไว้ในคอลัมน์ "เอกสาร" ของข้อกำหนด</div>
-          : <div className="tablewrap"><table>
-              <thead><tr><th>รหัส / กฎหมาย</th><th>หมวด</th><th>เอกสารที่กำหนด</th><th>สถานะ</th></tr></thead>
-              <tbody>{docsLaws.map(l=>{
-                const docSet=[...new Set(l.reqs.filter(r=>r.documents).map(r=>r.documents))].join(' · ')
-                return (
-                  <tr key={l.id}>
-                    <td><div className="law-code">{l.code}</div><div className="law-title" style={{fontSize:12.5}}>{l.name.slice(0,70)}{l.name.length>70?'…':''}</div></td>
-                    <td><Tag c={l.cat} color={catMap[l.cat]?.color}/></td>
-                    <td style={{fontSize:12,color:'var(--ink-soft)',maxWidth:320,lineHeight:1.5}}>{docSet.slice(0,150)}</td>
-                    <td><Pill s={l.status}/></td>
-                  </tr>
-                )
-              })}</tbody>
-            </table></div>
-        }
-      </div>
-    </div>
-  )
-}
