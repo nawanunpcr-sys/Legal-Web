@@ -27,10 +27,26 @@ export default function Login({ onAuthed }) {
 
   return (
     <div className="login">
-      {/* IT / network animated backdrop */}
+      {/* telecom / data-center animated backdrop */}
       <div className="login-grid" aria-hidden />
       <div className="login-aurora" aria-hidden />
-      <ul className="login-nodes" aria-hidden>{Array.from({ length: 12 }).map((_, i) => <li key={i} />)}</ul>
+      {/* network mesh with flowing data links */}
+      <svg className="login-net" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice" aria-hidden>
+        <g className="net-links">
+          {[[120,140,360,300],[360,300,180,520],[360,300,640,180],[640,180,900,320],[900,320,1080,180],[640,180,720,520],[900,320,820,640],[180,520,460,700],[720,520,820,640],[460,700,820,640],[1080,180,1120,460]].map((l,i)=>(
+            <line key={i} x1={l[0]} y1={l[1]} x2={l[2]} y2={l[3]} style={{ animationDelay: (i*0.4)+'s' }} />
+          ))}
+        </g>
+        <g className="net-nodes">
+          {[[120,140],[360,300],[180,520],[640,180],[900,320],[1080,180],[720,520],[820,640],[460,700],[1120,460]].map((n,i)=>(
+            <circle key={i} cx={n[0]} cy={n[1]} r="4" style={{ animationDelay: (i*0.5)+'s' }} />
+          ))}
+        </g>
+      </svg>
+      {/* server-rack LED strip */}
+      <div className="login-racks" aria-hidden>{Array.from({ length: 7 }).map((_, i) => (
+        <div className="rack" key={i}>{Array.from({ length: 6 }).map((__, j) => <span key={j} style={{ animationDelay: ((i + j) * 0.3) + 's' }} />)}</div>
+      ))}</div>
 
       <div className="login-wrap">
         <div className="login-card">
