@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, hasSupabase, fetchAll,
          setRequirementStatus, recomputeLawStatus,
-         repealLaw, restoreLaw, createLaw,
+         repealLaw, restoreLaw, createLaw, createLawFull,
          markCommSent, updateCommSchedule,
          dismissNotification,
          fetchComplianceMonths, toggleMonthCheck,
@@ -207,6 +207,14 @@ export default function App(){
     catch(e){ alert('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
+  async function handleCreateFull(fields, reqs){
+    const newLaw=await createLawFull(fields, reqs)
+    setLaws(prev=>[...prev,newLaw])
+    await logActivity({ action:'create', law_id:newLaw.id, law_code:newLaw.code, law_name:newLaw.name, detail:'เพิ่มกฎหมายเข้าทะเบียน ('+(reqs?.length||0)+' ข้อ)' })
+    fetchActivity().then(setActivity)
+    return newLaw
+  }
+
   async function handleMarkSent(commId, fileRef){
     try{
       await markCommSent(commId,fileRef)
@@ -322,7 +330,7 @@ export default function App(){
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
           {view==='reports'       && <Reports       reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
           {view==='car'           && <CarOfi        cars={cars} onReload={loadCars}/>}
-          {view==='analysis'      && <Analysis      laws={activeLaws} cats={cats} stats={stats} catMap={catMap} onOpen={setOpenLaw} onAnalyzed={reloadSkills} goView={setView}/>}
+          {view==='analysis'      && <Analysis      laws={activeLaws} cats={cats} catMap={catMap} allLaws={laws} onAnalyzed={reloadSkills} goView={setView} onCreateFull={handleCreateFull}/>}
           {view==='staging'       && <Staging       batches={stagingBatches} catMap={catMap} onAdd={handleAddStaged} onDrop={handleDropStaged}/>}
           {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={setView}/>}
@@ -1033,37 +1041,87 @@ function AnalyzePanel({onAnalyzed,goView}){
   )
 }
 
-function Analysis({laws,cats,stats,catMap,onOpen,onAnalyzed,goView}){
-  const bad=laws.filter(l=>l.status==='bad')
-  const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
+function ManualAddPanel({cats,allLaws,onCreateFull}){
+  const [cat,setCat]=useState(cats[0]?.code||'')
+  const [name,setName]=useState('')
+  const [ministry,setMinistry]=useState('')
+  const [level,setLevel]=useState('4')
+  const [announce,setAnnounce]=useState('')
+  const [effective,setEffective]=useState('')
+  const [docs,setDocs]=useState('')
+  const [reqs,setReqs]=useState([{text:'',status:'met'}])
+  const [busy,setBusy]=useState(false)
+  const [msg,setMsg]=useState(null)
+  const code = cat ? nextCode(allLaws, cat) : '—'
+  const valid = cat && name.trim()
+  const setReq=(i,k,v)=>setReqs(p=>p.map((r,j)=>j===i?{...r,[k]:v}:r))
+
+  async function save(){
+    if(!valid) return
+    setBusy(true); setMsg(null)
+    try{
+      const nl=await onCreateFull(
+        {code,cat,name:name.trim(),hierarchy_level:level,ministry,announce_date:announce,effective_date:effective,doc_list:docs},
+        reqs.filter(r=>r.text.trim()))
+      setMsg({ok:`เพิ่ม ${nl.code} เข้าหมวด ${cat} แล้ว (${reqs.filter(r=>r.text.trim()).length} ข้อ)`})
+      setName('');setMinistry('');setAnnounce('');setEffective('');setDocs('');setReqs([{text:'',status:'met'}])
+    }catch(e){ setMsg({err:'บันทึกไม่สำเร็จ: '+e.message}) }
+    setBusy(false)
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-h"><h3>เพิ่มเข้าทะเบียนเอง</h3><span className="sub" style={{marginLeft:'auto'}}>เลือกหมวดแล้วกรอกได้เลย · รหัสที่จะได้: <b className="num" style={{color:'var(--brand)'}}>{code}</b></span></div>
+      <div className="panel-b">
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+          <div><label className="form-label">หมวด</label>
+            <select className="form-input" value={cat} onChange={e=>setCat(e.target.value)}>
+              {cats.map(c=><option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
+            </select></div>
+          <div><label className="form-label">ลำดับชั้น</label>
+            <select className="form-input" value={level} onChange={e=>setLevel(e.target.value)}>
+              {LAW_TYPES.map(t=><option key={t.level} value={t.level}>ชั้น {t.level} — {t.label}</option>)}
+            </select></div>
+          <div><label className="form-label">กระทรวง / หน่วยงาน</label><input className="form-input" value={ministry} onChange={e=>setMinistry(e.target.value)}/></div>
+        </div>
+        <label className="form-label">ชื่อกฎหมาย</label>
+        <textarea className="form-input" rows={2} value={name} onChange={e=>setName(e.target.value)} placeholder="ชื่อกฎหมายฉบับเต็ม…"/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+          <div><label className="form-label">วันที่ประกาศ</label><input className="form-input" value={announce} onChange={e=>setAnnounce(e.target.value)} placeholder="เช่น 17 มี.ค. 2553"/></div>
+          <div><label className="form-label">วันที่บังคับใช้</label><input className="form-input" value={effective} onChange={e=>setEffective(e.target.value)} placeholder="เช่น 18 มี.ค. 2553"/></div>
+          <div><label className="form-label">เอกสาร/แบบฟอร์ม</label><input className="form-input" value={docs} onChange={e=>setDocs(e.target.value)} placeholder="เช่น แบบ จป., รายงานประจำปี"/></div>
+        </div>
+
+        <div className="sec-t" style={{marginTop:14,display:'flex'}}>สาระสำคัญ (ข้อย่อย)
+          <button className="btn btn-ghost" style={{marginLeft:'auto',padding:'3px 10px',fontSize:12}} onClick={()=>setReqs(p=>[...p,{text:'',status:'met'}])}>+ เพิ่มข้อ</button>
+        </div>
+        {reqs.map((r,i)=>(
+          <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start',marginBottom:6}}>
+            <span className="num" style={{paddingTop:9,minWidth:20,color:'var(--ink-faint)'}}>{i+1}.</span>
+            <textarea className="form-input" rows={1} style={{marginTop:0}} value={r.text} onChange={e=>setReq(i,'text',e.target.value)} placeholder="เนื้อหาข้อกำหนด (มาตรา/ข้อ…)"/>
+            <select className="form-input" style={{marginTop:0,width:130}} value={r.status} onChange={e=>setReq(i,'status',e.target.value)}>
+              <option value="met">สอดคล้อง</option><option value="unmet">ยังไม่สอดคล้อง</option>
+            </select>
+            {reqs.length>1 && <button className="btn btn-ghost" style={{padding:'7px 9px'}} onClick={()=>setReqs(p=>p.filter((_,j)=>j!==i))}>×</button>}
+          </div>
+        ))}
+
+        {msg?.ok && <div className="login-msg" style={{marginTop:12}}>{msg.ok}</div>}
+        {msg?.err && <div className="login-err" style={{marginTop:12}}>{msg.err}</div>}
+        <div style={{marginTop:14}}>
+          <button className="btn btn-primary" disabled={!valid||busy} onClick={save}>{busy?'กำลังบันทึก…':`บันทึกเข้าหมวด ${cat||''}`}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Analysis({laws,cats,catMap,allLaws,onAnalyzed,goView,onCreateFull}){
   return <div className="view">
+    <div className="sec-t" style={{margin:'0 0 10px'}}>ส่วนที่ 1 · วิเคราะห์ด้วย AI</div>
     <AnalyzePanel onAnalyzed={onAnalyzed} goView={goView}/>
-    <div className="ai-box" style={{marginBottom:20}}>
-      <span className="ai-tag">บทสรุปผู้บริหาร</span>
-      <p>จากทะเบียนกฎหมาย SHE ของ <b>บริษัท จัสเทล เน็ทเวิร์ค</b> (F-259, รอบ 1 ปี 2569) มีกฎหมายที่มีผลบังคับใช้ทั้งสิ้น <b>{stats.total} ฉบับ</b> ใน {cats.length} หมวด รวมข้อกำหนดที่ต้องปฏิบัติ <b>{stats.req} ข้อ</b> โดยมีอัตราความสอดคล้องโดยรวม <b>{stats.pct}%</b> ({stats.met} ข้อ) คงเหลือข้อกำหนดที่ยังไม่สอดคล้องเพียง <b>{stats.nc} ข้อ</b></p>
-    </div>
-    <div className="cols" style={{marginTop:0}}>
-      <div>
-        <div className="panel-h" style={{border:'none',padding:'0 0 13px'}}><h3>ข้อค้นพบสำคัญ & ข้อเสนอแนะ</h3></div>
-        {bad.map(l=>l.reqs.filter(r=>r.status==='unmet').map(r=>(
-          <div className="insight" key={r.id} onClick={()=>onOpen(l)} style={{cursor:'pointer'}}>
-            <div className="ii" style={{background:'var(--bad)'}}/>
-            <div><span className="ic-code">{l.code} · ยังไม่สอดคล้อง</span><h4>{l.name.slice(0,70)}</h4><p>{(r.note||r.text).slice(0,150)}…</p></div>
-          </div>)))}
-        <div className="insight"><div className="ii" style={{background:'var(--ok)'}}/>
-          <div><span className="ic-code">จุดแข็ง</span><h4>5 หมวดสอดคล้องครบ 100%</h4><p>หมวดไฟฟ้า, อัคคีภัย, สภาพแวดล้อม, เครื่องจักร และ Service ผ่านการประเมินทุกข้อกำหนด</p></div></div>
-        <div className="insight"><div className="ii" style={{background:'var(--review)'}}/>
-          <div><span className="ic-code">ข้อเสนอแนะ</span><h4>ติดตามประกาศหลักสูตรผู้ชำนาญการ</h4><p>มอบหมายผู้รับผิดชอบติดตามประกาศกระทรวงแรงงาน เพื่อปิดข้อ NC ทั้ง {stats.nc} ข้อทันทีเมื่อมีผลบังคับ</p></div></div>
-      </div>
-      <div>
-        <div className="panel-h" style={{border:'none',padding:'0 0 13px'}}><h3>สัดส่วนกฎหมายรายหมวด</h3></div>
-        <div className="panel"><div className="panel-b">
-          {cats.filter(c=>byCat[c.code]).map(c=>{const n=byCat[c.code].length;const p=Math.round(n/stats.total*100);
-            return <div className="catbar" key={c.code}><div className="top"><span className="nm">{c.code} · {c.name}</span><b className="num">{n} ฉบับ</b></div>
-              <div className="track"><div className="fill" style={{width:p+'%',background:c.color}}/></div></div>})}
-        </div></div>
-      </div>
-    </div>
+    <div className="sec-t" style={{margin:'22px 0 10px'}}>ส่วนที่ 2 · เพิ่มเข้าทะเบียนเอง</div>
+    <ManualAddPanel cats={cats} allLaws={allLaws} onCreateFull={onCreateFull}/>
   </div>
 }
 

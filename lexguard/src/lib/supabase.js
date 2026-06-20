@@ -145,6 +145,30 @@ export async function createLaw({ code, cat, name, hierarchy_level, ministry, ef
   return { ...data, reqs: [] }
 }
 
+// Create a law together with its requirement sub-items (manual entry)
+export async function createLawFull({ code, cat, name, hierarchy_level, ministry, announce_date, effective_date, doc_list }, reqs = []) {
+  const clean = (reqs || []).filter(r => (r.text || '').trim())
+  const anyUnmet = clean.some(r => r.status === 'unmet')
+  const { data, error } = await supabase.from('lg_laws').insert({
+    code, cat, name,
+    hierarchy_level: hierarchy_level ? Number(hierarchy_level) : null,
+    ministry: ministry || null,
+    issue_date: announce_date || null,
+    effective_date: effective_date || null,
+    doc_list: doc_list || null,
+    status: clean.length ? (anyUnmet ? 'bad' : 'ok') : 'ok',
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  }).select().single()
+  if (error) throw error
+  if (clean.length) {
+    const rows = clean.map((r, i) => ({ law_id: data.id, seq: i, text: r.text.trim(), status: r.status || 'met' }))
+    const { error: e2 } = await supabase.from('lg_requirements').insert(rows)
+    if (e2) throw e2
+    return { ...data, reqs: rows }
+  }
+  return { ...data, reqs: [] }
+}
+
 export async function restoreLaw(lawId) {
   const { error } = await supabase.from('lg_laws').update({
     status: 'ok',
