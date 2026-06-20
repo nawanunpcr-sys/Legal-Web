@@ -3,47 +3,55 @@
 // ───────────────────────────────────────────────────────────────
 
 const TH_MONTHS_FULL = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
-const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+const xesc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+const sheetName = s => String(s || 'Sheet').replace(/[:\\/?*\[\]]/g, '-').slice(0, 31)
 
-// ── Excel export ────────────────────────────────────────────────
-// Builds an Excel-compatible HTML workbook (.xls) — opens natively in
-// Microsoft Excel / Numbers / Google Sheets with correct Thai encoding,
-// no external dependency required.
+// ── Excel export (multi-sheet, one worksheet per category) ──────
+// Output is SpreadsheetML 2003 (.xls) — opens natively in Excel with
+// real separate sheets, correct Thai encoding, no dependency.
 export function exportLawsToExcel(laws, catMap = {}) {
-  const prog = l => !l.reqs.length ? 100 : Math.round(l.reqs.filter(r => r.status === 'met').length / l.reqs.length * 100)
   const statusLabel = { ok: 'สอดคล้อง', bad: 'ยังไม่สอดคล้อง', repealed: 'ถูกยกเลิก' }
+  const HEAD = ['รหัส', 'ชื่อกฎหมายและข้อกำหนด', 'กระทรวง / หน่วยงาน', 'สถานะ', 'วันที่ประกาศ/บังคับใช้', 'กำหนดทบทวน']
+  const WIDTHS = [70, 360, 170, 110, 150, 110]
 
-  const header = ['รหัส', 'หมวด', 'ชื่อหมวด', 'ชั้น', 'ชื่อกฎหมาย', 'กระทรวง / หน่วยงาน',
-                  'สถานะ', 'ข้อกำหนด (ผ่าน/ทั้งหมด)', 'ความสอดคล้อง (%)', 'กำหนดทบทวน']
-  const rows = laws.map(l => ([
-    l.code, l.cat, catMap[l.cat]?.name || '', l.hierarchy_level || '',
-    l.name, l.ministry || '—', statusLabel[l.status] || l.status,
-    `${l.reqs.filter(r => r.status === 'met').length}/${l.reqs.length}`,
-    prog(l) + '%', l.review_date || '—',
-  ]))
+  // group laws by category, preserve catMap order then any extras
+  const byCat = {}
+  laws.forEach(l => { (byCat[l.cat] = byCat[l.cat] || []).push(l) })
+  const catOrder = [...new Set([...Object.keys(catMap), ...Object.keys(byCat)])].filter(c => byCat[c]?.length)
 
-  const thead = '<tr>' + header.map(h => `<th>${esc(h)}</th>`).join('') + '</tr>'
-  const tbody = rows.map(r => '<tr>' + r.map(c => `<td>${esc(c)}</td>`).join('') + '</tr>').join('')
+  const cell = (v, style) => `<Cell${style ? ` ss:StyleID="${style}"` : ''}><Data ss:Type="String">${xesc(v)}</Data></Cell>`
+  const headRow = '<Row ss:Height="22">' + HEAD.map(h => cell(h, 'hdr')).join('') + '</Row>'
+
+  const worksheets = catOrder.map(code => {
+    const name = sheetName(`${code} ${catMap[code]?.name || ''}`.trim())
+    const cols = WIDTHS.map(w => `<Column ss:Width="${w}"/>`).join('')
+    const rows = byCat[code].map(l => '<Row>' + [
+      cell(l.code),
+      cell(l.name),
+      cell(l.ministry || '—'),
+      cell(statusLabel[l.status] || l.status, l.status === 'bad' ? 'bad' : l.status === 'repealed' ? 'rep' : 'ok'),
+      cell(l.issue_date || l.effective_date || '—'),
+      cell(l.review_date || '—'),
+    ].join('') + '</Row>').join('')
+    return `<Worksheet ss:Name="${name}"><Table>${cols}${headRow}${rows}</Table></Worksheet>`
+  }).join('')
+
+  const xml =
+`<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Default"><Font ss:FontName="Tahoma" ss:Size="10"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>
+  <Style ss:ID="hdr"><Font ss:FontName="Tahoma" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#0071E3" ss:Pattern="Solid"/><Alignment ss:Vertical="Center"/></Style>
+  <Style ss:ID="ok"><Font ss:Color="#1F9D57" ss:Bold="1"/></Style>
+  <Style ss:ID="bad"><Font ss:Color="#D6342A" ss:Bold="1"/></Style>
+  <Style ss:ID="rep"><Font ss:Color="#888888"/></Style>
+ </Styles>
+ ${worksheets}
+</Workbook>`
 
   const today = new Date()
-  const html =
-`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8">
-<style>
-  table{border-collapse:collapse;font-family:'Tahoma','Sarabun',sans-serif;font-size:11pt}
-  th{background:#0071e3;color:#fff;border:1px solid #b8b8c0;padding:6px 10px;text-align:left;font-weight:700}
-  td{border:1px solid #d0d0d6;padding:5px 10px;vertical-align:top}
-  caption{font-size:14pt;font-weight:700;text-align:left;padding:8px 0}
-</style></head>
-<body>
-<table>
-  <caption>ทะเบียนกฎหมาย SHE — ส่งออกเมื่อ ${today.getDate()} ${TH_MONTHS_FULL[today.getMonth()]} ${today.getFullYear() + 543}</caption>
-  <thead>${thead}</thead>
-  <tbody>${tbody}</tbody>
-</table>
-</body></html>`
-
-  const blob = new Blob(['﻿', html], { type: 'application/vnd.ms-excel;charset=utf-8' })
+  const blob = new Blob(['﻿', xml], { type: 'application/vnd.ms-excel;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
