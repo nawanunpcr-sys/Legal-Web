@@ -155,12 +155,10 @@ export default function App(){
   const bellNotifications = useMemo(()=>{
     const out=[]
     activeLaws.forEach(l=>{ if(l.status==='bad') out.push({type:'bad',law:l,text:l.code+' ยังไม่สอดคล้อง',sub:l.name.slice(0,60)}) })
-    activeLaws.forEach(l=>{ if(l.review_date){ const d=daysTo(l.review_date); if(d>=0&&d<=200) out.push({type:'review',law:l,days:d,text:l.code+' ครบกำหนดทบทวนใน '+d+' วัน',sub:thDate(l.review_date)}) }})
     comms.forEach(c=>{ if(c.next_scheduled_date){ const d=daysTo(c.next_scheduled_date); const nb=c.notify_days_before||7; if(d>=0&&d<=nb) out.push({type:'comm',comm:c,days:d,text:'การสื่อสาร: '+c.topic.slice(0,50),sub:'ครบกำหนดใน '+d+' วัน — '+thDate(c.next_scheduled_date)}) }})
-    reports.forEach(r=>{ if(r.next_due_date){ const d=daysTo(r.next_due_date); const nb=r.notify_days_before||30; if(d<0) out.push({type:'bad',goView:'reports',text:'รายงานเกินกำหนดส่ง: '+r.title.slice(0,50),sub:'เกิน '+Math.abs(d)+' วัน — '+thDate(r.next_due_date)}); else if(d<=nb) out.push({type:'review',goView:'reports',days:d,text:'ใกล้ครบกำหนดส่งรายงาน: '+r.title.slice(0,46),sub:'อีก '+d+' วัน — '+thDate(r.next_due_date)}) }})
-    cars.forEach(c=>{ if(c.status!=='closed'&&c.due_date){ const d=daysTo(c.due_date); if(d<0) out.push({type:'bad',goView:'car',text:'CAR เกินกำหนดแก้ไข: '+(c.co_no||''),sub:(c.finding||'').slice(0,55)}); else if(d<=60) out.push({type:'review',goView:'car',days:d,text:'CAR ใกล้ครบกำหนด: '+(c.co_no||''),sub:'อีก '+d+' วัน — '+thDate(c.due_date)}) }})
+    reports.forEach(r=>{ if(r.next_due_date){ const d=daysTo(r.next_due_date); if(d<0) out.push({type:'bad',goView:'reports',text:'รายงานเกินกำหนดส่ง: '+r.title.slice(0,50),sub:'เกิน '+Math.abs(d)+' วัน — '+thDate(r.next_due_date)}) }})
+    cars.forEach(c=>{ if(c.status!=='closed'&&c.due_date){ const d=daysTo(c.due_date); if(d<0) out.push({type:'bad',goView:'car',text:'CAR เกินกำหนดแก้ไข: '+(c.co_no||''),sub:(c.finding||'').slice(0,55)}) }})
     newUpdates.slice(0,15).forEach(u=>out.push({type:'law_update',goView:'updates',text:'กฎหมายใหม่: '+u.title.slice(0,55),sub:'จาก ShawPat'+(u.published_date?' · '+u.published_date:'')}))
-    notifs.filter(n=>n.type==='comm_submitted').slice(0,3).forEach(n=>out.push({type:'submitted',text:n.message,sub:thDate(n.created_at)}))
     return out.sort((a,b)=>(a.type==='bad'?-1:0)-(b.type==='bad'?-1:0))
   },[activeLaws,comms,notifs,newUpdates,cars,reports])
 
@@ -300,7 +298,6 @@ export default function App(){
                 <button key={n.id} className={'nav-item'+(view===n.id?' active':'')}
                   onClick={()=>setView(n.id)}>
                   <span className="label">{n.label}</span>
-                  {badge && <span className="badge">{badge}</span>}
                 </button>
               )
             })}
