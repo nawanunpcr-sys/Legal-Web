@@ -124,6 +124,11 @@ export async function recomputeLawStatus(lawId, reqs) {
   return status
 }
 
+export async function setLawActive(lawId, active) {
+  const { error } = await supabase.from('lg_laws').update({ active, updated_at: new Date().toISOString() }).eq('id', lawId)
+  if (error) throw error
+}
+
 export async function updateLawField(lawId, patch) {
   const { error } = await supabase.from('lg_laws').update(patch).eq('id', lawId)
   if (error) throw error

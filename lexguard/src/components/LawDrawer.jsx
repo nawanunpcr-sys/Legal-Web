@@ -39,7 +39,8 @@ function RepealModal({ law, onConfirm, onClose }){
   )
 }
 
-export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, onRestore, onDuplicate, prog, thDate }){
+export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, onRestore, onDuplicate, onToggleActive, prog, thDate }){
+  const inactive = law.active === false
   const [showRepealModal, setShowRepealModal] = useState(false)
   const p = prog(law)
   const isRepealed = law.status === 'repealed'
@@ -64,6 +65,11 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
               ยกเลิกแล้ว — {law.repeal_date||'ไม่ระบุวันที่'}
               {law.replaced_by_code && <span style={{marginLeft:6}}>· แทนที่ด้วย <b>{law.replaced_by_code}</b></span>}
             </div>
+          )}
+          {!isRepealed && (
+            <span className="pill" style={inactive?{background:'var(--surface-3)',color:'var(--ink-faint)'}:{background:'var(--ok-bg)',color:'var(--ok)'}}>
+              {inactive?'ไม่ใช้แล้ว':'ใช้อยู่'}
+            </span>
           )}
           <div className="meta">
             <span>{law.ministry||'—'}</span>
@@ -146,9 +152,10 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
           <button className="btn btn-ghost" style={{flex:1}} onClick={onClose}>ปิด</button>
           {!isRepealed && (
             <>
+              {onToggleActive && <button className="btn btn-ghost" style={{flex:1}} onClick={()=>onToggleActive(law)}>{inactive?'ทำให้ใช้อยู่':'ทำเป็นไม่ใช้แล้ว'}</button>}
               {onDuplicate && <button className="btn btn-ghost" style={{flex:1}} onClick={()=>onDuplicate(law)}>ทำซ้ำ</button>}
-              <button className="btn btn-danger" style={{flex:1}} onClick={()=>setShowRepealModal(true)}>บันทึกการยกเลิก</button>
-              <button className="btn btn-primary" style={{flex:1}} onClick={()=>window.print()}>พิมพ์ PDF</button>
+              <button className="btn btn-danger" style={{flex:1}} onClick={()=>setShowRepealModal(true)}>ยกเลิก</button>
+              <button className="btn btn-primary" style={{flex:1}} onClick={()=>window.print()}>PDF</button>
             </>
           )}
           {isRepealed && (

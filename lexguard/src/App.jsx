@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, hasSupabase, fetchAll,
-         setRequirementStatus, recomputeLawStatus, bulkSetCompliance,
+         setRequirementStatus, recomputeLawStatus, bulkSetCompliance, setLawActive,
          repealLaw, restoreLaw, createLaw, createLawFull, uploadLawDoc,
          markCommSent, updateCommSchedule,
          dismissNotification,
@@ -170,10 +170,11 @@ export default function App(){
     catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
+  const inForceLaws = useMemo(()=>activeLaws.filter(l=>l.active!==false),[activeLaws])
   const stats = useMemo(()=>{
-    let req=0,met=0; activeLaws.forEach(l=>l.reqs.forEach(r=>{req++;if(r.status==='met')met++}))
-    return { total:activeLaws.length, req, met, nc:req-met, pct:req?Math.round(met/req*100):100 }
-  },[activeLaws])
+    let req=0,met=0; inForceLaws.forEach(l=>l.reqs.forEach(r=>{req++;if(r.status==='met')met++}))
+    return { total:inForceLaws.length, req, met, nc:req-met, pct:req?Math.round(met/req*100):100 }
+  },[inForceLaws])
 
   const reportAlerts = useMemo(()=>
     reports.filter(r=>{ if(!r.next_due_date) return false; const d=daysTo(r.next_due_date); return d<0||d<=(r.notify_days_before||30) }).length
@@ -240,6 +241,17 @@ export default function App(){
       fetchActivity().then(setActivity)
     }
     catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
+  }
+
+  async function handleToggleActive(law){
+    const next = law.active===false
+    try{
+      await setLawActive(law.id, next)
+      setLaws(prev=>prev.map(l=>l.id===law.id?{...l,active:next}:l))
+      setOpenLaw(prev=>prev&&prev.id===law.id?{...prev,active:next}:prev)
+      await logActivity({ action:'requirement', law_id:law.id, law_code:law.code, law_name:law.name, detail: next?'เปลี่ยนเป็น “ใช้อยู่”':'เปลี่ยนเป็น “ไม่ใช้แล้ว”' })
+      fetchActivity().then(setActivity)
+    }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleDuplicate(law){
@@ -395,13 +407,13 @@ export default function App(){
           {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} reports={reports} onGoReports={()=>setView('reports')}/>}
           {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}/>}
-          {view==='compliance'    && <Compliance    laws={activeLaws} cats={cats} stats={stats} onOpen={setOpenLaw} onToggle={toggleReq}/>}
-          {view==='improvements'  && <Improvements  laws={activeLaws} catMap={catMap} onOpen={setOpenLaw}/>}
+          {view==='compliance'    && <Compliance    laws={inForceLaws} cats={cats} stats={stats} onOpen={setOpenLaw} onToggle={toggleReq}/>}
+          {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
           {view==='reports'       && <Reports       reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
           {view==='car'           && <CarOfi        cars={cars} onReload={loadCars} suggest={suggest}/>}
-          {view==='analysis'      && <Analysis      laws={activeLaws} cats={cats} catMap={catMap} allLaws={laws} onAnalyzed={reloadSkills} goView={setView} onCreateFull={handleCreateFull} suggest={suggest}/>}
+          {view==='analysis'      && <Analysis      laws={inForceLaws} cats={cats} catMap={catMap} allLaws={laws} onAnalyzed={reloadSkills} goView={setView} onCreateFull={handleCreateFull} suggest={suggest}/>}
           {view==='staging'       && <Staging       batches={stagingBatches} catMap={catMap} onAdd={handleAddStaged} onDrop={handleDropStaged}/>}
           {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={setView}/>}
@@ -411,7 +423,7 @@ export default function App(){
 
       {openLaw && (
         <LawDrawer law={openLaw} catMap={catMap} onClose={()=>setOpenLaw(null)}
-          onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate}
+          onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive}
           prog={prog} thDate={thDate}/>
       )}
       <div id="print-report"/>
@@ -626,8 +638,8 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],re
   const curBE = new Date().getFullYear()+543
   const tlFromBE = curBE-2   // ไทม์ไลน์: 3 ปีย้อนหลัง
 
-  const active = useMemo(()=>laws.filter(l=>l.status!=='repealed'),[laws])
-  const fLaws  = active   // ช่วงเวลา: ทั้งหมด
+  const active = useMemo(()=>laws.filter(l=>l.status!=='repealed' && l.active!==false),[laws])
+  const fLaws  = active   // ใช้อยู่เท่านั้น (ไม่นับ Inactive)
 
   const stats = useMemo(()=>{
     let req=0,met=0; fLaws.forEach(l=>l.reqs.forEach(r=>{req++;if(r.status==='met')met++}))
@@ -780,6 +792,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 /* ─────────────────────────── REGISTER ─────────────────────────── */
 function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months,monthYear,setMonthYear,onToggleMonth}){
   const [cat,setCat]=usePersist('cr_reg_cat','all')
+  const [act,setAct]=usePersist('cr_reg_act','all')
   const [showAdd,setShowAdd]=useState(false)
   const [sel,setSel]=useState(new Set())
   const toggleSel=id=>setSel(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n })
@@ -788,13 +801,20 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
   function exportSel(){ const m=Object.fromEntries(cats.map(c=>[c.code,c])); exportLawsToExcel(laws.filter(l=>sel.has(l.id)),m); }
   const catsList=[...new Set(laws.map(l=>l.cat))].sort()
   const q=search.toLowerCase()
-  const rows=laws.filter(l=>(cat==='all'||l.cat===cat)&&(!q||l.name.toLowerCase().includes(q)||l.code.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)))
+  const rows=laws.filter(l=>(cat==='all'||l.cat===cat)
+    &&(act==='all'||(act==='active'?l.active!==false:l.active===false))
+    &&(!q||l.name.toLowerCase().includes(q)||l.code.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)))
   const grouped=useMemo(()=>{ const byCat={}; rows.forEach(l=>{ const c=l.cat; if(!byCat[c])byCat[c]={}; const t=l.hierarchy_level||5; if(!byCat[c][t])byCat[c][t]=[]; byCat[c][t].push(l) }); return byCat },[rows])
   const activeCats=catsList.filter(c=>cat==='all'||c===cat)
   return <div className="view">
     {showAdd && <AddLawModal cats={cats} allLaws={allLaws} onSave={onCreate} onClose={()=>setShowAdd(false)}/>}
     <div style={{marginBottom:16}}>
       <MonthlyCheckPanel months={months} year={monthYear} setYear={setMonthYear} onToggle={onToggleMonth}/>
+    </div>
+    <div className="filterbar">
+      <span className={'chip'+(act==='all'?' active':'')} onClick={()=>setAct('all')}>ทั้งหมด</span>
+      <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({laws.filter(l=>l.active!==false).length})</span>
+      <span className={'chip'+(act==='inactive'?' active':'')} onClick={()=>setAct('inactive')}>ไม่ใช้แล้ว ({laws.filter(l=>l.active===false).length})</span>
     </div>
     <div className="filterbar">
       <span className={'chip'+(cat==='all'?' active':'')} onClick={()=>setCat('all')}>ทุกหมวด ({laws.length})</span>
@@ -826,9 +846,9 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
               <div className="tablewrap"><table>
                 <thead><tr><th style={{width:34}}></th><th>รหัส / ชื่อกฎหมาย</th><th>กระทรวง</th><th>สถานะ</th><th>ความสอดคล้อง</th></tr></thead>
                 <tbody>{grouped[c][t.level].map(l=>{const p=prog(l);return(
-                  <tr key={l.id} className={sel.has(l.id)?'row-sel':''}>
+                  <tr key={l.id} className={sel.has(l.id)?'row-sel':''} style={l.active===false?{opacity:.55}:null}>
                     <td onClick={e=>{e.stopPropagation();toggleSel(l.id)}} style={{textAlign:'center'}}><input type="checkbox" checked={sel.has(l.id)} onChange={()=>toggleSel(l.id)} onClick={e=>e.stopPropagation()}/></td>
-                    <td onClick={()=>onOpen(l)}><div className="law-code">{l.code}</div><div className="law-title">{l.name}</div></td>
+                    <td onClick={()=>onOpen(l)}><div className="law-code">{l.code}{l.active===false&&<span className="tag" style={{marginLeft:8,fontSize:9.5,padding:'1px 7px'}}>ไม่ใช้แล้ว</span>}</div><div className="law-title">{l.name}</div></td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
                     <td onClick={()=>onOpen(l)}><Pill s={l.status}/></td>
                     <td onClick={()=>onOpen(l)}><div className="mini-prog"><div className="track"><div className="fill" style={{width:p+'%',background:p===100?'var(--ok)':'var(--bad)'}}/></div><span className="num">{p}%</span></div></td>
