@@ -562,7 +562,7 @@ function ActivityTimeline({activity,onOpenLaw,lawById}){
   const hhmm = s => { const d=new Date(s); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0') }
   return (
     <div className="panel" style={{marginTop:16}}>
-      <div className="panel-h"><h3>ไทม์ไลน์เหตุการณ์ (ตามวันที่จริง)</h3>
+      <div className="panel-h"><h3>บันทึกกิจกรรมล่าสุด</h3>
         <span className="sub" style={{marginLeft:'auto'}}>บันทึกอัตโนมัติทุกครั้งที่เพิ่ม / แก้ / ยกเลิก / นำเข้า</span></div>
       <div className="panel-b">
         {days.length===0 && <div style={{textAlign:'center',color:'var(--ink-faint)',padding:24,fontSize:13}}>ยังไม่มีเหตุการณ์ — เมื่อมีการเพิ่ม/แก้/ยกเลิกกฎหมาย จะบันทึกที่นี่พร้อมวันเวลา</div>}
