@@ -42,6 +42,18 @@ export function advanceByRecurrence(baseDate, recurrence) {
   }
 }
 
+// ---- Settings ----
+export const DEFAULT_SETTINGS = { company_name:'ComplyRegister', subtitle:'ทะเบียนกฎหมาย SHE', org_name:'จัสเทล เน็ทเวิร์ค', user_name:'จป. วิชาชีพ', brand_mark:'CR' }
+export async function fetchSettings() {
+  if (!hasSupabase) return { ...DEFAULT_SETTINGS }
+  const { data } = await supabase.from('lg_settings').select('*').eq('id', 1).maybeSingle()
+  return { ...DEFAULT_SETTINGS, ...(data || {}) }
+}
+export async function saveSettings(patch) {
+  const { error } = await supabase.from('lg_settings').upsert({ id: 1, ...patch, updated_at: new Date().toISOString() })
+  if (error) throw error
+}
+
 // ---- Auth ----
 export async function getSession() {
   if (!hasSupabase) return null

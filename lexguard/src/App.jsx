@@ -8,6 +8,7 @@ import { supabase, hasSupabase, fetchAll,
          fetchStaging, fetchUpdates, addStagedLaw, dismissStaged, setUpdateStatus,
          logActivity, fetchActivity, fetchCars, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
+         fetchSettings, saveSettings, DEFAULT_SETTINGS,
          getSession, onAuthChange, signOut,
          STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
 import LawDrawer from './components/LawDrawer.jsx'
@@ -15,7 +16,9 @@ import CarOfi from './components/CarOfi.jsx'
 import Reports from './components/Reports.jsx'
 import Login from './components/Login.jsx'
 import Toaster from './components/Toaster.jsx'
+import ConfirmHost from './components/ConfirmHost.jsx'
 import { toast } from './lib/toast.js'
+import { confirmDialog } from './lib/confirm.js'
 import { buildReport } from './components/report.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
 
@@ -58,6 +61,7 @@ const NAV_GROUPS = [
     { id:'staging',       label:'นำเข้า / รออนุมัติ',     icon:'inbox'   },
     { id:'updates',       label:'อัปเดตกฎหมาย',          icon:'update'  },
     { id:'notifications', label:'การแจ้งเตือน',           icon:'bell'    },
+    { id:'settings',      label:'ตั้งค่า',                icon:'gear'    },
   ]},
 ]
 
@@ -74,6 +78,7 @@ const TITLES = {
   staging:       ['นำเข้า / รออนุมัติ',    'รายการที่ AI สรุปไว้ รอกดเพิ่มเข้าทะเบียน'],
   updates:       ['อัปเดตกฎหมาย · ShawPat','เฝ้าระวังกฎหมายใหม่จาก ShawPat'],
   notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
+  settings:      ['ตั้งค่า',                'ข้อมูลองค์กรและการแสดงผลของระบบ'],
 }
 
 export default function App(){
@@ -96,6 +101,7 @@ export default function App(){
   const [updates,setUpdates] = useState([])
   const [activity,setActivity] = useState([])
   const [cars,setCars]       = useState([])
+  const [settings,setSettings] = useState(DEFAULT_SETTINGS)
   const [reports,setReports] = useState([])
 
   // auth gate
@@ -122,9 +128,9 @@ export default function App(){
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, s, u, a, cs, rp] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchCars(), fetchReports()])
+      const [d, mData, s, u, a, cs, rp, st] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchCars(), fetchReports(), fetchSettings()])
       setCats(d.cats); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setStaging(s); setUpdates(u); setActivity(a); setCars(cs); setReports(rp)
+      setMonths(mData); setStaging(s); setUpdates(u); setActivity(a); setCars(cs); setReports(rp); setSettings(st)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -229,7 +235,7 @@ export default function App(){
 
   async function handleDuplicate(law){
     const code = nextCode(laws, law.cat)
-    if(!confirm(`ทำซ้ำ ${law.code} → ${code} ?`)) return
+    if(!(await confirmDialog(`ทำซ้ำ ${law.code} → ${code} ?`))) return
     try{
       const nl = await handleCreateFull(
         { code, cat:law.cat, name:'(สำเนา) '+law.name, hierarchy_level:law.hierarchy_level||'4',
@@ -301,9 +307,9 @@ export default function App(){
         <div className="brand" role="button" tabIndex={0} title="กลับหน้าหลัก"
           onClick={()=>setView('dashboard')}
           onKeyDown={e=>{ if(e.key==='Enter'||e.key===' ') setView('dashboard') }}>
-          <div className="brand-mark">CR</div>
-          <h1>ComplyRegister</h1>
-          <span>ทะเบียนกฎหมาย SHE</span>
+          <div className="brand-mark">{settings.brand_mark||'CR'}</div>
+          <h1>{settings.company_name||'ComplyRegister'}</h1>
+          <span>{settings.subtitle||'ทะเบียนกฎหมาย SHE'}</span>
         </div>
 
         {NAV_GROUPS.map((group,gi)=>(
@@ -331,8 +337,8 @@ export default function App(){
         ))}
 
         <div className="side-foot">
-          <div className="av">จ</div>
-          <div><div className="nm">จป. วิชาชีพ</div><div className="rl">จัสเทล เน็ทเวิร์ค</div></div>
+          <div className="av">{(settings.user_name||'จ').trim().charAt(0)}</div>
+          <div><div className="nm">{settings.user_name||'จป. วิชาชีพ'}</div><div className="rl">{settings.org_name||'จัสเทล เน็ทเวิร์ค'}</div></div>
         </div>
       </aside>
 
@@ -390,6 +396,7 @@ export default function App(){
           {view==='staging'       && <Staging       batches={stagingBatches} catMap={catMap} onAdd={handleAddStaged} onDrop={handleDropStaged}/>}
           {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={setView}/>}
+          {view==='settings'      && <SettingsPage settings={settings} onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }}/>}
         </div>
       </div>
 
@@ -400,6 +407,7 @@ export default function App(){
       )}
       <div id="print-report"/>
       <Toaster/>
+      <ConfirmHost/>
     </div>
   )
 }
@@ -766,6 +774,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,allLaws,months,monthY
       <span className={'chip'+(cat==='all'?' active':'')} onClick={()=>setCat('all')}>ทุกหมวด ({laws.length})</span>
       {catsList.map(c=>(<span key={c} className={'chip'+(cat===c?' active':'')} onClick={()=>setCat(c)} style={cat===c?{borderColor:catMap[c]?.color,color:catMap[c]?.color}:{}}>{c} · {catMap[c]?.name} ({laws.filter(l=>l.cat===c).length})</span>))}
       <span className="right" style={{marginLeft:'auto'}}>พบ {rows.length} ฉบับ</span>
+      <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>ส่งออกที่กรอง</button>
       <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} onClick={()=>setShowAdd(true)}>+ เพิ่มกฎหมาย</button>
     </div>
     {activeCats.map(c=>(
@@ -1128,7 +1137,7 @@ function AnalyzePanel({cats,allLaws,onCreateFull,suggest,goView,onAnalyzed}){
     if(!chosen.length){ setErr('ยังไม่ได้เลือกข้อย่อย'); return }
     const code=nextCode(allLaws, cat)
     const dup=dupCheck(allLaws, law.name||'')
-    if(dup && !confirm(`พบกฎหมายคล้ายกันอยู่แล้ว: ${dup.code} — ${dup.name.slice(0,50)}\nยืนยันเพิ่มซ้ำ?`)) return
+    if(dup && !(await confirmDialog(`พบกฎหมายคล้ายกันอยู่แล้ว: ${dup.code} — ${dup.name.slice(0,50)}\nยืนยันเพิ่มซ้ำ?`,{danger:true}))) return
     setBusy(true); setErr('')
     try{
       const nl=await onCreateFull(
@@ -1222,7 +1231,7 @@ function ManualAddPanel({cats,allLaws,onCreateFull,suggest}){
   async function save(){
     if(!valid) return
     const dup=dupCheck(allLaws, name)
-    if(dup && !confirm(`พบกฎหมายคล้ายกันอยู่แล้ว: ${dup.code} — ${dup.name.slice(0,50)}\nยืนยันเพิ่มซ้ำ?`)) return
+    if(dup && !(await confirmDialog(`พบกฎหมายคล้ายกันอยู่แล้ว: ${dup.code} — ${dup.name.slice(0,50)}\nยืนยันเพิ่มซ้ำ?`,{danger:true}))) return
     setBusy(true); setMsg(null)
     try{
       const nl=await onCreateFull(
@@ -1406,6 +1415,37 @@ const NOTIF_META = {
   submitted: { label:'ส่งเรียบร้อย',   icon:'check',    bg:'var(--ok-bg)',     fg:'var(--ok)'     },
   law_update:{ label:'กฎหมายใหม่',     icon:'spark',    bg:'var(--brand-tint)',fg:'var(--brand)'  },
 }
+function SettingsPage({ settings, onSave }) {
+  const [f, setF] = useState(settings)
+  const [busy, setBusy] = useState(false)
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }))
+  const F = [
+    ['company_name', 'ชื่อระบบ / บริษัท (หัวเมนู)'],
+    ['subtitle', 'คำบรรยายใต้ชื่อ'],
+    ['brand_mark', 'อักษรย่อโลโก้ (เช่น CR)'],
+    ['org_name', 'ชื่อองค์กร (มุมล่าง)'],
+    ['user_name', 'ชื่อผู้ใช้ (มุมล่าง)'],
+  ]
+  async function save() { setBusy(true); try { await onSave(f) } catch (e) { toast('บันทึกไม่สำเร็จ: ' + e.message) } setBusy(false) }
+  return (
+    <div className="view">
+      <div className="panel" style={{ maxWidth: 560 }}>
+        <div className="panel-h"><h3>ข้อมูลองค์กร & การแสดงผล</h3></div>
+        <div className="panel-b">
+          {F.map(([k, label]) => (
+            <div key={k}><label className="form-label">{label}</label>
+              <input className="form-input" value={f[k] || ''} onChange={e => set(k, e.target.value)} maxLength={k === 'brand_mark' ? 4 : 80} /></div>
+          ))}
+          <div style={{ marginTop: 16 }}>
+            <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? 'กำลังบันทึก…' : 'บันทึกการตั้งค่า'}</button>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 14, lineHeight: 1.6 }}>การเปลี่ยนแปลงจะแสดงผลที่หัวเมนูและมุมล่างของแถบด้านข้างทันที</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
   const [filter, setFilter] = useState('all')
   const counts = useMemo(()=>({

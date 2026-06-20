@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { nextCoNumber, saveCar, deleteCar } from '../lib/supabase.js'
 import { toast } from '../lib/toast.js'
+import { confirmDialog } from '../lib/confirm.js'
 
 const TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
 const thDate = s => { if (!s) return '—'; const d = new Date(s); if (isNaN(d)) return s; return d.getDate() + ' ' + TH[d.getMonth()] + ' ' + (d.getFullYear() + 543) }
@@ -27,7 +28,7 @@ export default function CarOfi({ cars, onReload, suggest }) {
     filter === 'overdue' ? isOverdue(c) : true)
 
   async function remove(c) {
-    if (!confirm(`ลบ ${c.co_no || 'รายการนี้'}?`)) return
+    if (!(await confirmDialog(`ลบ ${c.co_no || 'รายการนี้'}?`, { danger: true }))) return
     try { await deleteCar(c.id); onReload() } catch (e) { toast('ลบไม่สำเร็จ: ' + e.message) }
   }
 
