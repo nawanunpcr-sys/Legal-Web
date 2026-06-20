@@ -472,6 +472,7 @@ const beYearFromDate = d => { if(!d) return null; const x=new Date(d); return is
 
 function Timeline({laws,catMap,onOpen,curBE,fromBE}){
   const [mode,setMode]=useState('added')  // added | repealed | all
+  const [openYear,setOpenYear]=useState(null)
   const byYear = useMemo(()=>{
     const ev=[]
     laws.forEach(l=>{
@@ -510,28 +511,33 @@ function Timeline({laws,catMap,onOpen,curBE,fromBE}){
           {mode==='added'?'กฎหมายที่ออก/บังคับใช้':mode==='repealed'?'กฎหมายที่ยกเลิก':'การเปลี่ยนแปลงทั้งหมด'} · รวม {totalCount} รายการ (แยกตามปี พ.ศ.)
         </div>
         {byYear.length===0 && <div style={{textAlign:'center',color:'var(--ink-faint)',padding:24,fontSize:13}}>ไม่มีรายการในช่วงปีที่เลือก</div>}
-        {byYear.map(yr=>(
+        {byYear.map(yr=>{
+          const isOpen = (openYear ?? byYear[0]?.year) === yr.year
+          return (
           <div key={yr.year} className="tl-year">
-            <div className="tl-head">
+            <div className="tl-head" style={{cursor:'pointer'}} onClick={()=>setOpenYear(isOpen?-1:yr.year)}>
               <span className="tl-dot"/>
+              <span style={{color:'var(--ink-faint)',width:14}}>{isOpen?'▾':'▸'}</span>
               <b className="num" style={{fontSize:15}}>{yr.year}</b>
               <span className="sub" style={{marginLeft:10}}>
                 {yr.nNew>0 && <span style={{color:'var(--ok)'}}>ใหม่ {yr.nNew} · </span>}
                 บังคับใช้ {yr.nEff} ฉบับ{yr.nRep>0 && <span style={{color:'var(--bad)'}}> · ยกเลิก {yr.nRep}</span>}
               </span>
             </div>
-            <div className="tl-items">
-              {yr.items.slice(0,40).map((e,i)=>(
-                <div key={i} className="tl-row" onClick={()=>onOpen(e.law)}>
-                  <span className="tl-tag" style={{background:KIND[e.kind].c}}>{KIND[e.kind].t}</span>
-                  <span className="law-code" style={{minWidth:58}}>{e.law.code}</span>
-                  <span style={{flex:1,fontSize:13}}>{e.law.name.slice(0,80)}{e.law.name.length>80?'…':''}</span>
-                  <Tag c={e.law.cat} color={catMap[e.law.cat]?.color}/>
-                </div>
-              ))}
-            </div>
+            {isOpen && (
+              <div className="tl-items">
+                {yr.items.slice(0,40).map((e,i)=>(
+                  <div key={i} className="tl-row" onClick={()=>onOpen(e.law)}>
+                    <span className="tl-tag" style={{background:KIND[e.kind].c}}>{KIND[e.kind].t}</span>
+                    <span className="law-code" style={{minWidth:58}}>{e.law.code}</span>
+                    <span style={{flex:1,fontSize:13}}>{e.law.name.slice(0,80)}{e.law.name.length>80?'…':''}</span>
+                    <Tag c={e.law.cat} color={catMap[e.law.cat]?.color}/>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        ))}
+        )})}
       </div>
     </div>
   )
@@ -545,11 +551,13 @@ const ACT_META = {
   requirement: { t:'แก้สถานะ',    c:'var(--warn)'  },
 }
 function ActivityTimeline({activity,onOpenLaw,lawById}){
+  const [showAll,setShowAll]=useState(false)
   const days = useMemo(()=>{
     const g={}
     activity.forEach(a=>{ const d=(a.created_at||'').slice(0,10); (g[d]=g[d]||[]).push(a) })
     return Object.entries(g).sort((a,b)=>b[0].localeCompare(a[0]))
   },[activity])
+  const shownDays = showAll ? days : days.slice(0,2)
   const fullDate = s => { if(!s) return ''; const m=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; const d=new Date(s); return d.getDate()+' '+m[d.getMonth()]+' '+(d.getFullYear()+543) }
   const hhmm = s => { const d=new Date(s); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0') }
   return (
@@ -558,7 +566,7 @@ function ActivityTimeline({activity,onOpenLaw,lawById}){
         <span className="sub" style={{marginLeft:'auto'}}>บันทึกอัตโนมัติทุกครั้งที่เพิ่ม / แก้ / ยกเลิก / นำเข้า</span></div>
       <div className="panel-b">
         {days.length===0 && <div style={{textAlign:'center',color:'var(--ink-faint)',padding:24,fontSize:13}}>ยังไม่มีเหตุการณ์ — เมื่อมีการเพิ่ม/แก้/ยกเลิกกฎหมาย จะบันทึกที่นี่พร้อมวันเวลา</div>}
-        {days.map(([date,items])=>(
+        {shownDays.map(([date,items])=>(
           <div key={date} className="tl-year">
             <div className="tl-head"><span className="tl-dot"/><b style={{fontSize:14}}>{fullDate(date)}</b><span className="sub" style={{marginLeft:10}}>{items.length} เหตุการณ์</span></div>
             <div className="tl-items">
@@ -574,6 +582,11 @@ function ActivityTimeline({activity,onOpenLaw,lawById}){
             </div>
           </div>
         ))}
+        {days.length>2 && (
+          <button className="btn btn-ghost" style={{marginTop:4}} onClick={()=>setShowAll(s=>!s)}>
+            {showAll ? 'ย่อ' : `ดูทั้งหมด (${activity.length} เหตุการณ์)`}
+          </button>
+        )}
       </div>
     </div>
   )
