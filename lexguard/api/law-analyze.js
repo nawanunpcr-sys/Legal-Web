@@ -5,12 +5,15 @@ const SUPA_URL = process.env.VITE_SUPABASE_URL || 'https://exugnmdsyqbqtxsrwhbm.
 const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_b4R7_X6YJS2JaRarc2iaNQ_NBrJWUaC'
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
 
-const SYSTEM = `คุณคือผู้ช่วย จป.วิชาชีพ ทำหน้าที่สรุปกฎหมายความปลอดภัย/อาชีวอนามัยของไทยให้เข้าทะเบียนกฎหมาย (SHE legal register)
-อ่านตัวบทที่ได้รับ แล้วแตกเป็น "ข้อกำหนด" รายมาตรา/ข้อ เฉพาะส่วนที่สร้างหน้าที่ต้องปฏิบัติ (ข้ามนิยาม/บทเฉพาะกาลที่ไม่สร้างหน้าที่)
-ให้สรุปครบทุกมุม: ใคร(ผู้รับผิดชอบ) ทำอะไร ที่ไหน อย่างไร เอกสาร/หลักฐาน ความถี่ และกำหนด/เงื่อนไขอื่น ระบุเลขมาตรา/ข้อเสมอ
+const SYSTEM = `คุณคือผู้ช่วย จป.วิชาชีพ ทำหน้าที่อ่าน-วิเคราะห์-สรุปกฎหมายความปลอดภัย/อาชีวอนามัย/สิ่งแวดล้อม (SHE) ของไทยให้เข้าทะเบียนกฎหมาย
+หน้าที่:
+1) ระบุชื่อกฎหมายเต็ม ประเภท (พ.ร.บ./พ.ร.ก./พ.ร.ฎ./กฎกระทรวง/ประกาศ/ระเบียบ/คำสั่ง) และหน่วยงาน/กระทรวงที่ออก
+2) ระบุ "วันที่ประกาศ" (วันที่ลงราชกิจจานุเบกษา) และ "วันที่บังคับใช้" — ถ้าตัวบทเขียนว่า "ให้ใช้บังคับเมื่อพ้นกำหนด N วันนับแต่วันประกาศ" ให้คำนวณวันที่จริงและระบุไว้ ถ้าไม่ระบุให้ใส่ค่าว่าง
+3) รวบรวม "เอกสาร/แบบฟอร์ม/หลักฐาน" ทั้งหมดที่กฎหมายกำหนดให้จัดทำ/ยื่น/เก็บ (เช่น แบบ จป., รายงาน, ใบรับรอง) ลงในฟิลด์ documents ของกฎหมาย
+4) แตกเป็น "ข้อกำหนด" รายมาตรา/ข้อ ให้ครบทุกข้อที่สร้างหน้าที่ต้องปฏิบัติ (ข้ามนิยาม/บทเฉพาะกาลที่ไม่สร้างหน้าที่) — อย่ารวบ อย่าตกหล่น แต่ละข้อสรุปครบ: ใคร(ผู้รับผิดชอบ) ทำอะไร ที่ไหน อย่างไร เอกสาร/หลักฐาน ความถี่ และเงื่อนไข/กำหนดเวลา ระบุเลขมาตรา/ข้อเสมอ
 เลือกหมวด: LA=บริหารจัดการ/จป./ระบบ, LB=ไฟฟ้า/พลังงาน, LC=อัคคีภัย, LD=ความร้อน/แสง/เสียง/สภาพแวดล้อม, LE=ก่อสร้าง/เครื่องจักร/ที่อับอากาศ/ที่สูง, LF=โทรคมนาคม/ไซเบอร์/PDPA, LG=สวัสดิการ
 ตอบกลับเป็น JSON เท่านั้น ไม่มีคำอธิบายอื่น ไม่มี markdown:
-{"law":{"name":"","type":"","ministry":"","issue_date":"","cat":"LA","code_suggestion":""},
+{"law":{"name":"","type":"","ministry":"","announce_date":"","effective_date":"","documents":"","cat":"LA","code_suggestion":""},
  "requirements":[{"section_ref":"มาตรา X","req_text":"","responsible":"","applicability":"","method":"","documents":"","frequency":"","other_terms":""}]}`
 
 function strip(html){
@@ -36,7 +39,7 @@ export default async function handler(req,res){
     const ar = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'content-type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
-      body:JSON.stringify({model:MODEL,max_tokens:4000,system:SYSTEM,
+      body:JSON.stringify({model:MODEL,max_tokens:8000,system:SYSTEM,
         messages:[{role:'user',content:`ตัวบทกฎหมาย${srcUrl?` (จาก ${srcUrl})`:''}:\n\n${text}`}]})
     })
     if(!ar.ok) return res.status(502).json({error:'เรียก Claude API ไม่สำเร็จ: '+(await ar.text()).slice(0,200)})
@@ -48,7 +51,9 @@ export default async function handler(req,res){
     const batch = 'api-'+Date.now()
     const rows = reqs.map((r,i)=>({
       batch, law_code: law.code_suggestion||('NEW-'+Date.now()%10000), law_name: law.name||'',
-      cat: law.cat||'LA', ministry: law.ministry||'', issue_date: law.issue_date||'',
+      cat: law.cat||'LA', ministry: law.ministry||'',
+      issue_date: law.announce_date||law.issue_date||'',
+      announce_date: law.announce_date||'', effective_date: law.effective_date||'', doc_list: law.documents||'',
       req_seq: i, section_ref: r.section_ref||'', req_text: r.req_text||'', responsible: r.responsible||'',
       applicability: r.applicability||'', method: r.method||'', documents: r.documents||'',
       frequency: r.frequency||'', other_terms: r.other_terms||'', source_url: srcUrl, status:'proposed'

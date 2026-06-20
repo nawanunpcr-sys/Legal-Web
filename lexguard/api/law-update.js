@@ -6,11 +6,12 @@ const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_b4R7_X6YJ
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
 const SOURCES = ['https://www.shawpat.or.th/th/safety-law','https://www.shawpat.or.th/th/other-service/osh-law']
 
-const SYSTEM = `คุณคือผู้ช่วยเฝ้าระวังกฎหมายความปลอดภัยของไทย จากข้อความหน้าเว็บ ShawPat ที่ให้มา
-ให้ดึงรายการกฎหมาย/ประกาศ/กฎกระทรวงที่ปรากฏ ออกมาเป็น JSON เท่านั้น (ไม่มี markdown):
-{"items":[{"title":"ชื่อกฎหมายเต็ม","published_date":"ปี/วันที่ถ้ามี","category_guess":"LA..LG","summary":"สรุปสั้น 1 บรรทัด"}]}
-หมวด: LA=บริหาร/จป., LB=ไฟฟ้า, LC=อัคคีภัย, LD=ความร้อน/แสง/เสียง, LE=ก่อสร้าง/เครื่องจักร, LF=โทรคมนาคม/ไซเบอร์, LG=สวัสดิการ
-เก็บเฉพาะรายการที่เป็นชื่อกฎหมายจริง ข้ามเมนู/ข่าว/อบรม`
+const SYSTEM = `คุณคือผู้ช่วยเฝ้าระวังกฎหมายความปลอดภัย อาชีวอนามัย และสิ่งแวดล้อม (SHE) ของไทย จากข้อความหน้าเว็บที่ให้มา
+ให้ดึง "รายการกฎหมาย/ประกาศ/กฎกระทรวง/พระราชบัญญัติ" ที่เกี่ยวข้องกับ SHE ออกมาเป็น JSON เท่านั้น (ไม่มี markdown):
+{"items":[{"title":"ชื่อกฎหมายเต็ม","published_date":"ปี/วันที่ถ้ามี","category_guess":"LA..LG","summary":"สรุปสั้น 1 บรรทัดว่าออกมาเรื่องอะไรและกระทบใคร"}]}
+หมวด: LA=บริหาร/จป., LB=ไฟฟ้า, LC=อัคคีภัย, LD=ความร้อน/แสง/เสียง, LE=ก่อสร้าง/เครื่องจักร, LF=โทรคมนาคม/ไซเบอร์/PDPA, LG=สวัสดิการ
+กฎ: เก็บเฉพาะรายการที่เป็น "ชื่อกฎหมายจริง" และ "เกี่ยวข้องกับ SHE" เท่านั้น ข้ามเมนู/ข่าวทั่วไป/หลักสูตรอบรม/บทความ
+ถ้าระบุปีหรือวันที่ประกาศได้ให้ใส่ใน published_date เสมอ`
 
 function strip(html){return html.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim()}
 const norm = s => (s||'').toLowerCase().replace(/[\s\u0e00-\u0e0f.,()"'’]/g,'')

@@ -231,7 +231,10 @@ export async function addStagedLaw(rows) {
   if (!law) {
     const { data: ins, error } = await supabase.from('lg_laws').insert({
       code: first.law_code, cat: first.cat || 'LA', ministry: first.ministry || '',
-      name: first.law_name || first.law_code, issue_date: first.issue_date || null,
+      name: first.law_name || first.law_code,
+      issue_date: first.announce_date || first.issue_date || null,
+      effective_date: first.effective_date || null,
+      doc_list: first.doc_list || null,
       status: 'bad', review_date: null,
     }).select('id').single()
     if (error) throw error

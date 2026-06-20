@@ -1086,6 +1086,13 @@ function Staging({batches,catMap,onAdd,onDrop}){
           <span className="sub" style={{marginLeft:'auto'}}>{f.cat?catMap[f.cat]?.name||f.cat:''}{f.ministry?' · '+f.ministry:''} · {rows.length} ข้อกำหนด</span>
         </div>
         <div className="panel-b">
+          {(f.announce_date||f.effective_date||f.doc_list) && (
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+              {f.announce_date && <span className="meta-chip">วันที่ประกาศ: {f.announce_date}</span>}
+              {f.effective_date && <span className="meta-chip">วันที่บังคับใช้: {f.effective_date}</span>}
+              {f.doc_list && <span className="meta-chip">เอกสาร: {f.doc_list.slice(0,120)}</span>}
+            </div>
+          )}
           {rows.map(r=>(
             <div key={r.id} style={{padding:'10px 0',borderBottom:'1px solid var(--line-soft)'}}>
               <div style={{fontSize:13,fontWeight:450,lineHeight:1.5}}>
