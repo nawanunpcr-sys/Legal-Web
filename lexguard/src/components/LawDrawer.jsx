@@ -55,7 +55,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
   return (
     <>
       <div className="scrim" onClick={onClose}/>
-      <div className="drawer">
+      <div className="lawmodal">
         <div className="dr-head">
           <button className="close" onClick={onClose}>×</button>
           <div className="code">{law.code} · หมวด {law.cat} — {cat?.name||law.cat}</div>
@@ -79,16 +79,6 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
           </div>
         </div>
         <div className="dr-body">
-          {!isRepealed && (
-            <div className="sec">
-              <div className="sec-t">สรุปสาระสำคัญ</div>
-              <div className="ai-box">
-                <span className="ai-tag">AI สรุปจากตัวบท</span>
-                <p>{summary}… <br/><br/>กฎหมายฉบับนี้กำหนดข้อปฏิบัติรวม <b>{law.reqs.length} ข้อ</b> ปฏิบัติสอดคล้องแล้ว <b>{law.reqs.filter(r=>r.status==='met').length} ข้อ</b> ({p}%) ออกโดย {law.ministry||'—'}</p>
-              </div>
-            </div>
-          )}
-
           {isRepealed && (
             <div className="sec">
               <div className="sec-t">รายละเอียดการยกเลิก</div>
@@ -102,6 +92,23 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
               </div>
             </div>
           )}
+
+          <div className="sec">
+            <div className="sec-t">ข้อมูลทะเบียน</div>
+            <div className="panel" style={{padding:18}}>
+              <dl className="kv">
+                <dt>รหัสกฎหมาย</dt><dd className="num">{law.code}</dd>
+                <dt>หมวด</dt><dd>{law.cat} — {cat?.name||law.cat}</dd>
+                {law.law_type && <><dt>ประเภทกฎหมาย</dt><dd>{law.law_type}</dd></>}
+                {law.hierarchy_level && <><dt>ลำดับชั้น</dt><dd>ชั้น {law.hierarchy_level}</dd></>}
+                <dt>กระทรวง/หน่วยงาน</dt><dd>{law.ministry||'—'}</dd>
+                {law.issue_date && <><dt>วันที่ประกาศ/บังคับใช้</dt><dd>{law.issue_date}</dd></>}
+                {!isRepealed && <><dt>กำหนดทบทวนถัดไป</dt><dd className="num">{thDate(law.review_date)}</dd></>}
+                {law.source_url && <><dt>ต้นฉบับ</dt><dd><a href={law.source_url} target="_blank" rel="noreferrer" style={{color:'var(--brand)'}}>เปิดเอกสาร ↗</a></dd></>}
+                <dt>สถานะ</dt><dd><span className={'pill '+(STATUS[law.status]?.cls||'p-ok')}>{STATUS[law.status]?.label||law.status}</span></dd>
+              </dl>
+            </div>
+          </div>
 
           {!isRepealed && (
             <div className="sec">
@@ -129,23 +136,6 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
               {law.reqs.length===0 && <p style={{fontSize:13,color:'var(--ink-faint)'}}>ยังไม่มีข้อกำหนดบันทึกไว้</p>}
             </div>
           )}
-
-          <div className="sec">
-            <div className="sec-t">ข้อมูลทะเบียน</div>
-            <div className="panel" style={{padding:18}}>
-              <dl className="kv">
-                <dt>รหัสกฎหมาย</dt><dd className="num">{law.code}</dd>
-                <dt>หมวด</dt><dd>{law.cat} — {cat?.name||law.cat}</dd>
-                {law.law_type && <><dt>ประเภทกฎหมาย</dt><dd>{law.law_type}</dd></>}
-                {law.hierarchy_level && <><dt>ลำดับชั้น</dt><dd>ชั้น {law.hierarchy_level}</dd></>}
-                <dt>กระทรวง/หน่วยงาน</dt><dd>{law.ministry||'—'}</dd>
-                {law.issue_date && <><dt>วันที่ประกาศ/บังคับใช้</dt><dd>{law.issue_date}</dd></>}
-                {!isRepealed && <><dt>กำหนดทบทวนถัดไป</dt><dd className="num">{thDate(law.review_date)}</dd></>}
-                {law.source_url && <><dt>ต้นฉบับ</dt><dd><a href={law.source_url} target="_blank" rel="noreferrer" style={{color:'var(--brand)'}}>เปิดเอกสาร ↗</a></dd></>}
-                <dt>สถานะ</dt><dd><span className={'pill '+(STATUS[law.status]?.cls||'p-ok')}>{STATUS[law.status]?.label||law.status}</span></dd>
-              </dl>
-            </div>
-          </div>
         </div>
 
         <div className="dr-foot">

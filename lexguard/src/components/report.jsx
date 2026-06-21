@@ -55,17 +55,17 @@ export function buildReport({ laws, catName = {}, settings = {} }) {
   el.innerHTML = `
   <style>
     @page { size: A4 landscape; margin: 10mm }
-    #print-report .doc { font-family: 'Anuphan','Sarabun',sans-serif; color:#000; font-size:9.5px }
+    #print-report .doc { font-family: 'Angsana New','AngsanaUPC','TH Sarabun New','Sarabun',serif; color:#000; font-size:13px; line-height:1.25 }
     #print-report table { width:100%; border-collapse:collapse }
     #print-report .head td { border:1px solid #000; padding:4px 8px; vertical-align:top }
     #print-report .head .title { text-align:center }
-    #print-report .head .title .th1 { font-size:13px; font-weight:700 }
-    #print-report .head .title .th2 { font-size:11px; font-weight:700 }
-    #print-report .head .title .en { font-size:11px; font-weight:700; letter-spacing:.3px }
+    #print-report .head .title .th1 { font-size:18px; font-weight:700 }
+    #print-report .head .title .th2 { font-size:15px; font-weight:700 }
+    #print-report .head .title .en { font-size:15px; font-weight:700; letter-spacing:.3px }
     #print-report .reg { margin-top:8px; page-break-inside:auto }
-    #print-report .reg th, #print-report .reg td { border:1px solid #000; padding:3px 5px; vertical-align:top }
-    #print-report .reg .ch th { background:#d9d9d9; text-align:center; font-weight:700; font-size:9px }
-    #print-report .reg .catband { background:#bfbfbf; font-weight:700; font-size:11px; padding:5px 8px }
+    #print-report .reg th, #print-report .reg td { border:1px solid #000; padding:2px 5px; vertical-align:top }
+    #print-report .reg .ch th { background:#d9d9d9; text-align:center; font-weight:700; font-size:12.5px }
+    #print-report .reg .catband { background:#bfbfbf; font-weight:700; font-size:15px; padding:4px 8px }
     #print-report .reg .ctr { text-align:center }
     #print-report .reg .ok { color:#0a7a32; font-weight:700 }
     #print-report .reg .bad { color:#c4271d; font-weight:700 }
