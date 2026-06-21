@@ -472,7 +472,7 @@ body {
 .panel-b { padding: 20px 22px }
 
 /* layout */
-.cols { display: grid; grid-template-columns: 1.45fr 1fr; gap: 12px; margin-top: 12px }
+.cols { display: grid; grid-template-columns: 1.45fr 1fr; gap: 12px; margin-top: 12px; align-items: start }
 
 /* ring chart */
 .ring-wrap { display: flex; align-items: center; gap: 24px }
