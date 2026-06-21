@@ -309,7 +309,7 @@ export default function App(){
     if(hasSupabase){ try{ await toggleMonthCheck(year,month,nowChecked) }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) } }
   }
 
-  function exportPDF(){ buildReport({laws:activeLaws,stats,catName:Object.fromEntries(cats.map(c=>[c.code,c.name]))}); window.print() }
+  function exportPDF(){ buildReport({laws:inForceLaws,catName:Object.fromEntries(cats.map(c=>[c.code,c.name])),settings}); setTimeout(()=>window.print(),60) }
 
   if(session===undefined) return <div className="loading"><div className="spin"/>กำลังตรวจสอบสิทธิ์…</div>
   if(!authed) return <Login onAuthed={s=>setSession(s)} onBypass={()=>setSession('demo')}/>

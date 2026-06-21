@@ -10,30 +10,43 @@ const sheetName = s => String(s || 'Sheet').replace(/[:\\/?*\[\]]/g, '-').slice(
 // Output is SpreadsheetML 2003 (.xls) — opens natively in Excel with
 // real separate sheets, correct Thai encoding, no dependency.
 export function exportLawsToExcel(laws, catMap = {}) {
-  const statusLabel = { ok: 'สอดคล้อง', bad: 'ยังไม่สอดคล้อง', repealed: 'ถูกยกเลิก' }
-  const HEAD = ['รหัส', 'ชื่อกฎหมายและข้อกำหนด', 'กระทรวง / หน่วยงาน', 'สถานะ', 'วันที่ประกาศ/บังคับใช้', 'กำหนดทบทวน']
-  const WIDTHS = [70, 360, 170, 110, 150, 110]
+  // Official F-259 columns, one row per requirement, one sheet per category
+  const HEAD = ['ลำดับ', 'เอกสารสนับสนุน', 'กระทรวง', 'ชื่อกฎหมายและข้อกำหนด',
+    'สรุปสาระสำคัญและหัวข้อควบคุมเอกสาร', 'วันที่ประกาศใช้', 'หน่วยงานรับผิดชอบ',
+    'C', 'NC', 'การรายงานผล', 'ความถี่ของการตรวจสอบ', 'เอกสารที่เกี่ยวข้อง']
+  const WIDTHS = [42, 90, 110, 200, 320, 90, 110, 32, 32, 110, 120, 140]
 
-  // group laws by category, preserve catMap order then any extras
   const byCat = {}
   laws.forEach(l => { (byCat[l.cat] = byCat[l.cat] || []).push(l) })
   const catOrder = [...new Set([...Object.keys(catMap), ...Object.keys(byCat)])].filter(c => byCat[c]?.length)
 
   const cell = (v, style) => `<Cell${style ? ` ss:StyleID="${style}"` : ''}><Data ss:Type="String">${xesc(v)}</Data></Cell>`
-  const headRow = '<Row ss:Height="22">' + HEAD.map(h => cell(h, 'hdr')).join('') + '</Row>'
+  const headRow = '<Row ss:Height="26">' + HEAD.map(h => cell(h, 'hdr')).join('') + '</Row>'
 
   const worksheets = catOrder.map(code => {
     const name = sheetName(`${code} ${catMap[code]?.name || ''}`.trim())
     const cols = WIDTHS.map(w => `<Column ss:Width="${w}"/>`).join('')
-    const rows = byCat[code].map(l => '<Row>' + [
-      cell(l.code),
-      cell(l.name),
-      cell(l.ministry || '—'),
-      cell(statusLabel[l.status] || l.status, l.status === 'bad' ? 'bad' : l.status === 'repealed' ? 'rep' : 'ok'),
-      cell(l.issue_date || l.effective_date || '—'),
-      cell(l.review_date || '—'),
-    ].join('') + '</Row>').join('')
-    return `<Worksheet ss:Name="${name}"><Table>${cols}${headRow}${rows}</Table></Worksheet>`
+    let n = 0
+    const rows = byCat[code].map(l => {
+      n++
+      const reqs = l.reqs.length ? l.reqs : [{}]
+      return reqs.map((r, i) => '<Row>' + [
+        cell(i === 0 ? String(n) : '', 'ctr'),
+        cell(i === 0 ? l.code : ''),
+        cell(i === 0 ? (l.ministry || '') : ''),
+        cell(i === 0 ? (l.name || '') : ''),
+        cell(r.text || ''),
+        cell(i === 0 ? (l.issue_date || l.effective_date || '') : ''),
+        cell(r.responsible || ''),
+        cell(r.status === 'met' ? '✓' : '', 'ok'),
+        cell(r.status === 'unmet' ? '✓' : '', 'bad'),
+        cell(r.report_to || ''),
+        cell(r.frequency || ''),
+        cell(r.documents || ''),
+      ].join('') + '</Row>').join('')
+    }).join('')
+    const band = `<Row ss:Height="20"><Cell ss:StyleID="band" ss:MergeAcross="11"><Data ss:Type="String">หมวด ${xesc(code)} : ${xesc(catMap[code]?.name || '')}</Data></Cell></Row>`
+    return `<Worksheet ss:Name="${name}"><Table>${cols}${band}${headRow}${rows}</Table></Worksheet>`
   }).join('')
 
   const xml =
@@ -43,9 +56,10 @@ export function exportLawsToExcel(laws, catMap = {}) {
  <Styles>
   <Style ss:ID="Default"><Font ss:FontName="Tahoma" ss:Size="10"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>
   <Style ss:ID="hdr"><Font ss:FontName="Tahoma" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#0071E3" ss:Pattern="Solid"/><Alignment ss:Vertical="Center"/></Style>
-  <Style ss:ID="ok"><Font ss:Color="#1F9D57" ss:Bold="1"/></Style>
-  <Style ss:ID="bad"><Font ss:Color="#D6342A" ss:Bold="1"/></Style>
-  <Style ss:ID="rep"><Font ss:Color="#888888"/></Style>
+  <Style ss:ID="ok"><Font ss:Color="#1F9D57" ss:Bold="1"/><Alignment ss:Horizontal="Center" ss:Vertical="Top"/></Style>
+  <Style ss:ID="bad"><Font ss:Color="#D6342A" ss:Bold="1"/><Alignment ss:Horizontal="Center" ss:Vertical="Top"/></Style>
+  <Style ss:ID="ctr"><Alignment ss:Horizontal="Center" ss:Vertical="Top"/></Style>
+  <Style ss:ID="band"><Font ss:FontName="Tahoma" ss:Size="11" ss:Bold="1"/><Interior ss:Color="#BFBFBF" ss:Pattern="Solid"/></Style>
  </Styles>
  ${worksheets}
 </Workbook>`
