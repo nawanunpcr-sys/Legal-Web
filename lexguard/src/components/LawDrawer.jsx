@@ -102,7 +102,10 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
                 {law.law_type && <><dt>ประเภทกฎหมาย</dt><dd>{law.law_type}</dd></>}
                 {law.hierarchy_level && <><dt>ลำดับชั้น</dt><dd>ชั้น {law.hierarchy_level}</dd></>}
                 <dt>กระทรวง/หน่วยงาน</dt><dd>{law.ministry||'—'}</dd>
-                {law.issue_date && <><dt>วันที่ประกาศ/บังคับใช้</dt><dd>{law.issue_date}</dd></>}
+                {law.responsible && <><dt>หน่วยงานที่รับผิดชอบ</dt><dd>{law.responsible}</dd></>}
+                {law.issue_date && <><dt>วันที่ประกาศ</dt><dd>{law.issue_date}</dd></>}
+                {law.effective_date && <><dt>วันที่บังคับใช้</dt><dd>{law.effective_date}</dd></>}
+                {law.doc_list && <><dt>เอกสารที่เกี่ยวข้อง</dt><dd>{law.doc_list}</dd></>}
                 {!isRepealed && <><dt>กำหนดทบทวนถัดไป</dt><dd className="num">{thDate(law.review_date)}</dd></>}
                 {law.source_url && <><dt>ต้นฉบับ</dt><dd><a href={law.source_url} target="_blank" rel="noreferrer" style={{color:'var(--brand)'}}>เปิดเอกสาร ↗</a></dd></>}
                 <dt>สถานะ</dt><dd><span className={'pill '+(STATUS[law.status]?.cls||'p-ok')}>{STATUS[law.status]?.label||law.status}</span></dd>

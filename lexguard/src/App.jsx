@@ -732,7 +732,10 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
   const [level, setLevel] = useState('1')
   const [name, setName] = useState('')
   const [ministry, setMinistry] = useState('')
+  const [announceDate, setAnnounceDate] = useState('')
   const [effectiveDate, setEffectiveDate] = useState('')
+  const [docList, setDocList] = useState('')
+  const [responsible, setResponsible] = useState('')
   const [saving, setSaving] = useState(false)
 
   const previewCode = catCode ? nextCode(allLaws, catCode) : '—'
@@ -741,7 +744,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
   async function save() {
     if (!valid) return
     setSaving(true)
-    await onSave({ code: previewCode, cat: catCode, name: name.trim(), hierarchy_level: level, ministry, effective_date: effectiveDate, review_date: '' })
+    await onSave({ code: previewCode, cat: catCode, name: name.trim(), hierarchy_level: level, ministry, announce_date: announceDate, effective_date: effectiveDate, doc_list: docList, responsible, review_date: '' })
     setSaving(false)
     onClose()
   }
@@ -776,8 +779,16 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
         <label className="form-label">กระทรวง / หน่วยงาน</label>
         <input className="form-input" type="text" placeholder="เช่น กระทรวงแรงงาน" value={ministry} onChange={e=>setMinistry(e.target.value)}/>
 
-        <label className="form-label">วันที่บังคับใช้</label>
-        <input className="form-input" type="date" value={effectiveDate} onChange={e=>setEffectiveDate(e.target.value)}/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <div><label className="form-label">วันที่ประกาศ</label><input className="form-input" type="text" placeholder="เช่น 17 ม.ค. 2554" value={announceDate} onChange={e=>setAnnounceDate(e.target.value)}/></div>
+          <div><label className="form-label">วันที่บังคับใช้</label><input className="form-input" type="text" placeholder="เช่น 18 ม.ค. 2554" value={effectiveDate} onChange={e=>setEffectiveDate(e.target.value)}/></div>
+        </div>
+
+        <label className="form-label">เอกสารที่เกี่ยวข้อง / ที่ใช้</label>
+        <input className="form-input" type="text" placeholder="เช่น แบบ จป., รายงานการประชุม คปอ." value={docList} onChange={e=>setDocList(e.target.value)}/>
+
+        <label className="form-label">หน่วยงานที่รับผิดชอบ</label>
+        <input className="form-input" type="text" placeholder="เช่น จป.วิชาชีพ / ฝ่ายความปลอดภัย" value={responsible} onChange={e=>setResponsible(e.target.value)}/>
       </div>
       <div className="modal-foot">
         <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
@@ -837,23 +848,26 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
         <div className="hier-cat-header" style={{borderLeftColor:catMap[c]?.color||'var(--brand)'}}>
           <span style={{color:catMap[c]?.color,fontWeight:700}}>{c}</span>
           <span style={{marginLeft:8,color:'var(--ink-soft)'}}>{catMap[c]?.name}</span>
-          <span style={{marginLeft:'auto',fontSize:12,color:'var(--ink-faint)'}}>{rows.filter(l=>l.cat===c).length} ฉบับ</span>
+          {(()=>{ const ls=rows.filter(l=>l.cat===c); let r=0,m=0; ls.forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++})); const pc=r?Math.round(m/r*100):100;
+            return <><span style={{marginLeft:'auto',fontSize:12.5,fontWeight:700,color:pc===100?'var(--ok)':pc>=70?'var(--review)':'var(--bad)'}}>สอดคล้อง {pc}%</span>
+            <span style={{marginLeft:14,fontSize:12,color:'var(--ink-faint)'}}>{ls.length} ฉบับ</span></> })()}
         </div>
         {LAW_TYPES.filter(t=>grouped[c]?.[t.level]?.length).map(t=>(
           <div key={t.level} style={{marginBottom:8}}>
             <div className="hier-tier-label"><span className="tier-badge">ชั้น {t.level}</span>{t.label}</div>
             <div className="panel" style={{marginTop:0,borderTopLeftRadius:0,borderTopRightRadius:0}}>
               <div className="tablewrap"><table>
-                <thead><tr><th style={{width:34}}></th><th>รหัส / ชื่อกฎหมาย</th><th>กระทรวง</th><th>สถานะ</th><th>ความสอดคล้อง</th></tr></thead>
-                <tbody>{grouped[c][t.level].map(l=>{const p=prog(l);return(
+                <thead><tr><th style={{width:34}}></th><th>รหัส / ชื่อกฎหมาย</th><th>กระทรวง</th><th>วันที่ประกาศ</th><th>วันที่บังคับใช้</th><th>สถานะ</th></tr></thead>
+                <tbody>{grouped[c][t.level].map(l=>(
                   <tr key={l.id} className={sel.has(l.id)?'row-sel':''} style={l.active===false?{opacity:.55}:null}>
                     <td onClick={e=>{e.stopPropagation();toggleSel(l.id)}} style={{textAlign:'center'}}><input type="checkbox" checked={sel.has(l.id)} onChange={()=>toggleSel(l.id)} onClick={e=>e.stopPropagation()}/></td>
                     <td onClick={()=>onOpen(l)}><div className="law-code">{l.code}{l.active===false&&<span className="tag" style={{marginLeft:8,fontSize:9.5,padding:'1px 7px'}}>ไม่ใช้แล้ว</span>}</div><div className="law-title">{l.name}</div></td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
+                    <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.issue_date||'—'}</td>
+                    <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.effective_date||'—'}</td>
                     <td onClick={()=>onOpen(l)}><Pill s={l.status}/></td>
-                    <td onClick={()=>onOpen(l)}><div className="mini-prog"><div className="track"><div className="fill" style={{width:p+'%',background:p===100?'var(--ok)':'var(--bad)'}}/></div><span className="num">{p}%</span></div></td>
                   </tr>
-                )})}</tbody>
+                ))}</tbody>
               </table></div>
             </div>
           </div>
@@ -1301,6 +1315,7 @@ function ManualAddPanel({cats,allLaws,onCreateFull,suggest}){
   const [effective,setEffective]=useState('')
   const [review,setReview]=useState('')
   const [docs,setDocs]=useState('')
+  const [resp,setResp]=useState('')
   const [srcUrl,setSrcUrl]=useState('')
   const [uploading,setUploading]=useState(false)
   const [reqs,setReqs]=useState([{text:'',status:'met'}])
@@ -1316,10 +1331,10 @@ function ManualAddPanel({cats,allLaws,onCreateFull,suggest}){
     setBusy(true); setMsg(null)
     try{
       const nl=await onCreateFull(
-        {code,cat,name:name.trim(),hierarchy_level:level,ministry,announce_date:announce,effective_date:effective,review_date:review,doc_list:docs,source_url:srcUrl},
+        {code,cat,name:name.trim(),hierarchy_level:level,ministry,announce_date:announce,effective_date:effective,review_date:review,doc_list:docs,responsible:resp,source_url:srcUrl},
         reqs.filter(r=>r.text.trim()))
       setMsg({ok:`เพิ่ม ${nl.code} เข้าหมวด ${cat} แล้ว (${reqs.filter(r=>r.text.trim()).length} ข้อ)`})
-      setName('');setMinistry('');setAnnounce('');setEffective('');setReview('');setDocs('');setSrcUrl('');setReqs([{text:'',status:'met'}])
+      setName('');setMinistry('');setAnnounce('');setEffective('');setReview('');setDocs('');setResp('');setSrcUrl('');setReqs([{text:'',status:'met'}])
     }catch(e){ setMsg({err:'บันทึกไม่สำเร็จ: '+e.message}) }
     setBusy(false)
   }
@@ -1348,6 +1363,7 @@ function ManualAddPanel({cats,allLaws,onCreateFull,suggest}){
           <div><label className="form-label">วันที่บังคับใช้</label><input className="form-input" value={effective} onChange={e=>setEffective(e.target.value)} placeholder="18 มี.ค. 2553"/></div>
           <div><label className="form-label">รอบทบทวนถัดไป</label><input className="form-input" type="date" value={review} onChange={e=>setReview(e.target.value)}/></div>
           <div><label className="form-label">เอกสาร/แบบฟอร์ม</label><input className="form-input" value={docs} onChange={e=>setDocs(e.target.value)} placeholder="แบบ จป., รายงาน"/></div>
+          <div><label className="form-label">หน่วยงานที่รับผิดชอบ</label><input className="form-input" list="dl-resp" value={resp} onChange={e=>setResp(e.target.value)} placeholder="จป.วิชาชีพ / ฝ่าย…"/></div>
         </div>
         <label className="form-label">ลิงก์ต้นฉบับ (URL ราชกิจจาฯ / PDF) หรืออัปโหลดไฟล์</label>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>

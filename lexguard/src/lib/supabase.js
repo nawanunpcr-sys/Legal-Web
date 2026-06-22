@@ -154,14 +154,17 @@ export async function repealLaw(lawId, { repeal_date, repeal_reason, replaced_by
   })
 }
 
-export async function createLaw({ code, cat, name, hierarchy_level, ministry, effective_date, review_date }) {
+export async function createLaw({ code, cat, name, hierarchy_level, ministry, announce_date, effective_date, doc_list, responsible, review_date }) {
   const { data, error } = await supabase.from('lg_laws').insert({
     code,
     cat,
     name,
-    hierarchy_level: Number(hierarchy_level),
+    hierarchy_level: hierarchy_level ? Number(hierarchy_level) : null,
     ministry: ministry || null,
-    issue_date: effective_date || null,
+    issue_date: announce_date || null,
+    effective_date: effective_date || null,
+    doc_list: doc_list || null,
+    responsible: responsible || null,
     review_date: review_date || null,
     status: 'ok',
     created_at: new Date().toISOString(),
@@ -172,7 +175,7 @@ export async function createLaw({ code, cat, name, hierarchy_level, ministry, ef
 }
 
 // Create a law together with its requirement sub-items (manual entry)
-export async function createLawFull({ code, cat, name, hierarchy_level, ministry, announce_date, effective_date, doc_list, review_date, source_url }, reqs = []) {
+export async function createLawFull({ code, cat, name, hierarchy_level, ministry, announce_date, effective_date, doc_list, responsible, review_date, source_url }, reqs = []) {
   const clean = (reqs || []).filter(r => (r.text || '').trim())
   const anyUnmet = clean.some(r => r.status === 'unmet')
   const { data, error } = await supabase.from('lg_laws').insert({
@@ -182,6 +185,7 @@ export async function createLawFull({ code, cat, name, hierarchy_level, ministry
     issue_date: announce_date || null,
     effective_date: effective_date || null,
     doc_list: doc_list || null,
+    responsible: responsible || null,
     review_date: review_date || null,
     source_url: source_url || null,
     status: clean.length ? (anyUnmet ? 'bad' : 'ok') : 'ok',
