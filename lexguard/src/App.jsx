@@ -1468,7 +1468,33 @@ function Updates({updates,onMark,onScanned}){
     }catch(e){ setMsg({err:'เรียก API ไม่สำเร็จ (ต้อง deploy บน Vercel พร้อมตั้ง ANTHROPIC_API_KEY): '+e.message}) }
     setBusy(false)
   }
+  const [abusy,setAbusy]=useState('')
+  async function runAgent(which){
+    setAbusy(which); setMsg(null)
+    try{
+      const r=await fetch('/api/agent-'+which,{method:'POST',headers:{'content-type':'application/json'},body:'{}'})
+      const d=await r.json()
+      if(!r.ok) setMsg({err:d.error||'รันไม่สำเร็จ'})
+      else if(which==='gazette') setMsg({ok:`Agent เฝ้าราชกิจจาฯ: สแกน ${d.scanned} · เข้าคิวใหม่ ${d.created}`})
+      else { setMsg({ok:`Agent วิเคราะห์คิว: ทำ ${d.scanned} รายการ · สรุปได้ ${d.created} ข้อ · ผิดพลาด ${d.errors}`}); onScanned&&onScanned() }
+    }catch(e){ setMsg({err:'เรียก API ไม่สำเร็จ (ต้อง deploy บน Vercel + ANTHROPIC_API_KEY): '+e.message}) }
+    setAbusy('')
+  }
   return <div className="view">
+    <div className="panel" style={{marginBottom:14,borderTop:'3px solid var(--brand)'}}>
+      <div className="panel-h"><h3>เอเจนต์อัตโนมัติ (Auto Agents)</h3><span className="sub" style={{marginLeft:'auto'}}>ทำงานเองทุกวัน · รันเองได้ที่นี่</span></div>
+      <div className="panel-b">
+        <p style={{fontSize:12.5,color:'var(--ink-faint)',lineHeight:1.6,marginBottom:10}}>
+          ① เฝ้าราชกิจจาฯ/ShawPat/DLPW → คัดกฎหมาย SHE ใหม่เข้า “คิว” · ② อ่านคิว → สรุปเป็นข้อกำหนด ส่งไปหน้า “นำเข้า/รออนุมัติ”
+        </p>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          <button className="btn btn-ghost" disabled={!!abusy} onClick={()=>runAgent('gazette')}>{abusy==='gazette'?'กำลังรัน…':'① รันเฝ้าราชกิจจาฯ'}</button>
+          <button className="btn btn-ghost" disabled={!!abusy} onClick={()=>runAgent('analyze')}>{abusy==='analyze'?'กำลังรัน…':'② รันวิเคราะห์คิว'}</button>
+        </div>
+        {msg?.ok && <div className="login-msg" style={{marginTop:10}}>{msg.ok}</div>}
+        {msg?.err && <div className="login-err" style={{marginTop:10}}>{msg.err}</div>}
+      </div>
+    </div>
     <div className="panel" style={{marginBottom:14}}>
       <div className="panel-h">
         <h3>เฝ้าระวังกฎหมายใหม่จาก ShawPat</h3>
@@ -1476,8 +1502,6 @@ function Updates({updates,onMark,onScanned}){
       </div>
       <div className="panel-b" style={{paddingTop:0}}>
         <p style={{fontSize:12.5,color:'var(--ink-faint)',lineHeight:1.6}}>Skill: update-watch — ดึงหน้า shawpat.or.th/th/safety-law เทียบกับทะเบียน แล้วเพิ่มของใหม่เป็นการแจ้งเตือน</p>
-        {msg?.ok && <div className="login-msg" style={{marginTop:10}}>{msg.ok}</div>}
-        {msg?.err && <div className="login-err" style={{marginTop:10}}>{msg.err}</div>}
       </div>
     </div>
     {live.length===0 && <div className="panel" style={{padding:'50px 20px',textAlign:'center',color:'var(--ink-faint)'}}>ยังไม่มีกฎหมายใหม่ — กด “ตรวจหากฎหมายใหม่” เพื่อดึงรายการจาก ShawPat</div>}

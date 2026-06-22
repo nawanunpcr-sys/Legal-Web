@@ -2,5 +2,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/" }]
+  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/" }],
+  "crons": [
+    { "path": "/api/agent-gazette", "schedule": "0 1 * * *" },
+    { "path": "/api/agent-analyze", "schedule": "30 1 * * *" }
+  ]
 }
