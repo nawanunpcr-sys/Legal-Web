@@ -6,7 +6,7 @@ import { supabase, hasSupabase, fetchAll,
          dismissNotification,
          fetchComplianceMonths, toggleMonthCheck,
          fetchStaging, fetchUpdates, addStagedLaw, dismissStaged, setUpdateStatus,
-         logActivity, fetchActivity, fetchCars, suggestionLists,
+         logActivity, fetchActivity, fetchQuarterStats, fetchCars, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
          fetchSettings, saveSettings, DEFAULT_SETTINGS,
          getSession, onAuthChange, signOut,
@@ -100,6 +100,7 @@ export default function App(){
   const [staging,setStaging] = useState([])
   const [updates,setUpdates] = useState([])
   const [activity,setActivity] = useState([])
+  const [quarterStats,setQuarterStats] = useState([])
   const [cars,setCars]       = useState([])
   const [settings,setSettings] = useState(DEFAULT_SETTINGS)
   const [reports,setReports] = useState([])
@@ -128,9 +129,9 @@ export default function App(){
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, s, u, a, cs, rp, st] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchCars(), fetchReports(), fetchSettings()])
+      const [d, mData, s, u, a, qs, cs, rp, st] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchQuarterStats(), fetchCars(), fetchReports(), fetchSettings()])
       setCats(d.cats); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setStaging(s); setUpdates(u); setActivity(a); setCars(cs); setReports(rp); setSettings(st)
+      setMonths(mData); setStaging(s); setUpdates(u); setActivity(a); setQuarterStats(qs); setCars(cs); setReports(rp); setSettings(st)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -404,7 +405,7 @@ export default function App(){
 
         <div className="content">
           {err && <div className="banner">{err}</div>}
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} reports={reports} onGoReports={()=>setView('reports')}/>}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')}/>}
           {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}/>}
           {view==='compliance'    && <Compliance    laws={inForceLaws} cats={cats} stats={stats} onOpen={setOpenLaw} onToggle={toggleReq}/>}
@@ -633,38 +634,40 @@ function ReportDeadlinesPanel({reports=[],onGoReports}){
   )
 }
 
-const MONTH_SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+const QUARTER_LABEL = ['ม.ค.-มี.ค.','เม.ย.-มิ.ย.','ก.ค.-ก.ย.','ต.ค.-ธ.ค.']
 
-function MonthlyAddRepealChart({laws,activity}){
+function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
+  const toBE = y => y + 543
   const yearOptions = useMemo(()=>{
-    const ys = new Set([new Date().getFullYear()])
-    laws.forEach(l=>{ const d=new Date(l.created_at); if(!isNaN(d)) ys.add(d.getFullYear()) })
-    activity.forEach(a=>{ if(a.action==='repeal'){ const d=new Date(a.created_at); if(!isNaN(d)) ys.add(d.getFullYear()) } })
+    const ys = new Set([...quarterStats.map(s=>s.year), new Date().getFullYear()])
     return [...ys].sort((a,b)=>b-a)
-  },[laws,activity])
+  },[quarterStats])
   const [year,setYear] = useState(yearOptions[0] || new Date().getFullYear())
 
-  const {added,repealed} = useMemo(()=>{
-    const added=Array(12).fill(0), repealed=Array(12).fill(0)
-    laws.forEach(l=>{ const d=new Date(l.created_at); if(!isNaN(d) && d.getFullYear()===year) added[d.getMonth()]++ })
-    activity.forEach(a=>{
-      if(a.action!=='repeal') return
-      const d=new Date(a.created_at); if(!isNaN(d) && d.getFullYear()===year) repealed[d.getMonth()]++
+  const {added,repealed,byCat} = useMemo(()=>{
+    const added=Array(4).fill(0), repealed=Array(4).fill(0)
+    const byCat = {}
+    quarterStats.forEach(s=>{
+      if(s.year!==year) return
+      added[s.quarter-1]+=s.added; repealed[s.quarter-1]+=s.repealed
+      const c = byCat[s.cat] = byCat[s.cat] || {added:Array(4).fill(0), repealed:Array(4).fill(0)}
+      c.added[s.quarter-1]+=s.added; c.repealed[s.quarter-1]+=s.repealed
     })
-    return {added,repealed}
-  },[laws,activity,year])
+    return {added,repealed,byCat}
+  },[quarterStats,year])
 
   const max = Math.max(1, ...added, ...repealed)
   const totalAdded = added.reduce((a,b)=>a+b,0)
   const totalRepealed = repealed.reduce((a,b)=>a+b,0)
+  const catRows = cats.filter(c=>byCat[c.code]).map(c=>({c, ...byCat[c.code]}))
 
   return (
     <div className="panel" style={{marginTop:16}}>
       <div className="panel-h">
-        <h3>กฎหมายที่เพิ่ม / ยกเลิก รายเดือน</h3>
+        <h3>กฎหมายที่เพิ่ม / ยกเลิก รายไตรมาส</h3>
         <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
           <button className="month-yr-btn" onClick={()=>setYear(y=>y-1)}>‹</button>
-          <span style={{fontSize:13,fontWeight:600,minWidth:50,textAlign:'center'}} className="num">{year}</span>
+          <span style={{fontSize:13,fontWeight:600,minWidth:60,textAlign:'center'}} className="num">ปี {toBE(year)}</span>
           <button className="month-yr-btn" onClick={()=>setYear(y=>y+1)}>›</button>
         </div>
       </div>
@@ -672,25 +675,57 @@ function MonthlyAddRepealChart({laws,activity}){
         <div style={{display:'flex',gap:18,marginBottom:16,fontSize:12.5}}>
           <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--ok)',display:'inline-block'}}/>เพิ่ม <b className="num">{totalAdded}</b> ฉบับ</span>
           <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--bad)',display:'inline-block'}}/>ยกเลิก <b className="num">{totalRepealed}</b> ฉบับ</span>
-          <span style={{color:'var(--ink-faint)',marginLeft:'auto'}}>นับตามวันที่บันทึกเข้าระบบ (ไม่ใช่ปีของกฎหมาย)</span>
+          <span style={{color:'var(--ink-faint)',marginLeft:'auto'}}>ข้อมูลจากทะเบียน F-259 (Excel) — รายไตรมาส</span>
         </div>
-        <div className="mchart">
-          {MONTH_SHORT.map((m,i)=>(
+        <div className="mchart" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+          {QUARTER_LABEL.map((q,i)=>(
             <div className="mchart-col" key={i}>
               <div className="mchart-bars">
                 <div className="mchart-bar mchart-bar-add" style={{height:(added[i]/max*100)+'%'}} title={`เพิ่ม ${added[i]} ฉบับ`}/>
                 <div className="mchart-bar mchart-bar-rep" style={{height:(repealed[i]/max*100)+'%'}} title={`ยกเลิก ${repealed[i]} ฉบับ`}/>
               </div>
-              <div className="mchart-lab">{m}</div>
+              <div className="mchart-lab">{q}</div>
             </div>
           ))}
         </div>
+
+        {catRows.length>0 && (
+          <div className="tablewrap" style={{marginTop:18}}>
+            <table>
+              <thead>
+                <tr>
+                  <th rowSpan={2}>หมวด</th>
+                  <th colSpan={4} style={{textAlign:'center'}}>ยกเลิก (รายไตรมาส)</th>
+                  <th colSpan={4} style={{textAlign:'center'}}>มาใหม่ (รายไตรมาส)</th>
+                  <th rowSpan={2} style={{textAlign:'center'}}>รวมยกเลิก</th>
+                  <th rowSpan={2} style={{textAlign:'center'}}>รวมมาใหม่</th>
+                </tr>
+                <tr>
+                  {QUARTER_LABEL.map(q=><th key={'r'+q} style={{textAlign:'center',fontSize:11}}>{q}</th>)}
+                  {QUARTER_LABEL.map(q=><th key={'a'+q} style={{textAlign:'center',fontSize:11}}>{q}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {catRows.map(({c,added,repealed})=>(
+                  <tr key={c.code}>
+                    <td><Tag c={c.code} color={catMap[c.code]?.color}/></td>
+                    {repealed.map((n,i)=><td key={'r'+i} style={{textAlign:'center',color:n?'var(--bad)':'var(--ink-faint)'}} className="num">{n||'—'}</td>)}
+                    {added.map((n,i)=><td key={'a'+i} style={{textAlign:'center',color:n?'var(--ok)':'var(--ink-faint)'}} className="num">{n||'—'}</td>)}
+                    <td style={{textAlign:'center',fontWeight:600,color:'var(--bad)'}} className="num">{repealed.reduce((a,b)=>a+b,0)}</td>
+                    <td style={{textAlign:'center',fontWeight:600,color:'var(--ok)'}} className="num">{added.reduce((a,b)=>a+b,0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {catRows.length===0 && <div style={{textAlign:'center',color:'var(--ink-faint)',padding:20,fontSize:13,marginTop:8}}>ไม่มีรายการในปีที่เลือก</div>}
       </div>
     </div>
   )
 }
 
-function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],reports=[],onGoReports}){
+function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports}){
   const lawById = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
   const curBE = new Date().getFullYear()+543
   const tlFromBE = curBE-2   // ไทม์ไลน์: 3 ปีย้อนหลัง
@@ -724,7 +759,7 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],re
       </div>))}
     </div>
 
-    <MonthlyAddRepealChart laws={laws} activity={activity}/>
+    <QuarterlyAddRepealChart quarterStats={quarterStats} cats={cats} catMap={catMap}/>
 
     <div className="cols">
       <div className="panel"><div className="panel-h"><h3>อัตราความสอดคล้อง</h3><span className="sub" style={{marginLeft:'auto'}}>{winLabel}</span></div>

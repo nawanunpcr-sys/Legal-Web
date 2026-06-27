@@ -297,6 +297,13 @@ export async function fetchActivity(limit = 5000) {
   return data || []
 }
 
+// ---- Quarterly added/repealed law stats (sourced from the original F-259 Excel masterlist) ----
+export async function fetchQuarterStats() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_law_quarter_stats').select('*').order('year').order('quarter')
+  return data || []
+}
+
 // ---- AI Skills: staging (import/approve) + update watcher ----
 export async function fetchStaging() {
   if (!hasSupabase) return []
