@@ -291,7 +291,7 @@ export async function logActivity({ action, law_id = null, law_code = '', law_na
     await supabase.from('lg_activity_log').insert({ action, law_id, law_code, law_name, detail })
   } catch (e) { console.warn('logActivity failed', e) }
 }
-export async function fetchActivity(limit = 60) {
+export async function fetchActivity(limit = 5000) {
   if (!hasSupabase) return []
   const { data } = await supabase.from('lg_activity_log').select('*').order('created_at', { ascending: false }).limit(limit)
   return data || []

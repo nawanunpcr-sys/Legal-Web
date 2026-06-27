@@ -633,6 +633,63 @@ function ReportDeadlinesPanel({reports=[],onGoReports}){
   )
 }
 
+const MONTH_SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+
+function MonthlyAddRepealChart({laws,activity}){
+  const yearOptions = useMemo(()=>{
+    const ys = new Set([new Date().getFullYear()])
+    laws.forEach(l=>{ const d=new Date(l.created_at); if(!isNaN(d)) ys.add(d.getFullYear()) })
+    activity.forEach(a=>{ if(a.action==='repeal'){ const d=new Date(a.created_at); if(!isNaN(d)) ys.add(d.getFullYear()) } })
+    return [...ys].sort((a,b)=>b-a)
+  },[laws,activity])
+  const [year,setYear] = useState(yearOptions[0] || new Date().getFullYear())
+
+  const {added,repealed} = useMemo(()=>{
+    const added=Array(12).fill(0), repealed=Array(12).fill(0)
+    laws.forEach(l=>{ const d=new Date(l.created_at); if(!isNaN(d) && d.getFullYear()===year) added[d.getMonth()]++ })
+    activity.forEach(a=>{
+      if(a.action!=='repeal') return
+      const d=new Date(a.created_at); if(!isNaN(d) && d.getFullYear()===year) repealed[d.getMonth()]++
+    })
+    return {added,repealed}
+  },[laws,activity,year])
+
+  const max = Math.max(1, ...added, ...repealed)
+  const totalAdded = added.reduce((a,b)=>a+b,0)
+  const totalRepealed = repealed.reduce((a,b)=>a+b,0)
+
+  return (
+    <div className="panel" style={{marginTop:16}}>
+      <div className="panel-h">
+        <h3>กฎหมายที่เพิ่ม / ยกเลิก รายเดือน</h3>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
+          <button className="month-yr-btn" onClick={()=>setYear(y=>y-1)}>‹</button>
+          <span style={{fontSize:13,fontWeight:600,minWidth:50,textAlign:'center'}} className="num">{year}</span>
+          <button className="month-yr-btn" onClick={()=>setYear(y=>y+1)}>›</button>
+        </div>
+      </div>
+      <div className="panel-b">
+        <div style={{display:'flex',gap:18,marginBottom:16,fontSize:12.5}}>
+          <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--ok)',display:'inline-block'}}/>เพิ่ม <b className="num">{totalAdded}</b> ฉบับ</span>
+          <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--bad)',display:'inline-block'}}/>ยกเลิก <b className="num">{totalRepealed}</b> ฉบับ</span>
+          <span style={{color:'var(--ink-faint)',marginLeft:'auto'}}>นับตามวันที่บันทึกเข้าระบบ (ไม่ใช่ปีของกฎหมาย)</span>
+        </div>
+        <div className="mchart">
+          {MONTH_SHORT.map((m,i)=>(
+            <div className="mchart-col" key={i}>
+              <div className="mchart-bars">
+                <div className="mchart-bar mchart-bar-add" style={{height:(added[i]/max*100)+'%'}} title={`เพิ่ม ${added[i]} ฉบับ`}/>
+                <div className="mchart-bar mchart-bar-rep" style={{height:(repealed[i]/max*100)+'%'}} title={`ยกเลิก ${repealed[i]} ฉบับ`}/>
+              </div>
+              <div className="mchart-lab">{m}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],reports=[],onGoReports}){
   const lawById = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
   const curBE = new Date().getFullYear()+543
@@ -666,6 +723,8 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],re
         <div className="delta">{c.delta}</div>
       </div>))}
     </div>
+
+    <MonthlyAddRepealChart laws={laws} activity={activity}/>
 
     <div className="cols">
       <div className="panel"><div className="panel-h"><h3>อัตราความสอดคล้อง</h3><span className="sub" style={{marginLeft:'auto'}}>{winLabel}</span></div>
