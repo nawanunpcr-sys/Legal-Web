@@ -134,15 +134,37 @@ export async function updateLawField(lawId, patch) {
   if (error) throw error
 }
 
+// ---- Quarterly added/repealed stats (drives the dashboard chart) ----
+// Keeps lg_law_quarter_stats in sync with real create/repeal/restore actions,
+// bucketed by the date the action happened in the system (not the law's own date).
+function quarterOf(date) {
+  const d = new Date(date || Date.now())
+  return { year: d.getFullYear(), quarter: Math.floor(d.getMonth() / 3) + 1 }
+}
+export async function bumpQuarterStat(cat, field, delta, atDate) {
+  if (!hasSupabase || !cat || !delta) return
+  const { year, quarter } = quarterOf(atDate)
+  try {
+    const { data } = await supabase.from('lg_law_quarter_stats').select('id,added,repealed')
+      .eq('year', year).eq('quarter', quarter).eq('cat', cat).maybeSingle()
+    if (data) {
+      const next = Math.max(0, (data[field] || 0) + delta)
+      await supabase.from('lg_law_quarter_stats').update({ [field]: next }).eq('id', data.id)
+    } else if (delta > 0) {
+      await supabase.from('lg_law_quarter_stats').insert({ year, quarter, cat, [field]: delta })
+    }
+  } catch (e) { console.warn('bumpQuarterStat failed', e) }
+}
+
 export async function repealLaw(lawId, { repeal_date, repeal_reason, replaced_by_code, repealed_by_authority }) {
-  const { error } = await supabase.from('lg_laws').update({
+  const { data: law, error } = await supabase.from('lg_laws').update({
     status: 'repealed',
     repeal_date,
     repeal_reason,
     replaced_by_code: replaced_by_code || null,
     repealed_by_authority: repealed_by_authority || null,
     updated_at: new Date().toISOString(),
-  }).eq('id', lawId)
+  }).eq('id', lawId).select('cat').single()
   if (error) throw error
   // log it
   await supabase.from('lg_notification_log').insert({
@@ -152,6 +174,7 @@ export async function repealLaw(lawId, { repeal_date, repeal_reason, replaced_by
     message: `กฎหมายถูกยกเลิก — ${repeal_reason || ''}`,
     due_date: repeal_date,
   })
+  await bumpQuarterStat(law?.cat, 'repealed', 1)
 }
 
 export async function createLaw({ code, cat, name, hierarchy_level, ministry, announce_date, effective_date, doc_list, responsible, review_date }) {
@@ -171,6 +194,7 @@ export async function createLaw({ code, cat, name, hierarchy_level, ministry, an
     updated_at: new Date().toISOString(),
   }).select().single()
   if (error) throw error
+  await bumpQuarterStat(cat, 'added', 1)
   return { ...data, reqs: [] }
 }
 
@@ -192,6 +216,7 @@ export async function createLawFull({ code, cat, name, hierarchy_level, ministry
     created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   }).select().single()
   if (error) throw error
+  await bumpQuarterStat(cat, 'added', 1)
   if (clean.length) {
     const rows = clean.map((r, i) => ({
       law_id: data.id, seq: i, text: r.text.trim(), status: r.status || 'met',
@@ -230,6 +255,7 @@ export function suggestionLists(laws = [], cars = []) {
 }
 
 export async function restoreLaw(lawId) {
+  const { data: before } = await supabase.from('lg_laws').select('cat,repeal_date').eq('id', lawId).maybeSingle()
   const { error } = await supabase.from('lg_laws').update({
     status: 'ok',
     repeal_date: null,
@@ -239,6 +265,7 @@ export async function restoreLaw(lawId) {
     updated_at: new Date().toISOString(),
   }).eq('id', lawId)
   if (error) throw error
+  if (before) await bumpQuarterStat(before.cat, 'repealed', -1, before.repeal_date)
 }
 
 // ---- Communication mutations ----
@@ -330,6 +357,7 @@ export async function addStagedLaw(rows) {
     }).select('id').single()
     if (error) throw error
     law = ins
+    await bumpQuarterStat(first.cat || 'LA', 'added', 1)
   }
   const reqRows = rows.map((r, i) => ({
     law_id: law.id, seq: r.req_seq ?? i,

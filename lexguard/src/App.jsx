@@ -159,7 +159,7 @@ export default function App(){
   },[search,activeLaws,cars,reports])
 
   async function handleAddStaged(code, rows){
-    try{ await addStagedLaw(rows); const d=await fetchAll(); setLaws(d.laws); await reloadSkills() }
+    try{ await addStagedLaw(rows); const d=await fetchAll(); setLaws(d.laws); await reloadSkills(); fetchQuarterStats().then(setQuarterStats) }
     catch(e){ toast('เพิ่มเข้าทะเบียนไม่สำเร็จ: '+e.message) }
   }
   async function handleDropStaged(rows){
@@ -212,7 +212,7 @@ export default function App(){
     try{
       await repealLaw(law.id,data); setLaws(prev=>prev.map(l=>l.id===law.id?{...l,status:'repealed',...data}:l)); setOpenLaw(null)
       await logActivity({ action:'repeal', law_id:law.id, law_code:law.code, law_name:law.name, detail:data?.repeal_reason||'ยกเลิก/แทนที่' })
-      fetchActivity().then(setActivity)
+      fetchActivity().then(setActivity); fetchQuarterStats().then(setQuarterStats)
     }
     catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
@@ -221,7 +221,7 @@ export default function App(){
     try{
       await restoreLaw(law.id); setLaws(prev=>prev.map(l=>l.id===law.id?{...l,status:'ok',repeal_date:null,repeal_reason:null,replaced_by_code:null,repealed_by_authority:null}:l)); setOpenLaw(null)
       await logActivity({ action:'restore', law_id:law.id, law_code:law.code, law_name:law.name, detail:'กู้คืนกฎหมาย' })
-      fetchActivity().then(setActivity)
+      fetchActivity().then(setActivity); fetchQuarterStats().then(setQuarterStats)
     }
     catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
@@ -239,7 +239,7 @@ export default function App(){
     try{
       const newLaw=await createLaw(fields); setLaws(prev=>[...prev,newLaw])
       await logActivity({ action:'create', law_id:newLaw.id, law_code:newLaw.code, law_name:newLaw.name, detail:'เพิ่มกฎหมายใหม่เข้าทะเบียน' })
-      fetchActivity().then(setActivity)
+      fetchActivity().then(setActivity); fetchQuarterStats().then(setQuarterStats)
     }
     catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
@@ -272,7 +272,7 @@ export default function App(){
     const newLaw=await createLawFull(fields, reqs)
     setLaws(prev=>[...prev,newLaw])
     await logActivity({ action:'create', law_id:newLaw.id, law_code:newLaw.code, law_name:newLaw.name, detail:'เพิ่มกฎหมายเข้าทะเบียน ('+(reqs?.length||0)+' ข้อ)' })
-    fetchActivity().then(setActivity)
+    fetchActivity().then(setActivity); fetchQuarterStats().then(setQuarterStats)
     return newLaw
   }
 
