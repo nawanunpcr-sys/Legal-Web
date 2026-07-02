@@ -155,6 +155,13 @@ export default function App(){
   const stagingBatches = useMemo(()=>{ const g={}; staging.forEach(r=>{(g[r.law_code]=g[r.law_code]||[]).push(r)}); return Object.entries(g) },[staging])
   const newUpdates  = useMemo(()=>updates.filter(u=>u.status==='new'),[updates])
   const suggest     = useMemo(()=>suggestionLists(laws,cars),[laws,cars])
+  const allProcess  = useMemo(()=>{
+    const out = processItems.map(p=>({...p,auto:false}))
+    updates.filter(u=>u.status==='new').forEach(u=>out.push({id:'u'+u.id,auto:true,stage:'discovery',title:u.title,note:'กฎหมายใหม่จาก '+(u.source||'ShawPat'),goView:'updates'}))
+    stagingBatches.forEach(([code,rows])=>out.push({id:'s'+code,auto:true,stage:'review',title:rows[0]?.law_name||code,note:rows.length+' ข้อกำหนด รออนุมัติ',goView:'staging'}))
+    cars.filter(c=>c.status!=='closed').forEach(c=>out.push({id:'c'+c.id,auto:true,stage:'verify',title:(c.co_no||'CAR')+' — '+(c.finding||'').slice(0,40),note:'CAR ยังไม่ปิด',goView:'car'}))
+    return out
+  },[processItems,updates,stagingBatches,cars])
   const searchResults = useMemo(()=>{
     const q=search.trim().toLowerCase(); if(q.length<2) return []
     const out=[]
@@ -411,7 +418,7 @@ export default function App(){
 
         <div className="content">
           {err && <div className="banner">{err}</div>}
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} processItems={processItems} onGoProcess={()=>setView('process')}/>}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} processItems={allProcess} onGoProcess={()=>setView('process')}/>}
           {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}/>}
           {view==='compliance'    && <Compliance    laws={inForceLaws} cats={cats} stats={stats} onOpen={setOpenLaw} onToggle={toggleReq}/>}
@@ -420,7 +427,7 @@ export default function App(){
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
           {view==='reports'       && <Reports       reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
           {view==='car'           && <CarOfi        cars={cars} onReload={loadCars} suggest={suggest}/>}
-          {view==='process'       && <ProcessTracker items={processItems} onReload={loadProcess} updates={updates}/>}
+          {view==='process'       && <ProcessTracker items={allProcess} onReload={loadProcess} updates={updates} onGoView={setView}/>}
           {view==='analysis'      && <Analysis      laws={inForceLaws} cats={cats} catMap={catMap} allLaws={laws} onAnalyzed={reloadSkills} goView={setView} onCreateFull={handleCreateFull} suggest={suggest}/>}
           {view==='staging'       && <Staging       batches={stagingBatches} catMap={catMap} onAdd={handleAddStaged} onDrop={handleDropStaged}/>}
           {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}

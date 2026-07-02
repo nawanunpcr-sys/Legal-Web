@@ -34,7 +34,7 @@ export function StageBar({ items, onGo }) {
   )
 }
 
-export default function ProcessTracker({ items, onReload, updates = [] }) {
+export default function ProcessTracker({ items, onReload, updates = [], onGoView }) {
   const [modal, setModal] = useState(null)
   const byStage = useMemo(() => {
     const g = Object.fromEntries(PROCESS_STAGES.map(s => [s.key, []]))
@@ -74,15 +74,22 @@ export default function ProcessTracker({ items, onReload, updates = [] }) {
             </div>
             <div className="kcol-b">
               {(byStage[s.key] || []).map(it => (
-                <div className="kcard" key={it.id}>
+                <div className="kcard" key={it.id} style={it.auto ? { borderStyle: 'dashed', background: 'var(--surface-2)' } : null}>
                   <div className="kt">{it.title}</div>
                   {it.assignee && <div className="ka">ผู้รับผิดชอบ: {it.assignee}</div>}
                   {it.note && <div className="kn">{it.note}</div>}
-                  <div className="kacts">
-                    {it.stage !== 'done' && <button className="btn btn-primary" style={{ padding: '3px 9px', fontSize: 11 }} onClick={() => advance(it)}>ถัดไป →</button>}
-                    <button className="btn btn-ghost" style={{ padding: '3px 9px', fontSize: 11 }} onClick={() => setModal(it)}>แก้ไข</button>
-                    <button className="btn btn-ghost" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => remove(it)}>ลบ</button>
-                  </div>
+                  {it.auto ? (
+                    <div className="kacts">
+                      <span className="tag" style={{ fontSize: 9.5 }}>จากระบบ</span>
+                      {it.goView && onGoView && <button className="btn btn-ghost" style={{ padding: '3px 9px', fontSize: 11 }} onClick={() => onGoView(it.goView)}>ไปที่หน้า →</button>}
+                    </div>
+                  ) : (
+                    <div className="kacts">
+                      {it.stage !== 'done' && <button className="btn btn-primary" style={{ padding: '3px 9px', fontSize: 11 }} onClick={() => advance(it)}>ถัดไป →</button>}
+                      <button className="btn btn-ghost" style={{ padding: '3px 9px', fontSize: 11 }} onClick={() => setModal(it)}>แก้ไข</button>
+                      <button className="btn btn-ghost" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => remove(it)}>ลบ</button>
+                    </div>
+                  )}
                 </div>
               ))}
               {(byStage[s.key] || []).length === 0 && <div className="kempty">—</div>}
