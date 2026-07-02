@@ -17,7 +17,7 @@ import LawDrawer from './components/LawDrawer.jsx'
 import CarOfi from './components/CarOfi.jsx'
 import Reports from './components/Reports.jsx'
 import ProcessTracker, { StageBar } from './components/ProcessTracker.jsx'
-import LawTracker from './components/LawTracker.jsx'
+import LawTracker, { CaseStepper, groupCases, effStatus } from './components/LawTracker.jsx'
 import Login from './components/Login.jsx'
 import Toaster from './components/Toaster.jsx'
 import ConfirmHost from './components/ConfirmHost.jsx'
@@ -430,7 +430,7 @@ export default function App(){
 
         <div className="content">
           {err && <div className="banner">{err}</div>}
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} processItems={allProcess} onGoProcess={()=>setView('process')}/>}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} processItems={allProcess} onGoProcess={()=>setView('process')} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}/>}
           {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}/>}
           {view==='compliance'    && <Compliance    laws={inForceLaws} cats={cats} stats={stats} onOpen={setOpenLaw} onToggle={toggleReq}/>}
@@ -752,7 +752,14 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
   )
 }
 
-function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,processItems=[],onGoProcess}){
+function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,processItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker}){
+  const trk = useMemo(()=>{
+    let waiting=0, verifying=0, overdue=0
+    trackerRows.forEach(r=>{ const es=effStatus(r); if(es==='overdue')overdue++; else if(es==='waiting')waiting++; if(r.stage===3&&es==='in_progress')verifying++ })
+    return { waiting, verifying, overdue }
+  },[trackerRows])
+  const latestCases = useMemo(()=>groupCases(trackerRows).slice(0,3),[trackerRows])
+  const subLabel = (stage,code)=>(trackerSubs[stage]||[]).find(x=>x.code===code)?.label||code
   const lawById = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
   const curBE = new Date().getFullYear()+543
   const tlFromBE = curBE-2   // ไทม์ไลน์: 3 ปีย้อนหลัง
@@ -769,10 +776,11 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
   const newUpdates=updates.filter(u=>u.status==='new')
   const winLabel = 'ทั้งหมด'
   const cards=[
-    {cls:'s-total', lab:'กฎหมายทั้งหมด',          val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด'},
-    {cls:'s-warn',  lab:'ข้อกำหนดทั้งหมด',       val:stats.req,   unit:'ข้อ',  delta:'ประเมินครบทุกข้อ'},
-    {cls:'s-ok',    lab:'ข้อกำหนดที่สอดคล้อง',  val:stats.met,   unit:'ข้อ',  delta:stats.pct.toFixed(1)+'% ของข้อกำหนด'},
-    {cls:'s-bad',   lab:'ยังไม่สอดคล้อง',        val:stats.nc,    unit:'ข้อ',  delta:'ต้องติดตาม'},
+    {cls:'s-total', lab:'กฎหมายทั้งหมด', val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด'},
+    {cls:'s-warn',  lab:'รอดำเนินการ',   val:trk.waiting, unit:'ขั้น', delta:'ในกระบวนการติดตาม'},
+    {cls:'s-warn',  lab:'กำลังทวนสอบ',   val:trk.verifying, unit:'รายการ', delta:'ขั้นทวนสอบ'},
+    {cls:'s-bad',   lab:'เกินกำหนด',     val:trk.overdue, unit:'ขั้น', delta:'ต้องเร่งจัดการ'},
+    {cls:'s-ok',    lab:'สอดคล้อง',      val:stats.pct.toFixed(1)+'%', unit:'', delta:stats.met+' / '+stats.req+' ข้อ'},
   ]
   const recent = activity.slice(0,4)
   const relTime = s => { const sec=Math.floor((Date.now()-new Date(s))/1000); if(sec<60)return'เมื่อสักครู่'; const mi=Math.floor(sec/60); if(mi<60)return mi+' นาทีก่อน'; const h=Math.floor(mi/60); if(h<24)return h+' ชม.ก่อน'; const d=Math.floor(h/24); return d+' วันก่อน' }
@@ -780,7 +788,7 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
   return <div className="view">
     <StageBar items={processItems} onGo={onGoProcess}/>
 
-    <div className="grid stats">
+    <div className="grid stats" style={{gridTemplateColumns:'repeat(5,1fr)'}}>
       {cards.map((c,i)=>(<div className={'stat hero '+c.cls} key={i}>
         <div className="lab">{c.lab}</div>
         <div className="val num">{c.val} <small>{c.unit}</small></div>
@@ -800,6 +808,22 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
       <div className="panel"><div className="panel-h"><h3>ความสอดคล้องตามหมวดกฎหมาย</h3></div>
         <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div></div>
     </div>
+
+    {latestCases.length>0 && (
+      <div className="panel" style={{marginTop:16}}>
+        <div className="panel-h"><h3>ติดตามสถานะกฎหมายล่าสุด</h3>
+          {onGoTracker && <span className="sub" style={{marginLeft:'auto',color:'var(--brand)',cursor:'pointer'}} onClick={onGoTracker}>ดูทั้งหมด →</span>}</div>
+        <div className="panel-b" style={{display:'flex',flexDirection:'column',gap:14}}>
+          {latestCases.map(c=>{ const law=laws.find(l=>l.id===c.law_id)
+            return (
+              <div key={c.law_id}>
+                <div style={{fontSize:12.5,fontWeight:600,marginBottom:6}}><span className="law-code" style={{marginRight:8}}>{law?.code||'—'}</span>{(law?.name||'').slice(0,80)}</div>
+                <CaseStepper c={c} subLabel={subLabel} onClickStage={()=>onGoTracker&&onGoTracker()}/>
+              </div>
+            )})}
+        </div>
+      </div>
+    )}
 
     <div className="panel" style={{marginTop:16,borderTop:'3px solid var(--brand)'}}>
       <div className="panel-h"><h3>อัปเดตล่าสุด</h3><span className="sub" style={{marginLeft:'auto'}}>ความเคลื่อนไหวรายวัน</span></div>

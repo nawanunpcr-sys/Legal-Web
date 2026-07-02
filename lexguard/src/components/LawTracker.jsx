@@ -81,13 +81,13 @@ export default function LawTracker({ rows, subs, laws, cars = [], suggest, onRel
         )
       })}
 
-      {stageModal && <StageModal st={stageModal} subs={subs} cars={cars} suggest={suggest} onClose={() => setStageModal(null)} onSaved={() => { setStageModal(null); onReload() }} />}
+      {stageModal && <StageModal st={stageModal} subs={subs} suggest={suggest} onClose={() => setStageModal(null)} onSaved={() => { setStageModal(null); onReload() }} />}
       {addOpen && <AddCaseModal laws={laws} tracked={tracked} onClose={() => setAddOpen(false)} onSaved={() => { setAddOpen(false); onReload() }} />}
     </div>
   )
 }
 
-function StageModal({ st, subs, cars, suggest, onClose, onSaved }) {
+function StageModal({ st, subs, suggest, onClose, onSaved }) {
   const [f, setF] = useState(st)
   const [busy, setBusy] = useState(false)
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -99,7 +99,6 @@ function StageModal({ st, subs, cars, suggest, onClose, onSaved }) {
       await updateTrackerStage(f.id, {
         substatus: f.substatus, assignee_name: f.assignee_name || null, assignee_role: f.assignee_role || null,
         status: f.status, note: f.note || null, started_at: f.started_at || null, due_at: f.due_at || null,
-        car_ofi_id: f.car_ofi_id || null,
       })
       onSaved()
     } catch (e) { toast('บันทึกไม่สำเร็จ: ' + e.message); setBusy(false) }
@@ -127,11 +126,6 @@ function StageModal({ st, subs, cars, suggest, onClose, onSaved }) {
             <div><label className="form-label">วันเริ่ม</label><input className="form-input" type="date" value={dOnly(f.started_at)} onChange={e => set('started_at', e.target.value)} /></div>
             <div><label className="form-label">วันครบกำหนด</label><input className="form-input" type="date" value={dOnly(f.due_at)} onChange={e => set('due_at', e.target.value)} /></div>
           </div>
-          <label className="form-label">ผูกกับ CAR / OFI (ถ้ามี)</label>
-          <select className="form-input" value={f.car_ofi_id || ''} onChange={e => set('car_ofi_id', e.target.value ? Number(e.target.value) : null)}>
-            <option value="">— ไม่ผูก —</option>
-            {cars.map(c => <option key={c.id} value={c.id}>{c.co_no || ('CAR ' + c.id)} — {(c.finding || '').slice(0, 40)}</option>)}
-          </select>
           <label className="form-label">บันทึก</label>
           <textarea className="form-input" rows={2} value={f.note || ''} onChange={e => set('note', e.target.value)} />
         </div>
