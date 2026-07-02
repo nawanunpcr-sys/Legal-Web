@@ -59,6 +59,7 @@ export default function LawTracker({ rows, subs, laws, cars = [], suggest, onRel
   return (
     <div className="view">
       <div className="filterbar">
+        <span className="live-dot" title="อัปเดตสดผ่าน Supabase Realtime">อัปเดตสด</span>
         <span className="right" style={{ marginRight: 'auto', color: 'var(--ink-faint)' }}>ติดตามกฎหมายผ่าน 3 ขั้น: ค้นหา/วิเคราะห์ → หน่วยงานดำเนินการ → ทวนสอบ</span>
         <button className="btn btn-primary" onClick={() => setAddOpen(true)}>+ เพิ่มรายการติดตาม</button>
       </div>

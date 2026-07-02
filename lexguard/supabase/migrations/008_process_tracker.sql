@@ -27,7 +27,14 @@ create index if not exists idx_lg_process_tracker_law on lg_process_tracker(law_
 alter table lg_process_tracker enable row level security;
 create policy lg_process_tracker_all on lg_process_tracker for all using (true) with check (true);
 
--- TODO (Phase 2 - automation, not implemented yet):
+-- Phase 2 · Realtime (DONE): expose table on the supabase_realtime publication
+--   so the client can subscribe to live inserts/updates/deletes.
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and tablename='lg_process_tracker') then
+    alter publication supabase_realtime add table lg_process_tracker;
+  end if;
+end $$;
+
+-- TODO (Phase 2 - remaining automation, not implemented yet):
 --  * trigger: when a linked lg_car row closes -> advance the tracker stage
---  * Realtime: subscribe lg_process_tracker for live dashboard/tracker updates
 --  * daily Edge Function: scan due_at overdue -> notification hook (LINE/email)

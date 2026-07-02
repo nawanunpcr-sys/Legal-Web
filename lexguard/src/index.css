@@ -539,6 +539,9 @@ body {
 .mchart-lab { font-size: 10.5px; color: var(--ink-faint); font-weight: 500 }
 
 /* ─── Filter bar ─────────────────────────────────────────────── */
+.live-dot{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:#248a3d;padding:3px 10px;border-radius:999px;background:rgba(52,199,89,.12);border:1px solid rgba(52,199,89,.3)}
+.live-dot::before{content:"";width:7px;height:7px;border-radius:50%;background:#34c759;box-shadow:0 0 0 0 rgba(52,199,89,.6);animation:livePulse 1.8s ease-out infinite}
+@keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(52,199,89,.55)}70%{box-shadow:0 0 0 6px rgba(52,199,89,0)}100%{box-shadow:0 0 0 0 rgba(52,199,89,0)}}
 .filterbar {
   display: flex;
   gap: 5px;

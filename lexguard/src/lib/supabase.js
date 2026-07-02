@@ -509,6 +509,16 @@ export async function deleteTrackerCase(lawId) {
   const { error } = await supabase.from('lg_process_tracker').delete().eq('law_id', lawId)
   if (error) throw error
 }
+// Phase 2 · Realtime: subscribe to live changes on lg_process_tracker.
+// onChange(payload) fires on any insert/update/delete. Returns an unsubscribe fn.
+export function subscribeTracker(onChange) {
+  if (!hasSupabase) return () => {}
+  const ch = supabase
+    .channel('rt-process-tracker')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'lg_process_tracker' }, onChange)
+    .subscribe()
+  return () => { try { supabase.removeChannel(ch) } catch { /* noop */ } }
+}
 
 // ---- Monthly compliance check-off ----
 export async function fetchComplianceMonths(year) {

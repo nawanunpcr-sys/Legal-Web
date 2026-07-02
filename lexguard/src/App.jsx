@@ -9,7 +9,7 @@ import { supabase, hasSupabase, fetchAll,
          logActivity, fetchActivity, fetchQuarterStats, fetchCars, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
          fetchProcessItems,
-         fetchTracker, fetchTrackerSubstatuses,
+         fetchTracker, fetchTrackerSubstatuses, subscribeTracker,
          fetchSettings, saveSettings, DEFAULT_SETTINGS,
          getSession, onAuthChange, signOut,
          STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
@@ -157,6 +157,13 @@ export default function App(){
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
   })() },[authed])
+
+  // Phase 2 · Realtime: keep tracker rows live across tabs/users
+  useEffect(()=>{ if(!authed || !hasSupabase) return
+    let t=null
+    const unsub = subscribeTracker(()=>{ clearTimeout(t); t=setTimeout(loadTracker, 250) })
+    return ()=>{ clearTimeout(t); unsub() }
+  },[authed])
 
   useEffect(()=>{ (async()=>{
     if(!hasSupabase) return
