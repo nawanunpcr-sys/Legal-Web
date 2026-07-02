@@ -9,6 +9,7 @@ import { supabase, hasSupabase, fetchAll,
          logActivity, fetchActivity, fetchQuarterStats, fetchCars, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
          fetchProcessItems,
+         fetchTracker, fetchTrackerSubstatuses,
          fetchSettings, saveSettings, DEFAULT_SETTINGS,
          getSession, onAuthChange, signOut,
          STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
@@ -16,6 +17,7 @@ import LawDrawer from './components/LawDrawer.jsx'
 import CarOfi from './components/CarOfi.jsx'
 import Reports from './components/Reports.jsx'
 import ProcessTracker, { StageBar } from './components/ProcessTracker.jsx'
+import LawTracker from './components/LawTracker.jsx'
 import Login from './components/Login.jsx'
 import Toaster from './components/Toaster.jsx'
 import ConfirmHost from './components/ConfirmHost.jsx'
@@ -47,6 +49,7 @@ const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
     { id:'process',       label:'ติดตามกระบวนการ',       icon:'inbox'   },
+    { id:'tracker',       label:'ติดตามสถานะกฎหมาย',     icon:'update'  },
   ]},
   { label: '① ค้นพบกฎหมายใหม่', items: [
     { id:'updates',       label:'อัปเดตกฎหมาย',          icon:'update'  },
@@ -82,6 +85,7 @@ const TITLES = {
   reports:       ['การส่งรายงานราชการ',     'ติดตามและแจ้งเตือนกำหนดส่งรายงานต่อหน่วยงานรัฐ'],
   car:           ['CAR / OFI',              'คำขอให้ปฏิบัติการแก้ไข และโอกาสในการปรับปรุง'],
   process:       ['ติดตามกระบวนการ',        'ค้นพบ → ตรวจเนื้อหา → ส่งต่อ → ตรวจสอบ/ติดตาม'],
+  tracker:       ['ติดตามสถานะกฎหมาย',      'ติดตาม 3 ขั้น: ค้นหา/วิเคราะห์ → หน่วยงานดำเนินการ → ทวนสอบ'],
   analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
   staging:       ['นำเข้า / รออนุมัติ',    'รายการที่ AI สรุปไว้ รอกดเพิ่มเข้าทะเบียน'],
   updates:       ['อัปเดตกฎหมาย · ShawPat','เฝ้าระวังกฎหมายใหม่จาก ShawPat'],
@@ -112,6 +116,8 @@ export default function App(){
   const [cars,setCars]       = useState([])
   const [settings,setSettings] = useState(DEFAULT_SETTINGS)
   const [processItems,setProcessItems] = useState([])
+  const [trackerRows,setTrackerRows] = useState([])
+  const [trackerSubs,setTrackerSubs] = useState({})
   const [reports,setReports] = useState([])
 
   // auth gate
@@ -134,6 +140,7 @@ export default function App(){
   }
   async function loadCars(){ try{ setCars(await fetchCars()) }catch(e){ console.warn('cars reload',e) } }
   async function loadProcess(){ try{ setProcessItems(await fetchProcessItems()) }catch(e){ console.warn('process reload',e) } }
+  async function loadTracker(){ try{ const [r,s]=await Promise.all([fetchTracker(),fetchTrackerSubstatuses()]); setTrackerRows(r); setTrackerSubs(s) }catch(e){ console.warn('tracker reload',e) } }
   async function loadReports(){ try{ setReports(await fetchReports()) }catch(e){ console.warn('reports reload',e) } }
 
   useEffect(()=>{ if(!authed) return; (async()=>{
@@ -142,6 +149,7 @@ export default function App(){
       const [d, mData, s, u, a, qs, cs, rp, st, pi] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchQuarterStats(), fetchCars(), fetchReports(), fetchSettings(), fetchProcessItems()])
       setCats(d.cats); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
       setMonths(mData); setStaging(s); setUpdates(u); setActivity(a); setQuarterStats(qs); setCars(cs); setReports(rp); setSettings(st); setProcessItems(pi)
+      loadTracker()
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -432,6 +440,7 @@ export default function App(){
           {view==='reports'       && <Reports       reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
           {view==='car'           && <CarOfi        cars={cars} onReload={loadCars} suggest={suggest}/>}
           {view==='process'       && <ProcessTracker items={allProcess} onReload={loadProcess} updates={updates} onGoView={setView}/>}
+          {view==='tracker'       && <LawTracker    rows={trackerRows} subs={trackerSubs} laws={activeLaws} cars={cars} suggest={suggest} onReload={loadTracker}/>}
           {view==='analysis'      && <Analysis      laws={inForceLaws} cats={cats} catMap={catMap} allLaws={laws} onAnalyzed={reloadSkills} goView={setView} onCreateFull={handleCreateFull} suggest={suggest}/>}
           {view==='staging'       && <Staging       batches={stagingBatches} catMap={catMap} onAdd={handleAddStaged} onDrop={handleDropStaged}/>}
           {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}

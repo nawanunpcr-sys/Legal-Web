@@ -464,6 +464,52 @@ export async function deleteProcessItem(id) {
   if (error) throw error
 }
 
+// ---- Process Tracker (3-stage per-law workflow) ----
+export const TRACKER_STAGES = [
+  { n: 1, title: 'ค้นหา/ตรวจสอบ/วิเคราะห์/ขึ้นทะเบียน', role: 'ผู้ค้นหา/วิเคราะห์' },
+  { n: 2, title: 'หน่วยงานที่เกี่ยวข้องดำเนินการ',       role: 'หน่วยงานที่เกี่ยวข้อง' },
+  { n: 3, title: 'ผู้ทวนสอบ',                             role: 'ผู้ทวนสอบ' },
+]
+export const TRACKER_STATUS = {
+  waiting:     { label: 'รอดำเนินการ', color: '#a1a1a6' },
+  in_progress: { label: 'กำลังทำ',     color: '#0071e3' },
+  done:        { label: 'เสร็จ',        color: '#248a3d' },
+  overdue:     { label: 'เกินกำหนด',   color: '#c4271d' },
+}
+const DEFAULT_SUB = { 1: 'pending_search', 2: 'pending_assign', 3: 'pending_verify' }
+
+export async function fetchTrackerSubstatuses() {
+  if (!hasSupabase) return {}
+  const { data } = await supabase.from('lg_process_substatus').select('*').order('stage').order('sort')
+  const g = {}
+  ;(data || []).forEach(r => { (g[r.stage] = g[r.stage] || []).push(r) })
+  return g
+}
+export async function fetchTracker() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_process_tracker').select('*').order('law_id').order('stage')
+  return data || []
+}
+// create a tracking case = 3 stage rows for one law
+export async function createTrackerCase({ law_id, requirement_id = null }) {
+  const rows = TRACKER_STAGES.map(s => ({
+    law_id, requirement_id, stage: s.n,
+    substatus: DEFAULT_SUB[s.n],
+    status: s.n === 1 ? 'in_progress' : 'waiting',
+    started_at: s.n === 1 ? new Date().toISOString() : null,
+  }))
+  const { error } = await supabase.from('lg_process_tracker').insert(rows)
+  if (error) throw error
+}
+export async function updateTrackerStage(id, patch) {
+  const { error } = await supabase.from('lg_process_tracker').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)
+  if (error) throw error
+}
+export async function deleteTrackerCase(lawId) {
+  const { error } = await supabase.from('lg_process_tracker').delete().eq('law_id', lawId)
+  if (error) throw error
+}
+
 // ---- Monthly compliance check-off ----
 export async function fetchComplianceMonths(year) {
   if (!hasSupabase) return []
