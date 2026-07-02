@@ -46,23 +46,27 @@ const Tag = ({c,color}) => <span className="tag" style={{borderColor:(color||'#8
 const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
-  ]},
-  { label: 'ทะเบียน & ประเมิน', items: [
-    { id:'register',      label:'ทะเบียนกฎหมาย',        icon:'book'    },
-    { id:'compliance',    label:'ติดตามความสอดคล้อง',   icon:'check'   },
-    { id:'improvements',  label:'แผนปรับปรุง',           icon:'alert'   },
-    { id:'repealed',      label:'กฎหมายที่ถูกยกเลิก',   icon:'ban'     },
-  ]},
-  { label: 'การดำเนินการ', items: [
-    { id:'comm',          label:'การสื่อสาร (ISD-86)',   icon:'chat'    },
-    { id:'reports',       label:'การส่งรายงานราชการ',    icon:'inbox'   },
-    { id:'car',           label:'CAR / OFI',             icon:'alert'   },
     { id:'process',       label:'ติดตามกระบวนการ',       icon:'inbox'   },
   ]},
-  { label: 'วิเคราะห์ & AI', items: [
-    { id:'analysis',      label:'วิเคราะห์ & สรุป',       icon:'spark'   },
-    { id:'staging',       label:'นำเข้า / รออนุมัติ',     icon:'inbox'   },
+  { label: '① ค้นพบกฎหมายใหม่', items: [
     { id:'updates',       label:'อัปเดตกฎหมาย',          icon:'update'  },
+    { id:'analysis',      label:'วิเคราะห์ & AI',          icon:'spark'   },
+  ]},
+  { label: '② ตรวจเนื้อหา', items: [
+    { id:'staging',       label:'รออนุมัติเข้าทะเบียน',   icon:'inbox'   },
+    { id:'register',      label:'ทะเบียนกฎหมาย',          icon:'book'    },
+  ]},
+  { label: '③ ส่งต่อ & สื่อสาร', items: [
+    { id:'comm',          label:'การสื่อสาร (ISD-86)',   icon:'chat'    },
+  ]},
+  { label: '④ ตรวจสอบ & ติดตาม', items: [
+    { id:'compliance',    label:'ติดตามความสอดคล้อง',   icon:'check'   },
+    { id:'improvements',  label:'แผนปรับปรุง',           icon:'alert'   },
+    { id:'car',           label:'CAR / OFI',             icon:'alert'   },
+    { id:'reports',       label:'การส่งรายงานราชการ',    icon:'inbox'   },
+  ]},
+  { label: 'อ้างอิง & ระบบ', items: [
+    { id:'repealed',      label:'กฎหมายที่ถูกยกเลิก',   icon:'ban'     },
     { id:'notifications', label:'การแจ้งเตือน',           icon:'bell'    },
     { id:'settings',      label:'ตั้งค่า',                icon:'gear'    },
   ]},
