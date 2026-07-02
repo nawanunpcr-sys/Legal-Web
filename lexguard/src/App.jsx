@@ -18,6 +18,7 @@ import CarOfi from './components/CarOfi.jsx'
 import Reports from './components/Reports.jsx'
 import ProcessTracker, { StageBar } from './components/ProcessTracker.jsx'
 import LawTracker, { CaseStepper, groupCases, effStatus } from './components/LawTracker.jsx'
+import { I } from './components/icons.jsx'
 import Login from './components/Login.jsx'
 import Toaster from './components/Toaster.jsx'
 import ConfirmHost from './components/ConfirmHost.jsx'
@@ -133,6 +134,8 @@ export default function App(){
   useEffect(()=>{ try{ localStorage.setItem('cr_view',view) }catch{} },[view])
   useEffect(()=>{ try{ localStorage.setItem('cr_nav',navOpen?'1':'0') }catch{} },[navOpen])
   useEffect(()=>{ document.documentElement.setAttribute('data-theme',dark?'dark':'light'); try{ localStorage.setItem('cr_dark',dark?'1':'0') }catch{} },[dark])
+  // auto-collapse sidebar to icon rail on tablet/narrow screens
+  useEffect(()=>{ const h=()=>{ if(window.innerWidth<1024) setNavOpen(false) }; h(); window.addEventListener('resize',h); return ()=>window.removeEventListener('resize',h) },[])
 
   async function reloadSkills(){
     try{ const [s,u,a] = await Promise.all([fetchStaging(), fetchUpdates(), fetchActivity()]); setStaging(s); setUpdates(u); setActivity(a) }
@@ -375,7 +378,8 @@ export default function App(){
                 n.id==='notifications' ? (bellNotifications.length||null) : null
               return (
                 <button key={n.id} className={'nav-item'+(view===n.id?' active':'')}
-                  onClick={()=>setView(n.id)}>
+                  onClick={()=>setView(n.id)} title={n.label}>
+                  <span className="nav-ic"><I n={n.icon}/></span>
                   <span className="label">{n.label}</span>
                 </button>
               )

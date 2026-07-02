@@ -233,8 +233,24 @@ body {
 .side-foot .nm { font-size: 12px; color: var(--ink); font-weight: 600; line-height: 1.2 }
 .side-foot .rl { font-size: 11px; color: var(--sb-dim); margin-top: 1px }
 
-/* collapsed sidebar */
-.sidebar.collapsed { width: 0; opacity: 0; overflow: hidden; border-right: none; pointer-events: none }
+/* nav item icon */
+.nav-ic { display: inline-flex; align-items: center; flex-shrink: 0; color: inherit }
+.nav-ic svg { width: 18px; height: 18px; stroke-width: 1.9 }
+.nav-item { gap: 11px }
+
+/* collapsed sidebar = icon rail */
+.sidebar.collapsed { width: 66px; padding-left: 0; padding-right: 0 }
+.sidebar.collapsed .label,
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .brand h1,
+.sidebar.collapsed .brand > span,
+.sidebar.collapsed .side-foot .nm,
+.sidebar.collapsed .side-foot .rl { display: none }
+.sidebar.collapsed .nav-group { padding: 4px 8px }
+.sidebar.collapsed .nav-item { justify-content: center; padding: 9px 0 }
+.sidebar.collapsed .brand { padding: 20px 0; text-align: center }
+.sidebar.collapsed .brand-mark { margin: 0 auto }
+.sidebar.collapsed .side-foot { justify-content: center; padding: 14px 0 }
 
 /* ═══════════════════════════════════════════════════════════════
    MAIN AREA
