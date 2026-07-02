@@ -98,7 +98,7 @@ export default function App(){
   const [session,setSession] = useState(undefined) // undefined=checking, null=logged out
   const [navOpen,setNavOpen] = useState(()=>{ try{ return localStorage.getItem('cr_nav')!=='0' }catch{ return true } })
   const [view,setView]     = useState(()=>{ try{ return localStorage.getItem('cr_view')||'dashboard' }catch{ return 'dashboard' } })
-  const [dark,setDark]     = useState(()=>{ try{ return localStorage.getItem('cr_dark')==='1' }catch{ return false } })
+  const [dark,setDark]     = useState(()=>{ try{ const v=localStorage.getItem('cr_dark'); return v==null?true:v==='1' }catch{ return true } })
   const [cats,setCats]     = useState([])
   const [laws,setLaws]     = useState([])
   const [comms,setComms]   = useState([])
