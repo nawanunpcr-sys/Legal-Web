@@ -8,12 +8,14 @@ import { supabase, hasSupabase, fetchAll,
          fetchStaging, fetchUpdates, addStagedLaw, dismissStaged, setUpdateStatus,
          logActivity, fetchActivity, fetchQuarterStats, fetchCars, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
+         fetchProcessItems,
          fetchSettings, saveSettings, DEFAULT_SETTINGS,
          getSession, onAuthChange, signOut,
          STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
 import LawDrawer from './components/LawDrawer.jsx'
 import CarOfi from './components/CarOfi.jsx'
 import Reports from './components/Reports.jsx'
+import ProcessTracker, { StageBar } from './components/ProcessTracker.jsx'
 import Login from './components/Login.jsx'
 import Toaster from './components/Toaster.jsx'
 import ConfirmHost from './components/ConfirmHost.jsx'
@@ -55,6 +57,7 @@ const NAV_GROUPS = [
     { id:'comm',          label:'การสื่อสาร (ISD-86)',   icon:'chat'    },
     { id:'reports',       label:'การส่งรายงานราชการ',    icon:'inbox'   },
     { id:'car',           label:'CAR / OFI',             icon:'alert'   },
+    { id:'process',       label:'ติดตามกระบวนการ',       icon:'inbox'   },
   ]},
   { label: 'วิเคราะห์ & AI', items: [
     { id:'analysis',      label:'วิเคราะห์ & สรุป',       icon:'spark'   },
@@ -74,6 +77,7 @@ const TITLES = {
   comm:          ['ตารางการสื่อสาร',        'การสื่อสารภายในและภายนอกองค์กร (ISD-86)'],
   reports:       ['การส่งรายงานราชการ',     'ติดตามและแจ้งเตือนกำหนดส่งรายงานต่อหน่วยงานรัฐ'],
   car:           ['CAR / OFI',              'คำขอให้ปฏิบัติการแก้ไข และโอกาสในการปรับปรุง'],
+  process:       ['ติดตามกระบวนการ',        'ค้นพบ → ตรวจเนื้อหา → ส่งต่อ → ตรวจสอบ/ติดตาม'],
   analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
   staging:       ['นำเข้า / รออนุมัติ',    'รายการที่ AI สรุปไว้ รอกดเพิ่มเข้าทะเบียน'],
   updates:       ['อัปเดตกฎหมาย · ShawPat','เฝ้าระวังกฎหมายใหม่จาก ShawPat'],
@@ -103,6 +107,7 @@ export default function App(){
   const [quarterStats,setQuarterStats] = useState([])
   const [cars,setCars]       = useState([])
   const [settings,setSettings] = useState(DEFAULT_SETTINGS)
+  const [processItems,setProcessItems] = useState([])
   const [reports,setReports] = useState([])
 
   // auth gate
@@ -124,14 +129,15 @@ export default function App(){
     catch(e){ console.warn('skills reload error',e) }
   }
   async function loadCars(){ try{ setCars(await fetchCars()) }catch(e){ console.warn('cars reload',e) } }
+  async function loadProcess(){ try{ setProcessItems(await fetchProcessItems()) }catch(e){ console.warn('process reload',e) } }
   async function loadReports(){ try{ setReports(await fetchReports()) }catch(e){ console.warn('reports reload',e) } }
 
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, s, u, a, qs, cs, rp, st] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchQuarterStats(), fetchCars(), fetchReports(), fetchSettings()])
+      const [d, mData, s, u, a, qs, cs, rp, st, pi] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchQuarterStats(), fetchCars(), fetchReports(), fetchSettings(), fetchProcessItems()])
       setCats(d.cats); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setStaging(s); setUpdates(u); setActivity(a); setQuarterStats(qs); setCars(cs); setReports(rp); setSettings(st)
+      setMonths(mData); setStaging(s); setUpdates(u); setActivity(a); setQuarterStats(qs); setCars(cs); setReports(rp); setSettings(st); setProcessItems(pi)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -405,7 +411,7 @@ export default function App(){
 
         <div className="content">
           {err && <div className="banner">{err}</div>}
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')}/>}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} processItems={processItems} onGoProcess={()=>setView('process')}/>}
           {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}/>}
           {view==='compliance'    && <Compliance    laws={inForceLaws} cats={cats} stats={stats} onOpen={setOpenLaw} onToggle={toggleReq}/>}
@@ -414,6 +420,7 @@ export default function App(){
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
           {view==='reports'       && <Reports       reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
           {view==='car'           && <CarOfi        cars={cars} onReload={loadCars} suggest={suggest}/>}
+          {view==='process'       && <ProcessTracker items={processItems} onReload={loadProcess} updates={updates}/>}
           {view==='analysis'      && <Analysis      laws={inForceLaws} cats={cats} catMap={catMap} allLaws={laws} onAnalyzed={reloadSkills} goView={setView} onCreateFull={handleCreateFull} suggest={suggest}/>}
           {view==='staging'       && <Staging       batches={stagingBatches} catMap={catMap} onAdd={handleAddStaged} onDrop={handleDropStaged}/>}
           {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}
@@ -725,7 +732,7 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
   )
 }
 
-function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports}){
+function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,processItems=[],onGoProcess}){
   const lawById = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
   const curBE = new Date().getFullYear()+543
   const tlFromBE = curBE-2   // ไทม์ไลน์: 3 ปีย้อนหลัง
@@ -771,6 +778,8 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
       <div className="panel"><div className="panel-h"><h3>ความสอดคล้องตามหมวดกฎหมาย</h3></div>
         <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div></div>
     </div>
+
+    {processItems.length>0 && <StageBar items={processItems} onGo={onGoProcess}/>}
 
     <div className="panel" style={{marginTop:16,borderTop:'3px solid var(--brand)'}}>
       <div className="panel-h"><h3>อัปเดตล่าสุด</h3><span className="sub" style={{marginLeft:'auto'}}>ความเคลื่อนไหวรายวัน</span></div>

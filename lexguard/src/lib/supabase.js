@@ -434,6 +434,36 @@ export async function deleteCar(id) {
   const { error } = await supabase.from('lg_car').delete().eq('id', id); if (error) throw error
 }
 
+// ---- Process Tracker (workflow stages) ----
+export const PROCESS_STAGES = [
+  { key: 'discovery', label: 'ค้นพบกฎหมายใหม่', role: 'Monitor',   color: '#0071e3' },
+  { key: 'review',    label: 'ตรวจเนื้อหา',      role: 'Reviewer',  color: '#0058b0' },
+  { key: 'forward',   label: 'ส่งต่อหน่วยงาน',    role: 'Forwarder', color: '#ff9500' },
+  { key: 'verify',    label: 'ตรวจสอบ/ติดตาม',   role: 'Verifier',  color: '#7a5d96' },
+  { key: 'done',      label: 'เสร็จสิ้น',          role: '',          color: '#248a3d' },
+]
+export async function fetchProcessItems() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_process_items').select('*').order('updated_at', { ascending: false })
+  return data || []
+}
+export async function createProcessItem(item) {
+  const { data, error } = await supabase.from('lg_process_items').insert({
+    title: item.title, ref_type: item.ref_type || 'manual', ref_id: item.ref_id || null,
+    stage: item.stage || 'discovery', assignee: item.assignee || null, note: item.note || null,
+  }).select().single()
+  if (error) throw error
+  return data
+}
+export async function updateProcessItem(id, patch) {
+  const { error } = await supabase.from('lg_process_items').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)
+  if (error) throw error
+}
+export async function deleteProcessItem(id) {
+  const { error } = await supabase.from('lg_process_items').delete().eq('id', id)
+  if (error) throw error
+}
+
 // ---- Monthly compliance check-off ----
 export async function fetchComplianceMonths(year) {
   if (!hasSupabase) return []

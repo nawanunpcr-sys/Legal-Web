@@ -1304,6 +1304,30 @@ tbody tr.row-sel { background: var(--brand-tint) }
 .stat.hero.s-bad .val { color: var(--bad) }
 .stat.hero:hover { transform: translateY(-3px); box-shadow: var(--shadow-md) }
 
+/* ─── Process Tracker: dashboard stage bar ───────────────────── */
+.stagebar { display: flex; gap: 6px; align-items: stretch }
+.stageseg { position: relative; min-width: 0; cursor: pointer; padding-top: 8px }
+.stageseg .fill { height: 8px; border-radius: 20px; opacity: .9; transition: opacity .15s }
+.stageseg:hover .fill { opacity: 1 }
+.stageseg .lab { font-size: 11px; color: var(--ink-soft); margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.stageseg .cnt { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px }
+
+/* ─── Process Tracker: kanban board ──────────────────────────── */
+.kanban { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px }
+.kcol { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden }
+.kcol-h { display: flex; align-items: center; gap: 6px; padding: 9px 11px; background: var(--surface); border-top: 3px solid var(--brand); font-size: 12.5px }
+.kcol-h .krole { font-size: 10px; color: var(--ink-faint); background: var(--surface-2); padding: 1px 6px; border-radius: 20px }
+.kcol-h .kcount { margin-left: auto; font-weight: 700; color: var(--ink-faint); font-variant-numeric: tabular-nums }
+.kcol-b { padding: 8px; display: flex; flex-direction: column; gap: 8px; min-height: 60px }
+.kcard { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px }
+.kcard .kt { font-size: 12.5px; font-weight: 500; line-height: 1.4 }
+.kcard .ka { font-size: 11px; color: var(--ink-faint); margin-top: 4px }
+.kcard .kn { font-size: 11px; color: var(--ink-soft); margin-top: 3px }
+.kcard .kacts { display: flex; gap: 5px; margin-top: 8px; flex-wrap: wrap }
+.kempty { text-align: center; color: var(--ink-faint); font-size: 12px; padding: 10px }
+@media (max-width: 1100px){ .kanban { grid-template-columns: repeat(2, 1fr) } }
+@media (max-width: 640px){ .kanban { grid-template-columns: 1fr } }
+
 /* ─── Toasts ─────────────────────────────────────────────────── */
 .toaster { position: fixed; bottom: 20px; right: 20px; z-index: 9000; display: flex; flex-direction: column; gap: 8px; pointer-events: none }
 .toast {
