@@ -6,29 +6,41 @@ import { confirmDialog } from '../lib/confirm.js'
 const STAGE = Object.fromEntries(PROCESS_STAGES.map(s => [s.key, s]))
 const nextKey = k => { const i = PROCESS_STAGES.findIndex(s => s.key === k); return PROCESS_STAGES[Math.min(i + 1, PROCESS_STAGES.length - 1)].key }
 
-// horizontal stage bar (used on the dashboard too)
+const STAGE_ICON = { discovery: '🔍', review: '📝', forward: '📤', verify: '✅', done: '🏁' }
+
+// shipment-style tracker (used on the dashboard)
 export function StageBar({ items, onGo }) {
   const counts = useMemo(() => {
     const c = Object.fromEntries(PROCESS_STAGES.map(s => [s.key, 0]))
     items.forEach(i => { if (c[i.stage] != null) c[i.stage]++ })
     return c
   }, [items])
-  const total = items.length || 1
+  // "current" checkpoint = the furthest stage that still has active items (excluding done)
+  const activeIdx = PROCESS_STAGES.reduce((acc, s, i) => (s.key !== 'done' && counts[s.key] > 0 ? i : acc), 0)
   return (
-    <div className="panel" style={{ marginTop: 16 }}>
-      <div className="panel-h"><h3>ติดตามกระบวนการ (Process Tracker)</h3>
-        {onGo && <span className="sub" style={{ marginLeft: 'auto', color: 'var(--brand)', cursor: 'pointer' }} onClick={onGo}>ดูทั้งหมด →</span>}</div>
+    <div className="panel" style={{ marginBottom: 16 }}>
+      <div className="panel-h"><h3>ติดตามกระบวนการ</h3>
+        <span className="sub" style={{ marginLeft: 'auto' }}>ค้นพบ → ตรวจ → ส่งต่อ → ตรวจสอบ → เสร็จสิ้น</span>
+        {onGo && <span className="sub" style={{ marginLeft: 12, color: 'var(--brand)', cursor: 'pointer' }} onClick={onGo}>เปิดกระดาน →</span>}</div>
       <div className="panel-b">
-        <div className="stagebar">
-          {PROCESS_STAGES.map(s => (
-            <div key={s.key} className="stageseg" style={{ flex: Math.max(counts[s.key], 0.35) }} title={`${s.label} · ${counts[s.key]}`} onClick={onGo}>
-              <div className="fill" style={{ background: s.color }} />
-              <div className="lab">{s.label}{s.role ? ` · ${s.role}` : ''}</div>
-              <div className="cnt" style={{ color: s.color }}>{counts[s.key]}</div>
-            </div>
-          ))}
+        <div className="track">
+          {PROCESS_STAGES.map((s, i) => {
+            const active = counts[s.key] > 0
+            const passed = i < activeIdx
+            const on = active || passed
+            return (
+              <div key={s.key} className={'track-step' + (on ? ' on' : '') + (i === activeIdx ? ' now' : '')} onClick={onGo}>
+                <div className="track-line" style={on ? { background: s.color } : null} />
+                <div className="track-node" style={on ? { background: s.color, borderColor: s.color, color: '#fff' } : null}>
+                  <span className="ic">{STAGE_ICON[s.key]}</span>
+                  {counts[s.key] > 0 && <span className="badge">{counts[s.key]}</span>}
+                </div>
+                <div className="track-lab">{s.label}</div>
+                {s.role && <div className="track-role">{s.role}</div>}
+              </div>
+            )
+          })}
         </div>
-        <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 10 }}>รวม {items.length} รายการในกระบวนการ · แต่ละสเตจมีผู้รับผิดชอบตามบทบาท</div>
       </div>
     </div>
   )

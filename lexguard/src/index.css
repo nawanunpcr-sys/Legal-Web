@@ -1304,13 +1304,30 @@ tbody tr.row-sel { background: var(--brand-tint) }
 .stat.hero.s-bad .val { color: var(--bad) }
 .stat.hero:hover { transform: translateY(-3px); box-shadow: var(--shadow-md) }
 
-/* ─── Process Tracker: dashboard stage bar ───────────────────── */
-.stagebar { display: flex; gap: 6px; align-items: stretch }
-.stageseg { position: relative; min-width: 0; cursor: pointer; padding-top: 8px }
-.stageseg .fill { height: 8px; border-radius: 20px; opacity: .9; transition: opacity .15s }
-.stageseg:hover .fill { opacity: 1 }
-.stageseg .lab { font-size: 11px; color: var(--ink-soft); margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.stageseg .cnt { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px }
+/* ─── Process Tracker: shipment-style tracker (dashboard) ────── */
+.track { display: flex; align-items: flex-start; padding: 6px 4px 2px }
+.track-step { flex: 1; position: relative; text-align: center; cursor: pointer; min-width: 0 }
+/* connector line runs left→right behind the nodes */
+.track-step .track-line { position: absolute; top: 21px; left: -50%; width: 100%; height: 4px; background: var(--line); z-index: 0; border-radius: 4px; transition: background .3s }
+.track-step:first-child .track-line { display: none }
+.track-node {
+  position: relative; z-index: 1;
+  width: 44px; height: 44px; margin: 0 auto; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--line);
+  display: grid; place-items: center; font-size: 19px;
+  transition: transform .18s var(--ease-out), background .3s, border-color .3s;
+}
+.track-step.now .track-node { transform: scale(1.14); box-shadow: 0 4px 14px rgba(0,0,0,.14) }
+.track-step:hover .track-node { transform: scale(1.08) }
+.track-node .badge {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+  background: var(--bad); color: #fff; font-size: 11px; font-weight: 700;
+  display: grid; place-items: center; border: 2px solid var(--surface); font-variant-numeric: tabular-nums;
+}
+.track-lab { font-size: 12px; font-weight: 600; color: var(--ink); margin-top: 8px; line-height: 1.3 }
+.track-step:not(.on) .track-lab { color: var(--ink-faint); font-weight: 500 }
+.track-role { font-size: 10.5px; color: var(--ink-faint); margin-top: 1px }
 
 /* ─── Process Tracker: kanban board ──────────────────────────── */
 .kanban { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px }

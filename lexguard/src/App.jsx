@@ -765,6 +765,8 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
   const relTime = s => { const sec=Math.floor((Date.now()-new Date(s))/1000); if(sec<60)return'เมื่อสักครู่'; const mi=Math.floor(sec/60); if(mi<60)return mi+' นาทีก่อน'; const h=Math.floor(mi/60); if(h<24)return h+' ชม.ก่อน'; const d=Math.floor(h/24); return d+' วันก่อน' }
 
   return <div className="view">
+    <StageBar items={processItems} onGo={onGoProcess}/>
+
     <div className="grid stats">
       {cards.map((c,i)=>(<div className={'stat hero '+c.cls} key={i}>
         <div className="lab">{c.lab}</div>
@@ -785,8 +787,6 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
       <div className="panel"><div className="panel-h"><h3>ความสอดคล้องตามหมวดกฎหมาย</h3></div>
         <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div></div>
     </div>
-
-    {processItems.length>0 && <StageBar items={processItems} onGo={onGoProcess}/>}
 
     <div className="panel" style={{marginTop:16,borderTop:'3px solid var(--brand)'}}>
       <div className="panel-h"><h3>อัปเดตล่าสุด</h3><span className="sub" style={{marginLeft:'auto'}}>ความเคลื่อนไหวรายวัน</span></div>
