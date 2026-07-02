@@ -507,8 +507,8 @@ function CatBars({laws,cats}){
   return cats.filter(c=>byCat[c.code]).map(c=>{
     let r=0,m=0; byCat[c.code].forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++}))
     const p=r?Math.round(m/r*100):100
-    return <div className="catbar" key={c.code}><div className="top"><span className="nm">{c.code} · {c.name}</span><b className="num" style={{color:c.color}}>{p}%</b></div>
-      <div className="track"><div className="fill" style={{width:p+'%',background:c.color}}/></div></div>
+    return <div className="catbar" key={c.code}><div className="top"><span className="nm">{c.code} · {c.name}</span><b className="num" style={{color:'var(--ink-soft)'}}>{p}%</b></div>
+      <div className="track"><div className="fill grad" style={{width:p+'%'}}/></div></div>
   })
 }
 

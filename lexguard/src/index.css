@@ -525,15 +525,18 @@ body {
 .catbar .top b { font-family: var(--mono, ui-monospace, 'SF Mono', Menlo, monospace); flex-shrink: 0; letter-spacing: -.3px }
 .track { height: 3px; background: var(--line-soft); border-radius: 20px; overflow: hidden }
 .track .fill { height: 100%; border-radius: 20px; transition: width 1.1s var(--ease-out) }
+/* modern unified compliance bar: blue → mint gradient */
+.catbar .track { height: 6px }
+.catbar .fill.grad { background: linear-gradient(90deg, #0071e3 0%, #21b6c9 55%, #34d0a0 100%) }
 
-/* monthly added/repealed chart */
+/* quarterly added/repealed chart — soft gradients, no gridlines */
 .mchart { display: grid; grid-template-columns: repeat(12, 1fr); gap: 8px; align-items: end; height: 160px }
 .mchart-col { display: flex; flex-direction: column; align-items: center; height: 100%; gap: 6px }
-.mchart-bars { flex: 1; display: flex; align-items: flex-end; gap: 3px; width: 100% }
-.mchart-bar { flex: 1; border-radius: 3px 3px 0 0; min-height: 2px; transition: height .6s var(--ease-out) }
-.mchart-bar-add { background: var(--ok) }
-.mchart-bar-rep { background: var(--bad) }
-.mchart-lab { font-size: 10.5px; color: var(--ink-faint) }
+.mchart-bars { flex: 1; display: flex; align-items: flex-end; gap: 4px; width: 100% }
+.mchart-bar { flex: 1; border-radius: 5px 5px 0 0; min-height: 3px; transition: height .6s var(--ease-out) }
+.mchart-bar-add { background: linear-gradient(180deg, #46d6a6 0%, #1f9d78 100%) }
+.mchart-bar-rep { background: linear-gradient(180deg, #ff9a8f 0%, #d6564c 100%) }
+.mchart-lab { font-size: 10.5px; color: var(--ink-faint); font-weight: 500 }
 
 /* ─── Filter bar ─────────────────────────────────────────────── */
 .filterbar {
