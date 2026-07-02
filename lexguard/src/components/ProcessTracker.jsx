@@ -6,8 +6,6 @@ import { confirmDialog } from '../lib/confirm.js'
 const STAGE = Object.fromEntries(PROCESS_STAGES.map(s => [s.key, s]))
 const nextKey = k => { const i = PROCESS_STAGES.findIndex(s => s.key === k); return PROCESS_STAGES[Math.min(i + 1, PROCESS_STAGES.length - 1)].key }
 
-const STAGE_ICON = { discovery: '🔍', review: '📝', forward: '📤', verify: '✅', done: '🏁' }
-
 // shipment-style tracker (used on the dashboard)
 export function StageBar({ items, onGo }) {
   const counts = useMemo(() => {
@@ -15,25 +13,21 @@ export function StageBar({ items, onGo }) {
     items.forEach(i => { if (c[i.stage] != null) c[i.stage]++ })
     return c
   }, [items])
-  // "current" checkpoint = the furthest stage that still has active items (excluding done)
   const activeIdx = PROCESS_STAGES.reduce((acc, s, i) => (s.key !== 'done' && counts[s.key] > 0 ? i : acc), 0)
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
       <div className="panel-h"><h3>ติดตามกระบวนการ</h3>
-        <span className="sub" style={{ marginLeft: 'auto' }}>ค้นพบ → ตรวจ → ส่งต่อ → ตรวจสอบ → เสร็จสิ้น</span>
-        {onGo && <span className="sub" style={{ marginLeft: 12, color: 'var(--brand)', cursor: 'pointer' }} onClick={onGo}>เปิดกระดาน →</span>}</div>
+        {onGo && <span className="sub" style={{ marginLeft: 'auto', color: 'var(--brand)', cursor: 'pointer' }} onClick={onGo}>เปิดกระดาน →</span>}</div>
       <div className="panel-b">
-        <div className="track">
+        <div className="ptrack">
           {PROCESS_STAGES.map((s, i) => {
             const active = counts[s.key] > 0
-            const passed = i < activeIdx
-            const on = active || passed
+            const on = active || i < activeIdx
             return (
               <div key={s.key} className={'track-step' + (on ? ' on' : '') + (i === activeIdx ? ' now' : '')} onClick={onGo}>
-                <div className="track-line" style={on ? { background: s.color } : null} />
+                {i > 0 && <div className="track-line" style={on ? { background: s.color } : null} />}
                 <div className="track-node" style={on ? { background: s.color, borderColor: s.color, color: '#fff' } : null}>
-                  <span className="ic">{STAGE_ICON[s.key]}</span>
-                  {counts[s.key] > 0 && <span className="badge">{counts[s.key]}</span>}
+                  {s.key === 'done' ? '✓' : counts[s.key]}
                 </div>
                 <div className="track-lab">{s.label}</div>
                 {s.role && <div className="track-role">{s.role}</div>}
