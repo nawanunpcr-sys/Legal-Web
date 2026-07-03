@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { RECURRENCE_LABELS } from '../lib/supabase.js'
+import { I } from './icons.jsx'
 
 const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
 const thDate = s => { if(!s) return '—'; const d=new Date(s); return d.getDate()+' '+TH_MONTHS[d.getMonth()]+' '+(d.getFullYear()+543) }
@@ -22,7 +23,7 @@ function EventDateModal({ report, onSave, onClose }){
   const preview=useMemo(()=>{ if(!date) return null; const d=new Date(date); d.setDate(d.getDate()+off); return d.toISOString().slice(0,10) },[date,off])
   return (<><div className="scrim" onClick={onClose}/>
     <div className="modal">
-      <div className="modal-head"><h3>กรอกวันเกิดเหตุ → คำนวณกำหนดส่ง</h3><button className="close" onClick={onClose}>×</button></div>
+      <div className="modal-head"><h3>กรอกวันเกิดเหตุ → คำนวณกำหนดส่ง</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
       <div className="modal-body">
         <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:8}}>{report.title}</p>
         <p style={{fontSize:12.5,color:'var(--ink-faint)',marginBottom:14}}>{report.timeline_text}</p>
@@ -45,7 +46,7 @@ function SubmitModal({ report, onSave, onClose }){
   const [fileRef,setFileRef]=useState(report.file_reference||'')
   return (<><div className="scrim" onClick={onClose}/>
     <div className="modal">
-      <div className="modal-head"><h3>บันทึกการส่งรายงาน</h3><button className="close" onClick={onClose}>×</button></div>
+      <div className="modal-head"><h3>บันทึกการส่งรายงาน</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
       <div className="modal-body">
         <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:8}}>{report.title}</p>
         <p style={{fontSize:12.5,color:'var(--ink-faint)',marginBottom:14}}>ยื่นที่: {report.authority||'—'}</p>

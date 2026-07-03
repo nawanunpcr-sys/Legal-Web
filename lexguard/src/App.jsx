@@ -96,7 +96,7 @@ export default function App(){
   const [session,setSession] = useState(undefined) // undefined=checking, null=logged out
   const [navOpen,setNavOpen] = useState(()=>{ try{ return localStorage.getItem('cr_nav')!=='0' }catch{ return true } })
   const [view,setView]     = useState(()=>{ try{ return localStorage.getItem('cr_view')||'dashboard' }catch{ return 'dashboard' } })
-  const [dark,setDark]     = useState(()=>{ try{ const v=localStorage.getItem('cr_dark'); return v==null?true:v==='1' }catch{ return true } })
+  const [dark,setDark]     = useState(()=>{ try{ const v=localStorage.getItem('cr_dark'); return v==null?false:v==='1' }catch{ return false } })
   const [cats,setCats]     = useState([])
   const [laws,setLaws]     = useState([])
   const [comms,setComms]   = useState([])
@@ -406,6 +406,7 @@ export default function App(){
           <div className="vt">{title[0]}<small>{title[1]}</small></div>
           <div className="spacer"/>
           <div className="search" style={{position:'relative'}}>
+            <I n="search"/>
             <input placeholder="ค้นหากฎหมาย / CAR / รายงาน…" value={search}
               onChange={e=>setSearch(e.target.value)}
               onFocus={()=>setSearchFocus(true)} onBlur={()=>setTimeout(()=>setSearchFocus(false),180)}/>
@@ -427,14 +428,15 @@ export default function App(){
             )}
           </div>
           {(view==='register'||view==='dashboard') && (
-            <button className="btn btn-ghost no-print" onClick={()=>exportLawsToExcel(activeLaws,catMap)}>ส่งออก Excel</button>
+            <button className="btn btn-ghost no-print" onClick={()=>exportLawsToExcel(activeLaws,catMap)}><I n="download"/>ส่งออก Excel</button>
           )}
-          <button className="btn btn-ghost no-print" onClick={exportPDF}>ส่งออก PDF</button>
+          <button className="btn btn-ghost no-print" onClick={exportPDF}><I n="download"/>ส่งออก PDF</button>
           <button className="bell no-print" onClick={()=>setView('notifications')}>
-            การแจ้งเตือน{bellNotifications.length>0&&<span className="dot">{bellNotifications.length}</span>}
+            <I n="bell"/>การแจ้งเตือน{bellNotifications.length>0&&<span className="dot">{bellNotifications.length}</span>}
           </button>
-          <button className="btn btn-ghost no-print" title={dark?'โหมดสว่าง':'โหมดมืด'} onClick={()=>setDark(d=>!d)}>{dark?'☀︎':'☾'}</button>
-          <button className="btn btn-ghost no-print" onClick={async()=>{ await signOut(); setSession(null) }}>ออกจากระบบ</button>
+          <button className="btn btn-ghost no-print" title={dark?'โหมดสว่าง':'โหมดมืด'} onClick={()=>setDark(d=>!d)}><I n={dark?'sun':'moon'}/></button>
+          <button className="btn btn-ghost no-print" onClick={async()=>{ await signOut(); setSession(null) }}><I n="logout"/>ออกจากระบบ</button>
+          <div className="topbar-av no-print" title={settings.user_name||'ผู้ใช้งาน'}>{(settings.user_name||'จ').trim().charAt(0)}</div>
         </header>
 
         <div className="content">
@@ -908,7 +910,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
     <div className="modal" style={{zIndex:301,width:540}}>
       <div className="modal-head">
         <h3>เพิ่มกฎหมายใหม่</h3>
-        <button className="close" onClick={onClose}>×</button>
+        <button className="close" onClick={onClose}><I n="x"/></button>
       </div>
       <div className="modal-body">
         {/* code preview */}
@@ -986,7 +988,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
       {catsList.map(c=>(<span key={c} className={'chip'+(cat===c?' active':'')} onClick={()=>setCat(c)} style={cat===c?{borderColor:catMap[c]?.color,color:catMap[c]?.color}:{}}>{c} · {catMap[c]?.name} ({laws.filter(l=>l.cat===c).length})</span>))}
       <span className="right" style={{marginLeft:'auto'}}>พบ {rows.length} ฉบับ</span>
       <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>ส่งออกที่กรอง</button>
-      <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} onClick={()=>setShowAdd(true)}>+ เพิ่มกฎหมาย</button>
+      <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} onClick={()=>setShowAdd(true)}><I n="plus"/>เพิ่มกฎหมาย</button>
     </div>
     {sel.size>0 && (
       <div className="bulkbar">
@@ -1228,7 +1230,7 @@ function CommScheduleModal({comm,onSave,onClose}){
   function save(){ onSave(comm.id,{scheduled_date:date||null,recurrence_type:rec,next_scheduled_date:date||null,notify_days_before:Number(notifyDays),assigned_to:assignedTo||null}); onClose() }
   return (<><div className="scrim" onClick={onClose}/>
     <div className="modal">
-      <div className="modal-head"><h3>ตั้งค่าตารางการสื่อสาร</h3><button className="close" onClick={onClose}>×</button></div>
+      <div className="modal-head"><h3>ตั้งค่าตารางการสื่อสาร</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
       <div className="modal-body">
         <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:16}}>{comm.topic}</p>
         <label className="form-label">วันที่กำหนด (ครั้งแรก / ถัดไป)</label>
@@ -1253,7 +1255,7 @@ function MarkSentModal({comm,onSave,onClose}){
   function save(){ onSave(comm.id,fileRef); onClose() }
   return (<><div className="scrim" onClick={onClose}/>
     <div className="modal">
-      <div className="modal-head"><h3>บันทึกการส่ง / สื่อสาร</h3><button className="close" onClick={onClose}>×</button></div>
+      <div className="modal-head"><h3>บันทึกการส่ง / สื่อสาร</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
       <div className="modal-body">
         <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:16}}>{comm.topic}</p>
         <label className="form-label">อ้างอิงไฟล์ / เอกสารที่ส่ง (ไม่บังคับ)</label>
@@ -1340,7 +1342,7 @@ function ReqEditor({reqs,setReqs,suggest}){
           <select className="form-input" style={{marginTop:0,width:130}} value={r.status||'met'} onChange={e=>setReq(i,'status',e.target.value)}>
             <option value="met">สอดคล้อง</option><option value="unmet">ยังไม่สอดคล้อง</option>
           </select>
-          {reqs.length>1 && <button className="btn btn-ghost" style={{padding:'7px 9px'}} onClick={()=>setReqs(p=>p.filter((_,j)=>j!==i))}>×</button>}
+          {reqs.length>1 && <button className="btn btn-ghost" style={{padding:'7px 9px'}} onClick={()=>setReqs(p=>p.filter((_,j)=>j!==i))}><I n="x"/></button>}
         </div>
         <div style={{display:'flex',gap:8,marginTop:6,marginLeft:28}}>
           <input className="form-input" style={{marginTop:0}} list="dl-resp" value={r.responsible||''} onChange={e=>setReq(i,'responsible',e.target.value)} placeholder="ผู้รับผิดชอบ"/>
@@ -1531,7 +1533,7 @@ function ManualAddPanel({cats,allLaws,onCreateFull,suggest}){
         {srcUrl && <a href={srcUrl} target="_blank" rel="noreferrer" style={{fontSize:12,color:'var(--brand)',marginTop:4,display:'inline-block'}}>เปิดไฟล์/ลิงก์ที่แนบ ↗</a>}
 
         <div className="sec-t" style={{marginTop:14,display:'flex'}}>สาระสำคัญ (ข้อย่อย)
-          <button className="btn btn-ghost" style={{marginLeft:'auto',padding:'3px 10px',fontSize:12}} onClick={()=>setReqs(p=>[...p,{text:'',status:'met'}])}>+ เพิ่มข้อ</button>
+          <button className="btn btn-ghost" style={{marginLeft:'auto',padding:'3px 10px',fontSize:12}} onClick={()=>setReqs(p=>[...p,{text:'',status:'met'}])}><I n="plus"/>เพิ่มข้อ</button>
         </div>
         <ReqEditor reqs={reqs} setReqs={setReqs} suggest={suggest}/>
 

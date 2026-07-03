@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { STATUS } from '../lib/supabase.js'
+import { I } from './icons.jsx'
 
 function RepealModal({ law, onConfirm, onClose }){
   const [date, setDate]   = useState(law.repeal_date || '')
@@ -14,7 +15,7 @@ function RepealModal({ law, onConfirm, onClose }){
       <div className="modal" style={{zIndex:401}}>
         <div className="modal-head">
           <h3 style={{color:'var(--bad)'}}>บันทึกการยกเลิกกฎหมาย</h3>
-          <button className="close" onClick={onClose}>×</button>
+          <button className="close" onClick={onClose}><I n="x"/></button>
         </div>
         <div className="modal-body">
           <div className="ai-box" style={{borderColor:'var(--bad)',background:'var(--bad-bg)',marginBottom:16}}>
@@ -57,7 +58,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
       <div className="scrim" onClick={onClose}/>
       <div className="lawmodal">
         <div className="dr-head">
-          <button className="close" onClick={onClose}>×</button>
+          <button className="close" onClick={onClose}><I n="x"/></button>
           <div className="code">{law.code} · หมวด {law.cat} — {cat?.name||law.cat}</div>
           <h2 style={isRepealed?{textDecoration:'line-through',color:'var(--ink-faint)'}:{}}>{law.name}</h2>
           {isRepealed && (

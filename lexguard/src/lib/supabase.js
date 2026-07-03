@@ -479,10 +479,10 @@ export const TRACKER_STAGES = [
   { n: 3, title: 'ผู้ทวนสอบ',                             role: 'ผู้ทวนสอบ' },
 ]
 export const TRACKER_STATUS = {
-  waiting:     { label: 'รอดำเนินการ', color: '#a1a1a6' },
-  in_progress: { label: 'กำลังทำ',     color: '#0071e3' },
-  done:        { label: 'เสร็จ',        color: '#248a3d' },
-  overdue:     { label: 'เกินกำหนด',   color: '#c4271d' },
+  waiting:     { label: 'รอดำเนินการ', color: '#a5a8b2' },
+  in_progress: { label: 'กำลังทำ',     color: '#d97706' },
+  done:        { label: 'เสร็จ',        color: '#16a34a' },
+  overdue:     { label: 'เกินกำหนด',   color: '#dc2626' },
 }
 const DEFAULT_SUB = { 1: 'pending_search', 2: 'pending_assign', 3: 'pending_verify' }
 

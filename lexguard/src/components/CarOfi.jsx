@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { nextCoNumber, saveCar, deleteCar } from '../lib/supabase.js'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
+import { I } from './icons.jsx'
 
 const TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
 const thDate = s => { if (!s) return '—'; const d = new Date(s); if (isNaN(d)) return s; return d.getDate() + ' ' + TH[d.getMonth()] + ' ' + (d.getFullYear() + 543) }
@@ -44,7 +45,7 @@ export default function CarOfi({ cars, onReload, suggest }) {
       <div className="filterbar" style={{ marginTop: 16 }}>
         {[['all', 'ทั้งหมด'], ['open', 'ยังเปิดอยู่'], ['closed', 'ปิดแล้ว'], ['overdue', 'เกินกำหนด']].map(([k, l]) =>
           <span key={k} className={'chip' + (filter === k ? ' active' : '')} onClick={() => setFilter(k)}>{l}</span>)}
-        <button className="btn btn-primary" style={{ marginLeft: 'auto' }} onClick={() => setModal({ ...nextCoNumber(cars), year: new Date().getFullYear(), status: 'open', followups: [], approvals: [] })}>+ เพิ่ม CAR/OFI</button>
+        <button className="btn btn-primary" style={{ marginLeft: 'auto' }} onClick={() => setModal({ ...nextCoNumber(cars), year: new Date().getFullYear(), status: 'open', followups: [], approvals: [] })}><I n="plus"/>เพิ่ม CAR/OFI</button>
       </div>
 
       {rows.length === 0 && <div className="panel" style={{ padding: '50px 20px', textAlign: 'center', color: 'var(--ink-faint)' }}>ยังไม่มีรายการ — กด “เพิ่ม CAR/OFI” เพื่อสร้างใบใหม่</div>}
@@ -104,7 +105,7 @@ function CarModal({ car, onClose, onSaved, suggest }) {
   return (
     <><div className="scrim" style={{ zIndex: 300 }} onClick={onClose} />
       <div className="modal" style={{ zIndex: 301, width: 720 }}>
-        <div className="modal-head"><h3>{car.id ? 'แก้ไข' : 'เพิ่ม'} CAR / OFI</h3><button className="close" onClick={onClose}>×</button></div>
+        <div className="modal-head"><h3>{car.id ? 'แก้ไข' : 'เพิ่ม'} CAR / OFI</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
         <div className="modal-body">
           <datalist id="dl-people">{people.map(x => <option key={x} value={x} />)}</datalist>
           <datalist id="dl-team">{(sg.teams || []).map(x => <option key={x} value={x} />)}</datalist>
@@ -135,7 +136,7 @@ function CarModal({ car, onClose, onSaved, suggest }) {
           <Row label="กำหนดเสร็จ"><input className="form-input" type="date" value={f.due_date || ''} onChange={e => set('due_date', e.target.value)} /></Row>
 
           <div className="sec-t" style={{ marginTop: 16, display: 'flex' }}>การติดตามผล
-            <button className="btn btn-ghost" style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 12 }} onClick={() => setFus(p => [...p, {}])}>+ เพิ่มครั้ง</button>
+            <button className="btn btn-ghost" style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 12 }} onClick={() => setFus(p => [...p, {}])}><I n="plus"/>เพิ่มครั้ง</button>
           </div>
           {fus.map((r, i) => (
             <div key={i} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: 10, marginBottom: 8 }}>
@@ -152,7 +153,7 @@ function CarModal({ car, onClose, onSaved, suggest }) {
           ))}
 
           <div className="sec-t" style={{ marginTop: 12, display: 'flex' }}>Approval History
-            <button className="btn btn-ghost" style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 12 }} onClick={() => setAps(p => [...p, { status: 'approved' }])}>+ เพิ่มขั้น</button>
+            <button className="btn btn-ghost" style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 12 }} onClick={() => setAps(p => [...p, { status: 'approved' }])}><I n="plus"/>เพิ่มขั้น</button>
           </div>
           {aps.map((r, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.4fr 1fr auto', gap: 8, marginBottom: 6, alignItems: 'end' }}>
@@ -160,7 +161,7 @@ function CarModal({ car, onClose, onSaved, suggest }) {
               <Row label="วันที่"><input className="form-input" type="date" value={r.approve_date || ''} onChange={e => setAp(i, 'approve_date', e.target.value)} /></Row>
               <Row label="ผู้อนุมัติ"><input className="form-input" value={r.approver || ''} onChange={e => setAp(i, 'approver', e.target.value)} /></Row>
               <Row label="สถานะ"><select className="form-input" value={r.status || 'approved'} onChange={e => setAp(i, 'status', e.target.value)}><option value="approved">Approved</option><option value="pending">Pending</option></select></Row>
-              <button className="btn btn-ghost" style={{ padding: '7px 9px', fontSize: 11 }} onClick={() => setAps(p => p.filter((_, j) => j !== i))}>×</button>
+              <button className="btn btn-ghost" style={{ padding: '7px 9px', fontSize: 11 }} onClick={() => setAps(p => p.filter((_, j) => j !== i))}><I n="x"/></button>
             </div>
           ))}
         </div>

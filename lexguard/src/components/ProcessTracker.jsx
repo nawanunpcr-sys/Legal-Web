@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { PROCESS_STAGES, createProcessItem, updateProcessItem, deleteProcessItem } from '../lib/supabase.js'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
+import { I } from './icons.jsx'
 
 const STAGE = Object.fromEntries(PROCESS_STAGES.map(s => [s.key, s]))
 const nextKey = k => { const i = PROCESS_STAGES.findIndex(s => s.key === k); return PROCESS_STAGES[Math.min(i + 1, PROCESS_STAGES.length - 1)].key }
@@ -25,8 +26,8 @@ export function StageBar({ items, onGo }) {
             const on = active || i < activeIdx
             return (
               <div key={s.key} className={'track-step' + (on ? ' on' : '') + (i === activeIdx ? ' now' : '')} onClick={onGo}>
-                {i > 0 && <div className="track-line" style={on ? { background: s.color } : null} />}
-                <div className="track-node" style={on ? { background: s.color, borderColor: s.color, color: '#fff' } : null}>
+                {i > 0 && <div className="track-line" style={on ? { background: 'var(--brand)' } : null} />}
+                <div className="track-node" style={on ? { background: 'var(--brand)', borderColor: 'var(--brand)', color: '#fff' } : null}>
                   {s.key === 'done' ? '✓' : counts[s.key]}
                 </div>
                 <div className="track-lab">{s.label}</div>
@@ -68,7 +69,7 @@ export default function ProcessTracker({ items, onReload, updates = [], onGoView
       <div className="filterbar">
         <span className="right" style={{ marginRight: 'auto', color: 'var(--ink-faint)' }}>ลากงานผ่าน 4 สเตจ: ค้นพบ → ตรวจเนื้อหา → ส่งต่อ → ตรวจสอบ/ติดตาม</span>
         <button className="btn btn-ghost" onClick={pullFromUpdates}>ดึงจากกฎหมายใหม่</button>
-        <button className="btn btn-primary" onClick={() => setModal({ stage: 'discovery' })}>+ เพิ่มรายการ</button>
+        <button className="btn btn-primary" onClick={() => setModal({ stage: 'discovery' })}><I n="plus"/>เพิ่มรายการ</button>
       </div>
 
       <div className="kanban">
@@ -125,7 +126,7 @@ function ItemModal({ item, onClose, onSaved }) {
   return (
     <><div className="scrim" style={{ zIndex: 300 }} onClick={onClose} />
       <div className="modal" style={{ zIndex: 301 }}>
-        <div className="modal-head"><h3>{f.id ? 'แก้ไขรายการ' : 'เพิ่มรายการเข้ากระบวนการ'}</h3><button className="close" onClick={onClose}>×</button></div>
+        <div className="modal-head"><h3>{f.id ? 'แก้ไขรายการ' : 'เพิ่มรายการเข้ากระบวนการ'}</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
         <div className="modal-body">
           <label className="form-label">ชื่อเรื่อง / กฎหมาย</label>
           <input className="form-input" value={f.title || ''} onChange={e => set('title', e.target.value)} />

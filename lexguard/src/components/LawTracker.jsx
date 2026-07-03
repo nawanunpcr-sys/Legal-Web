@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { TRACKER_STAGES, TRACKER_STATUS, createTrackerCase, updateTrackerStage, deleteTrackerCase } from '../lib/supabase.js'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
+import { I } from './icons.jsx'
 
 const thDate = s => { if (!s) return '—'; const m = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; const d = new Date(s); if (isNaN(d)) return s; return d.getDate() + ' ' + m[d.getMonth()] + ' ' + (d.getFullYear() + 543) }
 const isOverdue = st => st.status !== 'done' && st.due_at && new Date(st.due_at) < new Date()
@@ -79,7 +80,7 @@ export default function LawTracker({ rows, subs, laws, cars = [], suggest, onRel
       <div className="filterbar">
         <span className="live-dot" title="อัปเดตสดผ่าน Supabase Realtime">อัปเดตสด</span>
         <span className="right" style={{ marginRight: 'auto', color: 'var(--ink-faint)' }}>ติดตามกฎหมายผ่าน 3 ขั้น: ค้นหา/วิเคราะห์ → หน่วยงานดำเนินการ → ทวนสอบ</span>
-        <button className="btn btn-primary" onClick={() => setAddOpen(true)}>+ เพิ่มรายการติดตาม</button>
+        <button className="btn btn-primary" onClick={() => setAddOpen(true)}><I n="plus"/>เพิ่มรายการติดตาม</button>
       </div>
 
       {cases.length === 0 && <div className="panel" style={{ padding: '50px 20px', textAlign: 'center', color: 'var(--ink-faint)' }}>ยังไม่มีรายการติดตาม — กด “เพิ่มรายการติดตาม” เพื่อเริ่มติดตามกฎหมาย</div>}
@@ -125,7 +126,7 @@ function StageModal({ st, subs, suggest, onClose, onSaved }) {
   return (
     <><div className="scrim" style={{ zIndex: 300 }} onClick={onClose} />
       <div className="modal" style={{ zIndex: 301, width: 560 }}>
-        <div className="modal-head"><h3>ขั้นที่ {st.stage} · {stageTitle}</h3><button className="close" onClick={onClose}>×</button></div>
+        <div className="modal-head"><h3>ขั้นที่ {st.stage} · {stageTitle}</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
         <div className="modal-body">
           <datalist id="dl-tr-people">{(suggest?.responsibles || []).map(x => <option key={x} value={x} />)}</datalist>
           <label className="form-label">สถานะย่อย</label>
@@ -168,7 +169,7 @@ function AddCaseModal({ laws, tracked, onClose, onSaved }) {
   return (
     <><div className="scrim" style={{ zIndex: 300 }} onClick={onClose} />
       <div className="modal" style={{ zIndex: 301, width: 520 }}>
-        <div className="modal-head"><h3>เพิ่มรายการติดตาม</h3><button className="close" onClick={onClose}>×</button></div>
+        <div className="modal-head"><h3>เพิ่มรายการติดตาม</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
         <div className="modal-body">
           <label className="form-label">เลือกกฎหมายที่จะติดตาม</label>
           <select className="form-input" value={lawId} onChange={e => setLawId(e.target.value)}>
