@@ -50,6 +50,11 @@ export default function LawTracker({ rows, subs, laws, cars = [], suggest, onRel
   const cases = useMemo(() => groupCases(rows), [rows])
   const subLabel = (stage, code) => (subs[stage] || []).find(x => x.code === code)?.label || code
   const tracked = useMemo(() => new Set(rows.map(r => r.law_id)), [rows])
+  const trk = useMemo(() => {
+    let waiting = 0, verifying = 0
+    rows.forEach(r => { const es = effStatus(r); if (es === 'waiting') waiting++; if (r.stage === 3 && es === 'in_progress') verifying++ })
+    return { waiting, verifying }
+  }, [rows])
 
   async function delCase(c) {
     if (!(await confirmDialog('ลบรายการติดตามนี้?', { danger: true }))) return
@@ -58,6 +63,19 @@ export default function LawTracker({ rows, subs, laws, cars = [], suggest, onRel
 
   return (
     <div className="view">
+      <div className="grid stats" style={{ gridTemplateColumns: 'repeat(2,1fr)' }}>
+        <div className="stat hero s-warn">
+          <div className="lab">รอดำเนินการ</div>
+          <div className="val num">{trk.waiting} <small>ขั้น</small></div>
+          <div className="delta">ในกระบวนการติดตาม</div>
+        </div>
+        <div className="stat hero s-warn">
+          <div className="lab">กำลังทวนสอบ</div>
+          <div className="val num">{trk.verifying} <small>รายการ</small></div>
+          <div className="delta">ขั้นทวนสอบ</div>
+        </div>
+      </div>
+
       <div className="filterbar">
         <span className="live-dot" title="อัปเดตสดผ่าน Supabase Realtime">อัปเดตสด</span>
         <span className="right" style={{ marginRight: 'auto', color: 'var(--ink-faint)' }}>ติดตามกฎหมายผ่าน 3 ขั้น: ค้นหา/วิเคราะห์ → หน่วยงานดำเนินการ → ทวนสอบ</span>
