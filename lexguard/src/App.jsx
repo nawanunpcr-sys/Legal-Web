@@ -49,6 +49,7 @@ const Tag = ({c,color}) => <span className="tag" style={{borderColor:(color||'#8
 const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
+    { id:'register',      label:'ทะเบียนกฎหมาย',        icon:'book'    },
     { id:'process',       label:'ติดตามกระบวนการ',       icon:'inbox'   },
     { id:'tracker',       label:'ติดตามสถานะกฎหมาย',     icon:'update'  },
   ]},
@@ -58,15 +59,12 @@ const NAV_GROUPS = [
   ]},
   { label: '② ตรวจเนื้อหา', items: [
     { id:'staging',       label:'รออนุมัติเข้าทะเบียน',   icon:'inbox'   },
-    { id:'register',      label:'ทะเบียนกฎหมาย',          icon:'book'    },
   ]},
   { label: '③ ส่งต่อ & สื่อสาร', items: [
     { id:'comm',          label:'การสื่อสาร (ISD-86)',   icon:'chat'    },
   ]},
   { label: '④ ตรวจสอบ & ติดตาม', items: [
     { id:'compliance',    label:'ติดตามความสอดคล้อง',   icon:'check'   },
-    { id:'improvements',  label:'แผนปรับปรุง',           icon:'alert'   },
-    { id:'car',           label:'CAR / OFI',             icon:'alert'   },
     { id:'reports',       label:'การส่งรายงานราชการ',    icon:'inbox'   },
   ]},
   { label: 'อ้างอิง & ระบบ', items: [
@@ -181,9 +179,9 @@ export default function App(){
     const out = processItems.map(p=>({...p,auto:false}))
     updates.filter(u=>u.status==='new').forEach(u=>out.push({id:'u'+u.id,auto:true,stage:'discovery',title:u.title,note:'กฎหมายใหม่จาก '+(u.source||'ShawPat'),goView:'updates'}))
     stagingBatches.forEach(([code,rows])=>out.push({id:'s'+code,auto:true,stage:'review',title:rows[0]?.law_name||code,note:rows.length+' ข้อกำหนด รออนุมัติ',goView:'staging'}))
-    cars.filter(c=>c.status!=='closed').forEach(c=>out.push({id:'c'+c.id,auto:true,stage:'verify',title:(c.co_no||'CAR')+' — '+(c.finding||'').slice(0,40),note:'CAR ยังไม่ปิด',goView:'car'}))
+    activeLaws.filter(l=>l.status==='bad').forEach(l=>out.push({id:'law'+l.id,auto:true,stage:'verify',title:l.code+' — '+(l.name||'').slice(0,50),note:'ยังไม่สอดคล้อง · '+l.reqs.filter(r=>r.status!=='met').length+' ข้อ',goView:'register'}))
     return out
-  },[processItems,updates,stagingBatches,cars])
+  },[processItems,updates,stagingBatches,activeLaws])
   const searchResults = useMemo(()=>{
     const q=search.trim().toLowerCase(); if(q.length<2) return []
     const out=[]
@@ -514,8 +512,8 @@ function CatBars({laws,cats}){
   return cats.filter(c=>byCat[c.code]).map(c=>{
     let r=0,m=0; byCat[c.code].forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++}))
     const p=r?Math.round(m/r*100):100
-    return <div className="catbar" key={c.code}><div className="top"><span className="nm">{c.code} · {c.name}</span><b className="num" style={{color:'var(--ink-soft)'}}>{p}%</b></div>
-      <div className="track"><div className="fill grad" style={{width:p+'%'}}/></div></div>
+    return <div className="catbar" key={c.code}><div className="top"><span className="nm">{c.code} · {c.name}</span><b className="num" style={{color:c.color}}>{p}%</b></div>
+      <div className="track"><div className="fill" style={{width:p+'%',background:c.color}}/></div></div>
   })
 }
 
@@ -765,9 +763,9 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
 
 function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,processItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker}){
   const trk = useMemo(()=>{
-    let waiting=0, verifying=0, overdue=0
-    trackerRows.forEach(r=>{ const es=effStatus(r); if(es==='overdue')overdue++; else if(es==='waiting')waiting++; if(r.stage===3&&es==='in_progress')verifying++ })
-    return { waiting, verifying, overdue }
+    let overdue=0
+    trackerRows.forEach(r=>{ if(effStatus(r)==='overdue')overdue++ })
+    return { overdue }
   },[trackerRows])
   const latestCases = useMemo(()=>groupCases(trackerRows).slice(0,3),[trackerRows])
   const subLabel = (stage,code)=>(trackerSubs[stage]||[]).find(x=>x.code===code)?.label||code
@@ -787,11 +785,10 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
   const newUpdates=updates.filter(u=>u.status==='new')
   const winLabel = 'ทั้งหมด'
   const cards=[
-    {cls:'s-total', lab:'กฎหมายทั้งหมด', val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด'},
-    {cls:'s-warn',  lab:'รอดำเนินการ',   val:trk.waiting, unit:'ขั้น', delta:'ในกระบวนการติดตาม'},
-    {cls:'s-warn',  lab:'กำลังทวนสอบ',   val:trk.verifying, unit:'รายการ', delta:'ขั้นทวนสอบ'},
-    {cls:'s-bad',   lab:'เกินกำหนด',     val:trk.overdue, unit:'ขั้น', delta:'ต้องเร่งจัดการ'},
-    {cls:'s-ok',    lab:'สอดคล้อง',      val:stats.pct.toFixed(1)+'%', unit:'', delta:stats.met+' / '+stats.req+' ข้อ'},
+    {cls:'s-total', lab:'กฎหมายทั้งหมด',   val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด'},
+    {cls:'s-bad',   lab:'ยังไม่สอดคล้อง',   val:stats.nc, unit:'ข้อ', delta:'จาก '+stats.req+' ข้อกำหนด'},
+    {cls:'s-bad',   lab:'เกินกำหนด',       val:trk.overdue, unit:'ขั้น', delta:'ต้องเร่งจัดการ'},
+    {cls:'s-ok',    lab:'สอดคล้อง',        val:stats.pct.toFixed(1)+'%', unit:'', delta:stats.met+' / '+stats.req+' ข้อ'},
   ]
   const recent = activity.slice(0,4)
   const relTime = s => { const sec=Math.floor((Date.now()-new Date(s))/1000); if(sec<60)return'เมื่อสักครู่'; const mi=Math.floor(sec/60); if(mi<60)return mi+' นาทีก่อน'; const h=Math.floor(mi/60); if(h<24)return h+' ชม.ก่อน'; const d=Math.floor(h/24); return d+' วันก่อน' }
@@ -799,7 +796,7 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
   return <div className="view">
     <StageBar items={processItems} onGo={onGoProcess}/>
 
-    <div className="grid stats" style={{gridTemplateColumns:'repeat(5,1fr)'}}>
+    <div className="grid stats" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
       {cards.map((c,i)=>(<div className={'stat hero '+c.cls} key={i}>
         <div className="lab">{c.lab}</div>
         <div className="val num">{c.val} <small>{c.unit}</small></div>
@@ -858,7 +855,6 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
 
     <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports}/>
 
-    <ActivityTimeline activity={activity} onOpenLaw={onOpen} lawById={lawById}/>
     <Timeline laws={laws} catMap={catMap} onOpen={onOpen} curBE={curBE} fromBE={tlFromBE}/>
 
     <div className="panel" style={{marginTop:16}}>

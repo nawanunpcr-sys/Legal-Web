@@ -80,6 +80,14 @@ export async function signUp(email, password) {
 export async function signOut() {
   if (hasSupabase) await supabase.auth.signOut()
 }
+export async function signInWithOAuth(provider) {
+  if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: { redirectTo: window.location.origin },
+  })
+  if (error) throw error
+}
 
 // ---- Data access ----
 export async function fetchAll() {
