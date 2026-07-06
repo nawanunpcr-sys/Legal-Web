@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { currentUserName } from './auth.js'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -112,7 +113,16 @@ export async function fetchAll() {
 
 // ---- Law mutations ----
 export async function setRequirementStatus(reqId, status) {
-  const { error } = await supabase.from('lg_requirements').update({ status }).eq('id', reqId)
+  // stamp who/when evaluated compliance for this requirement
+  const { error } = await supabase.from('lg_requirements')
+    .update({ status, evaluated_at: new Date().toISOString(), evaluated_by: currentUserName() })
+    .eq('id', reqId)
+  if (error) throw error
+}
+
+// Update evidence / other fields on a single requirement
+export async function updateRequirementField(reqId, patch) {
+  const { error } = await supabase.from('lg_requirements').update(patch).eq('id', reqId)
   if (error) throw error
 }
 
@@ -120,7 +130,9 @@ export async function setRequirementStatus(reqId, status) {
 export async function bulkSetCompliance(lawIds, met = true) {
   if (!lawIds.length) return
   const status = met ? 'met' : 'unmet'
-  const { error } = await supabase.from('lg_requirements').update({ status }).in('law_id', lawIds)
+  const { error } = await supabase.from('lg_requirements')
+    .update({ status, evaluated_at: new Date().toISOString(), evaluated_by: currentUserName() })
+    .in('law_id', lawIds)
   if (error) throw error
   await supabase.from('lg_laws').update({ status: met ? 'ok' : 'bad', updated_at: new Date().toISOString() }).in('id', lawIds)
 }
@@ -247,18 +259,75 @@ export async function uploadLawDoc(file) {
   return supabase.storage.from('law-docs').getPublicUrl(path).data.publicUrl
 }
 
+// Upload a compliance-evidence file → law-docs bucket, evidence/ folder (reuses uploadLawDoc pattern)
+export async function uploadEvidence(file) {
+  if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  const safe = file.name.replace(/[^\w.\-]+/g, '_')
+  const path = `evidence/${Date.now()}_${safe}`
+  const { error } = await supabase.storage.from('law-docs').upload(path, file, { upsert: false, contentType: file.type || undefined })
+  if (error) throw error
+  return supabase.storage.from('law-docs').getPublicUrl(path).data.publicUrl
+}
+
+// ---- Attachments (lg_attachments) — CAR / report / comm ----
+export async function uploadAttachment(file, refType, refId) {
+  if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  const safe = file.name.replace(/[^\w.\-]+/g, '_')
+  const path = `${refType}/${refId}/${Date.now()}_${safe}`
+  const { error: upErr } = await supabase.storage.from('law-docs').upload(path, file, { upsert: false, contentType: file.type || undefined })
+  if (upErr) throw upErr
+  const file_url = supabase.storage.from('law-docs').getPublicUrl(path).data.publicUrl
+  const { data, error } = await supabase.from('lg_attachments').insert({
+    ref_type: refType, ref_id: refId, file_url, file_name: file.name, uploaded_by: currentUserName(),
+  }).select().single()
+  if (error) throw error
+  return data
+}
+export async function fetchAttachments(refType, refId) {
+  if (!hasSupabase || !refId) return []
+  const { data, error } = await supabase.from('lg_attachments')
+    .select('*').eq('ref_type', refType).eq('ref_id', refId).order('uploaded_at', { ascending: false })
+  if (error) throw error
+  return data || []
+}
+export async function deleteAttachment(id) {
+  const { error } = await supabase.from('lg_attachments').delete().eq('id', id)
+  if (error) throw error
+}
+// Count attachments for many refs of one type → { [refId]: count }
+export async function fetchAttachmentCounts(refType, refIds = []) {
+  if (!hasSupabase || !refIds.length) return {}
+  const { data, error } = await supabase.from('lg_attachments').select('ref_id').eq('ref_type', refType).in('ref_id', refIds)
+  if (error) return {}
+  const m = {}
+  ;(data || []).forEach(r => { m[r.ref_id] = (m[r.ref_id] || 0) + 1 })
+  return m
+}
+
+// ---- Law review history (lg_review_log) ----
+export async function fetchReviewLog(lawId) {
+  if (!hasSupabase) return []
+  const { data, error } = await supabase.from('lg_review_log')
+    .select('*').eq('law_id', lawId).order('review_date', { ascending: false }).order('id', { ascending: false })
+  if (error) throw error
+  return data || []
+}
+export async function addReviewLog(lawId, { review_date, reviewer, result, note }) {
+  const { data, error } = await supabase.from('lg_review_log').insert({
+    law_id: lawId, review_date, reviewer: reviewer || null, result: result || null, note: note || null,
+  }).select().single()
+  if (error) throw error
+  return data
+}
+
 // Suggestion lists for dropdowns (dedup, sorted)
-export function suggestionLists(laws = [], cars = []) {
+export function suggestionLists(laws = []) {
   const uniq = arr => [...new Set(arr.filter(x => x && String(x).trim()).map(x => String(x).trim()))].sort()
   const responsibles = []
   laws.forEach(l => (l.reqs || []).forEach(r => r.responsible && responsibles.push(r.responsible)))
-  cars.forEach(c => { responsibles.push(c.auditor, c.supervisor, c.owner); (c.followups || []).forEach(f => responsibles.push(f.follower, f.assessor, f.verifier)) })
   return {
     ministries: uniq(laws.map(l => l.ministry)),
     responsibles: uniq(responsibles),
-    teams: uniq(cars.map(c => c.team)),
-    divisions: uniq(cars.map(c => c.division)),
-    departments: uniq(cars.map(c => c.department)),
   }
 }
 
@@ -379,67 +448,13 @@ export async function addStagedLaw(rows) {
   await recomputeLawStatus(law.id, allReq || [])
   await supabase.from('lg_import_staging').update({ status: 'added' }).in('id', rows.map(r => r.id))
   await logActivity({ action: 'import', law_id: law.id, law_code: first.law_code, law_name: first.law_name || first.law_code, detail: `นำเข้าจาก AI · ${rows.length} ข้อกำหนด` })
+  return law   // { id } — used to kick off a tracker case after approval
 }
 export async function dismissStaged(ids) {
   await supabase.from('lg_import_staging').update({ status: 'dismissed' }).in('id', ids)
 }
 export async function setUpdateStatus(id, status) {
   await supabase.from('lg_law_updates').update({ status }).eq('id', id)
-}
-
-// ---- CAR / OFI ----
-export async function fetchCars() {
-  if (!hasSupabase) return []
-  const [{ data: cars }, { data: fus }, { data: aps }] = await Promise.all([
-    supabase.from('lg_car').select('*').order('id', { ascending: false }),
-    supabase.from('lg_car_followups').select('*').order('seq'),
-    supabase.from('lg_car_approvals').select('*').order('seq'),
-  ])
-  const fuBy = {}, apBy = {}
-  ;(fus || []).forEach(f => { (fuBy[f.car_id] = fuBy[f.car_id] || []).push(f) })
-  ;(aps || []).forEach(a => { (apBy[a.car_id] = apBy[a.car_id] || []).push(a) })
-  return (cars || []).map(c => ({ ...c, followups: fuBy[c.id] || [], approvals: apBy[c.id] || [] }))
-}
-export function nextCoNumber(cars) {
-  const max = (cars || []).reduce((m, c) => {
-    const n = parseInt(String(c.running_no || c.co_no || '').replace(/\D/g, ''), 10)
-    return isNaN(n) ? m : Math.max(m, n)
-  }, 0)
-  const n = max + 1
-  const run = String(n).padStart(6, '0')
-  return { running_no: run, co_no: 'CO' + run, ofi_no: 'OFI-' + run }
-}
-export async function saveCar(car, followups = [], approvals = []) {
-  const payload = {
-    co_no: car.co_no || null, ofi_no: car.ofi_no || null, running_no: car.running_no || null,
-    year: car.year ? Number(car.year) : null, status: car.status || 'open',
-    record_type: car.record_type || null, owner: car.owner || null,
-    issue_date: car.issue_date || null, auditor: car.auditor || null, supervisor: car.supervisor || null,
-    team: car.team || null, division: car.division || null, department: car.department || null,
-    finding: car.finding || null, corrective_action: car.corrective_action || null,
-    due_date: car.due_date || null, updated_at: new Date().toISOString(),
-  }
-  let carId = car.id
-  if (carId) {
-    const { error } = await supabase.from('lg_car').update(payload).eq('id', carId); if (error) throw error
-  } else {
-    const { data, error } = await supabase.from('lg_car').insert(payload).select('id').single(); if (error) throw error
-    carId = data.id
-  }
-  await supabase.from('lg_car_followups').delete().eq('car_id', carId)
-  await supabase.from('lg_car_approvals').delete().eq('car_id', carId)
-  const fu = followups.filter(f => f.check_date || f.result || f.follower || f.assessor || f.verifier)
-    .map((f, i) => ({ car_id: carId, seq: i, check_date: f.check_date || null, follower: f.follower || null,
-      assessor: f.assessor || null, verifier: f.verifier || null, result: f.result || null, conclusion: f.conclusion || null }))
-  const ap = approvals.filter(a => a.step || a.approver || a.approve_date)
-    .map((a, i) => ({ car_id: carId, seq: i, step: a.step || null, approve_date: a.approve_date || null,
-      approver: a.approver || null, status: a.status || 'approved' }))
-  if (fu.length) await supabase.from('lg_car_followups').insert(fu)
-  if (ap.length) await supabase.from('lg_car_approvals').insert(ap)
-  return carId
-}
-export async function deleteCar(id) {
-  const { error } = await supabase.from('lg_car').delete().eq('id', id); if (error) throw error
 }
 
 // ---- Process Tracker (workflow stages) ----
@@ -485,6 +500,7 @@ export const TRACKER_STATUS = {
   overdue:     { label: 'เกินกำหนด',   color: '#dc2626' },
 }
 const DEFAULT_SUB = { 1: 'pending_search', 2: 'pending_assign', 3: 'pending_verify' }
+const DONE_SUB    = { 1: 'registered',    2: 'done',           3: 'closed' }
 
 export async function fetchTrackerSubstatuses() {
   if (!hasSupabase) return {}
@@ -498,14 +514,17 @@ export async function fetchTracker() {
   const { data } = await supabase.from('lg_process_tracker').select('*').order('law_id').order('stage')
   return data || []
 }
-// create a tracking case = 3 stage rows for one law
-export async function createTrackerCase({ law_id, requirement_id = null }) {
-  const rows = TRACKER_STAGES.map(s => ({
-    law_id, requirement_id, stage: s.n,
-    substatus: DEFAULT_SUB[s.n],
-    status: s.n === 1 ? 'in_progress' : 'waiting',
-    started_at: s.n === 1 ? new Date().toISOString() : null,
-  }))
+// create a tracking case = 3 stage rows for one law.
+// startStage lets callers begin partway through (e.g. staging-approved laws start at
+// stage 2 "หน่วยงานดำเนินการ" because search/analyze/register is already done); earlier
+// stages are marked done. Defaults keep the original stage-1 behaviour.
+export async function createTrackerCase({ law_id, requirement_id = null, startStage = 1, startSubstatus = null }) {
+  const now = new Date().toISOString()
+  const rows = TRACKER_STAGES.map(s => {
+    if (s.n < startStage)  return { law_id, requirement_id, stage: s.n, substatus: DONE_SUB[s.n],                 status: 'done',        started_at: now }
+    if (s.n === startStage) return { law_id, requirement_id, stage: s.n, substatus: startSubstatus || DEFAULT_SUB[s.n], status: 'in_progress', started_at: now }
+    return { law_id, requirement_id, stage: s.n, substatus: DEFAULT_SUB[s.n], status: 'waiting', started_at: null }
+  })
   const { error } = await supabase.from('lg_process_tracker').insert(rows)
   if (error) throw error
 }

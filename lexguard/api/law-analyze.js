@@ -1,8 +1,9 @@
 // Vercel serverless function — Skills 1+2 (osh-law-fetch + osh-law-analyze) behind the Analysis page.
 // Fetches a law (URL or pasted text), asks Claude to summarize it into registry-ready requirements,
 // and stages them in lg_import_staging for the user to approve on the "นำเข้า/รออนุมัติ" page.
-const SUPA_URL = process.env.VITE_SUPABASE_URL || 'https://exugnmdsyqbqtxsrwhbm.supabase.co'
-const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_b4R7_X6YJS2JaRarc2iaNQ_NBrJWUaC'
+// No hardcoded fallbacks — secrets must come from the environment (never committed to git).
+const SUPA_URL = process.env.VITE_SUPABASE_URL
+const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
 
 const SYSTEM = `คุณคือผู้ช่วย จป.วิชาชีพ ทำหน้าที่อ่าน-วิเคราะห์-สรุปกฎหมายความปลอดภัย/อาชีวอนามัย/สิ่งแวดล้อม (SHE) ของไทยให้เข้าทะเบียนกฎหมาย
@@ -22,7 +23,8 @@ function strip(html){
 }
 export default async function handler(req,res){
   if(req.method!=='POST') return res.status(405).json({error:'POST only'})
-  if(!process.env.ANTHROPIC_API_KEY) return res.status(400).json({error:'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Vercel'})
+  if(!SUPA_URL||!SUPA_KEY) return res.status(500).json({error:'ยังไม่ได้ตั้งค่า Supabase (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)'})
+  if(!process.env.ANTHROPIC_API_KEY) return res.status(500).json({error:'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Vercel'})
   try{
     const { source='', kind='auto' } = req.body||{}
     if(!source.trim()) return res.status(400).json({error:'กรุณาใส่ URL หรือวางตัวบทกฎหมาย'})

@@ -2,8 +2,9 @@
 // Fetches public legal sources, asks Claude to extract SHE-relevant new laws,
 // dedupes against the registry, and enqueues fresh items in lg_agent_queue.
 // Runnable by Vercel cron (GET) or manually (POST). Logs to lg_agent_runs.
-const SUPA_URL = process.env.VITE_SUPABASE_URL || 'https://exugnmdsyqbqtxsrwhbm.supabase.co'
-const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_b4R7_X6YJS2JaRarc2iaNQ_NBrJWUaC'
+// No hardcoded fallbacks — secrets must come from the environment (never committed to git).
+const SUPA_URL = process.env.VITE_SUPABASE_URL
+const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
 
 const SOURCES = [
@@ -36,7 +37,8 @@ async function supa(method, path, body, prefer) {
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'GET/POST only' })
-  if (!process.env.ANTHROPIC_API_KEY) return res.status(400).json({ error: 'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY' })
+  if (!SUPA_URL || !SUPA_KEY) return res.status(500).json({ error: 'ยังไม่ได้ตั้งค่า Supabase (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)' })
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY' })
   const run = (await supa('POST', 'lg_agent_runs', [{ agent: 'gazette' }], 'return=representation'))[0]
   let scanned = 0, created = 0, errors = 0, note = ''
   try {

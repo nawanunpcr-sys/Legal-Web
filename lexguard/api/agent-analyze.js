@@ -2,8 +2,9 @@
 // Pulls pending items from lg_agent_queue, asks Claude to summarize each into
 // registry-ready requirements, writes them to lg_import_staging (status 'proposed'),
 // and marks the queue item processed/error. Runnable by Vercel cron (GET) or POST.
-const SUPA_URL = process.env.VITE_SUPABASE_URL || 'https://exugnmdsyqbqtxsrwhbm.supabase.co'
-const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_b4R7_X6YJS2JaRarc2iaNQ_NBrJWUaC'
+// No hardcoded fallbacks — secrets must come from the environment (never committed to git).
+const SUPA_URL = process.env.VITE_SUPABASE_URL
+const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
 const BATCH = 5  // max items per run
 
@@ -60,7 +61,8 @@ async function analyzeItem(item) {
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'GET/POST only' })
-  if (!process.env.ANTHROPIC_API_KEY) return res.status(400).json({ error: 'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY' })
+  if (!SUPA_URL || !SUPA_KEY) return res.status(500).json({ error: 'ยังไม่ได้ตั้งค่า Supabase (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)' })
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY' })
   const run = (await supa('POST', 'lg_agent_runs', [{ agent: 'analyze' }], 'return=representation'))[0]
   let scanned = 0, created = 0, errors = 0
   try {

@@ -1,8 +1,9 @@
 // Vercel serverless function — Skill 3 (osh-law-update-watch) behind the Updates page.
 // Fetches the ShawPat safety-law listing, asks Claude to extract laws, compares with the
 // registry + existing alerts, and inserts genuinely new items into lg_law_updates.
-const SUPA_URL = process.env.VITE_SUPABASE_URL || 'https://exugnmdsyqbqtxsrwhbm.supabase.co'
-const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_b4R7_X6YJS2JaRarc2iaNQ_NBrJWUaC'
+// No hardcoded fallbacks — secrets must come from the environment (never committed to git).
+const SUPA_URL = process.env.VITE_SUPABASE_URL
+const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
 const SOURCES = ['https://www.shawpat.or.th/th/safety-law','https://www.shawpat.or.th/th/other-service/osh-law']
 
@@ -18,7 +19,8 @@ const norm = s => (s||'').toLowerCase().replace(/[\s\u0e00-\u0e0f.,()"'’]/g,''
 
 export default async function handler(req,res){
   if(req.method!=='POST') return res.status(405).json({error:'POST only'})
-  if(!process.env.ANTHROPIC_API_KEY) return res.status(400).json({error:'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Vercel'})
+  if(!SUPA_URL||!SUPA_KEY) return res.status(500).json({error:'ยังไม่ได้ตั้งค่า Supabase (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)'})
+  if(!process.env.ANTHROPIC_API_KEY) return res.status(500).json({error:'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Vercel'})
   try{
     let pageText=''
     for(const u of SOURCES){

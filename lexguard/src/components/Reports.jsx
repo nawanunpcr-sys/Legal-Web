@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import { RECURRENCE_LABELS } from '../lib/supabase.js'
+import { useAuth, NO_PERM } from '../lib/auth.js'
+import Attachments from './Attachments.jsx'
 import { I } from './icons.jsx'
 
 const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
@@ -52,6 +54,8 @@ function SubmitModal({ report, onSave, onClose }){
         <p style={{fontSize:12.5,color:'var(--ink-faint)',marginBottom:14}}>ยื่นที่: {report.authority||'—'}</p>
         <label className="form-label">อ้างอิงไฟล์ / เลขที่หนังสือ (ไม่บังคับ)</label>
         <input className="form-input" type="text" placeholder="เช่น จป.ว_2569_รอบ1.pdf หรือเลขรับ…" value={fileRef} onChange={e=>setFileRef(e.target.value)}/>
+        <div className="sec-t" style={{marginTop:16}}>ไฟล์แนบ</div>
+        <Attachments refType="report" refId={report.id}/>
         {report.trigger_type==='fixed' && report.recurrence!=='once'
           ? <p style={{fontSize:12,color:'var(--ink-faint)',marginTop:12}}>เมื่อยืนยัน ระบบจะเลื่อนกำหนดส่งไปยังรอบถัดไป ({RECURRENCE_LABELS[report.recurrence]}) โดยอัตโนมัติ</p>
           : <p style={{fontSize:12,color:'var(--ink-faint)',marginTop:12}}>เมื่อยืนยัน รายการนี้จะรอกรอกวันเกิดเหตุครั้งถัดไป</p>}
@@ -64,6 +68,7 @@ function SubmitModal({ report, onSave, onClose }){
 }
 
 export default function Reports({ reports, onSetEvent, onSubmit }){
+  const { can }=useAuth()
   const [filter,setFilter]=useState('all')
   const [eventModal,setEventModal]=useState(null)
   const [submitModal,setSubmitModal]=useState(null)
@@ -129,8 +134,8 @@ export default function Reports({ reports, onSetEvent, onSubmit }){
           <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{r.responsible||'—'}</td>
           <td><div style={{display:'flex',gap:4}}>
             {r.trigger_type==='event' &&
-              <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11}} onClick={()=>setEventModal(r)} title="กรอกวันเกิดเหตุ">วันเกิดเหตุ</button>}
-            <button className="btn btn-primary" style={{padding:'3px 8px',fontSize:11}} onClick={()=>setSubmitModal(r)} title="บันทึกการส่ง">ส่งแล้ว</button>
+              <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11}} disabled={!can('edit')} onClick={()=>setEventModal(r)} title={can('edit')?'กรอกวันเกิดเหตุ':NO_PERM}>วันเกิดเหตุ</button>}
+            <button className="btn btn-primary" style={{padding:'3px 8px',fontSize:11}} disabled={!can('edit')} onClick={()=>setSubmitModal(r)} title={can('edit')?'บันทึกการส่ง':NO_PERM}>ส่งแล้ว</button>
           </div></td>
         </tr>
       ))}

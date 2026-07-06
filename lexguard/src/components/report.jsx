@@ -1,23 +1,50 @@
-// Builds the official F-259 register (REGISTER OF LEGAL AND REQUIREMENT)
-// into #print-report, then App calls window.print().
+// Builds the official F-259 register (REGISTER OF LEGAL AND REQUIREMENT) into
+// #print-report, then App calls window.print(). Layout mirrors the real
+// source-data/F-259 workbook: form no. top-right, per-category pages, C/NC
+// evaluation and an end-of-report signature block.
 const ESC = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-export function buildReport({ laws, catName = {}, settings = {} }) {
+const TH_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+const thDate = s => {
+  if (!s) return '—'
+  const d = new Date(s)
+  if (isNaN(d)) return String(s)
+  return d.getDate() + ' ' + TH_MONTHS[d.getMonth()] + ' ' + (d.getFullYear() + 543)
+}
+
+// F-259 form metadata (from the source workbook header)
+const FORM = { no: 'F-259', rev: 'Rev.1', effective: '10/01/66' }
+
+const MODE_LABEL = { all: 'ทั้งหมด', cats: 'เฉพาะหมวดที่เลือก', nc: 'เฉพาะรายการที่ยังไม่สอดคล้อง (NC)' }
+
+// column order per the task spec, wording per the real F-259 sheet
+const COLS = [
+  ['ลำดับ', '4%'],
+  ['รหัสกฎหมาย', '6%'],
+  ['ชื่อกฎหมาย', '17%'],
+  ['หน่วยงานผู้ออก', '10%'],
+  ['วันที่ประกาศใช้', '8%'],
+  ['ข้อกำหนดที่เกี่ยวข้อง', '26%'],
+  ['สถานะ<br/>C / NC', '5%'],
+  ['ผู้รับผิดชอบ', '8%'],
+  ['หลักฐาน / เอกสารอ้างอิง', '8%'],
+  ['วันทบทวนถัดไป', '8%'],
+]
+
+export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' }) {
   const el = document.getElementById('print-report')
   if (!el) return
   const company = settings.company_name || settings.org_name || 'บริษัท จัสเทล เน็ทเวิร์ค จำกัด'
-  const year = new Date().getFullYear() + 543
+  const printedOn = thDate(new Date().toISOString())
 
   const byCat = {}
   laws.forEach(l => { (byCat[l.cat] = byCat[l.cat] || []).push(l) })
   const cats = [...new Set([...Object.keys(catName), ...Object.keys(byCat)])].filter(c => byCat[c]?.length)
 
-  const COLS = ['ลำดับ', 'เอกสารสนับสนุน', 'กระทรวง', 'ชื่อกฎหมายและข้อกำหนด',
-    'สรุปสาระสำคัญและหัวข้อควบคุมเอกสาร', 'วันที่ประกาศใช้', 'หน่วยงานรับผิดชอบ',
-    'C', 'NC', 'การรายงานผล', 'ความถี่ของการตรวจสอบ', 'เอกสารที่เกี่ยวข้อง']
+  const colgroup = `<colgroup>${COLS.map(([, w]) => `<col style="width:${w}">`).join('')}</colgroup>`
+  const headRow = `<tr class="ch">${COLS.map(([h]) => `<th>${h}</th>`).join('')}</tr>`
 
-  const sections = cats.map(c => {
-    const headRow = `<tr class="ch">${COLS.map(h => `<th>${ESC(h)}</th>`).join('')}</tr>`
+  const sections = cats.map((c, ci) => {
     let n = 0
     const body = byCat[c].map(l => {
       n++
@@ -25,71 +52,89 @@ export function buildReport({ laws, catName = {}, settings = {} }) {
       const span = reqs.length
       return reqs.map((r, i) => {
         const lawCells = i === 0 ? `
-          <td rowspan="${span}" class="ctr">${n}</td>
-          <td rowspan="${span}">${ESC(l.code)}</td>
+          <td rowspan="${span}" class="ctr num">${n}</td>
+          <td rowspan="${span}" class="num">${ESC(l.code)}</td>
+          <td rowspan="${span}" class="law">${ESC(l.name || '')}</td>
           <td rowspan="${span}">${ESC(l.ministry || '')}</td>
-          <td rowspan="${span}" class="law">${ESC(l.name || '')}</td>` : ''
-        const dateCell = i === 0 ? `<td rowspan="${span}">${ESC(l.issue_date || l.effective_date || '')}</td>` : ''
+          <td rowspan="${span}">${ESC(l.issue_date || l.effective_date || '—')}</td>` : ''
+        const reviewCell = i === 0 ? `<td rowspan="${span}" class="ctr">${thDate(l.review_date)}</td>` : ''
         const met = r.status === 'met', nc = r.status === 'unmet'
+        const evidence = [r.documents, r.evidence_label].filter(Boolean).join(' · ')
         return `<tr>${lawCells}
-          <td class="sara">${ESC(r.text || '')}</td>
-          ${dateCell}
-          <td>${ESC(r.responsible || '')}</td>
-          <td class="ctr ok">${met ? '✓' : ''}</td>
-          <td class="ctr bad">${nc ? '✓' : ''}</td>
-          <td>${ESC(r.report_to || '')}</td>
-          <td>${ESC(r.frequency || '')}</td>
-          <td>${ESC(r.documents || '')}</td>
+          <td class="req">${ESC(r.text || '—')}</td>
+          <td class="ctr ${met ? 'ok' : nc ? 'bad' : ''}">${met ? 'C' : nc ? 'NC' : '—'}</td>
+          <td>${ESC(r.responsible || '—')}</td>
+          <td>${ESC(evidence || '—')}</td>
+          ${reviewCell}
         </tr>`
       }).join('')
     }).join('')
 
     return `
-      <table class="reg">
-        <tr><td class="catband" colspan="12">หมวด ${ESC(c)} : ${ESC(catName[c] || '')}</td></tr>
+      <table class="reg" style="${ci > 0 ? 'page-break-before:always' : ''}">
+        ${colgroup}
+        <tr><td class="catband" colspan="${COLS.length}">หมวด ${ESC(c)} : ${ESC(catName[c] || '')} — ${byCat[c].length} ฉบับ</td></tr>
         ${headRow}
         ${body}
       </table>`
   }).join('')
 
+  const signature = `
+    <table class="sign">
+      <tr>
+        <td>ลงชื่อ ...............................................<div class="role">ผู้จัดทำ (จป.วิชาชีพ)</div><div class="dt">วันที่ ......... / ......... / .........</div></td>
+        <td>ลงชื่อ ...............................................<div class="role">ผู้ทบทวน</div><div class="dt">วันที่ ......... / ......... / .........</div></td>
+        <td>ลงชื่อ ...............................................<div class="role">ผู้อนุมัติ</div><div class="dt">วันที่ ......... / ......... / .........</div></td>
+      </tr>
+    </table>`
+
   el.innerHTML = `
   <style>
-    @page { size: A4 landscape; margin: 10mm }
     #print-report .doc { font-family: 'Angsana New','AngsanaUPC','TH Sarabun New','Sarabun',serif; color:#000; font-size:13px; line-height:1.25 }
-    #print-report table { width:100%; border-collapse:collapse }
-    #print-report .head td { border:1px solid #000; padding:4px 8px; vertical-align:top }
+    #print-report table { width:100%; border-collapse:collapse; table-layout:fixed }
+    #print-report .head td { border:1px solid #000; padding:3px 8px; vertical-align:top }
     #print-report .head .title { text-align:center }
-    #print-report .head .title .th1 { font-size:18px; font-weight:700 }
-    #print-report .head .title .th2 { font-size:15px; font-weight:700 }
-    #print-report .head .title .en { font-size:15px; font-weight:700; letter-spacing:.3px }
+    #print-report .head .title .th1 { font-size:17px; font-weight:700 }
+    #print-report .head .title .en  { font-size:14px; font-weight:700; letter-spacing:.3px }
+    #print-report .head .form { text-align:left; font-size:11px }
+    #print-report .head .form .fno { font-size:14px; font-weight:700 }
+    #print-report .head .conf { text-align:right; font-size:11px; font-weight:700 }
     #print-report .reg { margin-top:8px; page-break-inside:auto }
-    #print-report .reg th, #print-report .reg td { border:1px solid #000; padding:2px 5px; vertical-align:top }
-    #print-report .reg .ch th { background:#d9d9d9; text-align:center; font-weight:700; font-size:12.5px }
-    #print-report .reg .catband { background:#bfbfbf; font-weight:700; font-size:15px; padding:4px 8px }
+    #print-report .reg th, #print-report .reg td { border:1px solid #000; padding:2px 5px; vertical-align:top; word-wrap:break-word; overflow-wrap:anywhere }
+    #print-report .reg .ch th { background:#d9d9d9; text-align:center; font-weight:700; font-size:11.5px }
+    #print-report .reg .catband { background:#bfbfbf; font-weight:700; font-size:14px; padding:4px 8px }
     #print-report .reg .ctr { text-align:center }
-    #print-report .reg .ok { color:#0a7a32; font-weight:700 }
+    #print-report .reg .num { font-variant-numeric: tabular-nums }
+    #print-report .reg .ok  { color:#0a7a32; font-weight:700 }
     #print-report .reg .bad { color:#c4271d; font-weight:700 }
-    #print-report .reg .law { font-weight:600; min-width:120px }
-    #print-report .reg .sara { white-space:pre-wrap; min-width:230px }
+    #print-report .reg .law { font-weight:600 }
+    #print-report .reg .req { white-space:pre-wrap }
     #print-report .reg tr { page-break-inside: avoid }
+    #print-report .sign { margin-top:22px; page-break-inside:avoid }
+    #print-report .sign td { border:none; text-align:center; padding:26px 10px 4px; font-size:13px; width:33.33% }
+    #print-report .sign .role { margin-top:6px; font-weight:700 }
+    #print-report .sign .dt { margin-top:4px; color:#333 }
   </style>
   <div class="doc">
     <table class="head">
       <tr>
-        <td style="width:18%">&nbsp;</td>
+        <td class="conf" style="width:22%">ใช้ภายใน</td>
         <td class="title">
-          <div class="th1">ทะเบียนกฎหมาย</div>
-          <div class="th2">และแบบประเมินความสอดคล้องและข้อกำหนดอื่นๆ</div>
+          <div class="th1">ทะเบียนกฎหมายและแบบประเมินความสอดคล้องและข้อกำหนดอื่นๆ</div>
           <div class="en">REGISTER OF LEGAL AND REQUIREMENT</div>
         </td>
-        <td style="width:22%">
-          <div><b>Effective Date :</b> ${year}</div>
-          <div style="margin-top:6px"><b>Revision&nbsp;&nbsp;&nbsp;:</b> 01</div>
-          <div style="margin-top:6px"><b>No of Pages&nbsp;:</b></div>
+        <td class="form" style="width:22%">
+          <div class="fno">${FORM.no} &nbsp; ${FORM.rev}</div>
+          <div>วันที่มีผลบังคับใช้ : ${FORM.effective}</div>
+          <div>วันที่พิมพ์ : ${printedOn}</div>
         </td>
       </tr>
-      <tr><td colspan="3" style="font-size:10px">${ESC(company)}</td></tr>
+      <tr>
+        <td colspan="2" style="font-size:12px"><b>${ESC(company)}</b></td>
+        <td class="form" style="font-size:11px">รอบการติดตาม : ครั้งที่ ...........${mode !== 'all' ? `<div>ขอบเขต : ${MODE_LABEL[mode] || ''}</div>` : ''}</td>
+      </tr>
     </table>
-    ${sections}
+    ${sections || '<div style="padding:24px;text-align:center">ไม่มีรายการตามเงื่อนไขที่เลือก</div>'}
+    ${signature}
   </div>`
 }

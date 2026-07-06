@@ -6,20 +6,22 @@ import { supabase, hasSupabase, fetchAll,
          dismissNotification,
          fetchComplianceMonths, toggleMonthCheck,
          fetchStaging, fetchUpdates, addStagedLaw, dismissStaged, setUpdateStatus,
-         logActivity, fetchActivity, fetchQuarterStats, fetchCars, suggestionLists,
+         logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
          fetchProcessItems,
-         fetchTracker, fetchTrackerSubstatuses, subscribeTracker,
+         fetchTracker, fetchTrackerSubstatuses, subscribeTracker, createTrackerCase,
          fetchSettings, saveSettings, DEFAULT_SETTINGS,
-         getSession, onAuthChange, signOut,
+         onAuthChange,
          STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
+import { AUTH_MODE, AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
+         getSession as getAuthSession, signOut as authSignOut } from './lib/auth.js'
 import LawDrawer from './components/LawDrawer.jsx'
-import CarOfi from './components/CarOfi.jsx'
 import Reports from './components/Reports.jsx'
 import ProcessTracker, { StageBar } from './components/ProcessTracker.jsx'
 import LawTracker, { CaseStepper, groupCases, effStatus } from './components/LawTracker.jsx'
 import { I } from './components/icons.jsx'
 import Login from './components/Login.jsx'
+import Attachments from './components/Attachments.jsx'
 import Toaster from './components/Toaster.jsx'
 import ConfirmHost from './components/ConfirmHost.jsx'
 import { toast } from './lib/toast.js'
@@ -82,7 +84,6 @@ const TITLES = {
   repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
   comm:          ['ตารางการสื่อสาร',        'การสื่อสารภายในและภายนอกองค์กร (ISD-86)'],
   reports:       ['การส่งรายงานราชการ',     'ติดตามและแจ้งเตือนกำหนดส่งรายงานต่อหน่วยงานรัฐ'],
-  car:           ['CAR / OFI',              'คำขอให้ปฏิบัติการแก้ไข และโอกาสในการปรับปรุง'],
   process:       ['ติดตามกระบวนการ',        'ค้นพบ → ตรวจเนื้อหา → ส่งต่อ → ตรวจสอบ/ติดตาม'],
   tracker:       ['ติดตามสถานะกฎหมาย',      'ติดตาม 3 ขั้น: ค้นหา/วิเคราะห์ → หน่วยงานดำเนินการ → ทวนสอบ'],
   analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
@@ -106,28 +107,32 @@ export default function App(){
   const [search,setSearch] = useState('')
   const [searchFocus,setSearchFocus] = useState(false)
   const [openLaw,setOpenLaw] = useState(null)
+  const [showPdf,setShowPdf] = useState(false)
+  const [exportOpen,setExportOpen] = useState(false)   // topbar/page export dropdown (UI only)
+  const [avatarOpen,setAvatarOpen] = useState(false)   // avatar menu (UI only)
   const [monthYear,setMonthYear] = useState(new Date().getFullYear())
   const [months,setMonths]   = useState([])
   const [staging,setStaging] = useState([])
   const [updates,setUpdates] = useState([])
   const [activity,setActivity] = useState([])
   const [quarterStats,setQuarterStats] = useState([])
-  const [cars,setCars]       = useState([])
   const [settings,setSettings] = useState(DEFAULT_SETTINGS)
   const [processItems,setProcessItems] = useState([])
   const [trackerRows,setTrackerRows] = useState([])
   const [trackerSubs,setTrackerSubs] = useState({})
   const [reports,setReports] = useState([])
 
-  // auth gate
+  // auth gate — reads through auth.js (demo: localStorage lg_session · supabase: real session)
   useEffect(()=>{
-    if(!hasSupabase){ setSession(null); return }
-    getSession().then(s=>setSession(s||null))
-    const unsub = onAuthChange(s=>setSession(s||null))
-    return unsub
+    let alive=true
+    ;(async()=>{ try{ const s=await getAuthSession(); if(alive) setSession(s||null) }catch{ if(alive) setSession(null) } })()
+    const unsub = AUTH_MODE==='supabase' ? onAuthChange(s=>setSession(s||null)) : ()=>{}
+    return ()=>{ alive=false; unsub() }
   },[])
 
-  const authed = !!session || session==='demo'
+  const authed = !!session
+  const role = (session && session.role) || 'viewer'
+  const authValue = useMemo(()=>({ session, role, can:(action)=>can(role,action) }),[session,role])
 
   useEffect(()=>{ try{ localStorage.setItem('cr_view',view) }catch{} },[view])
   useEffect(()=>{ try{ localStorage.setItem('cr_nav',navOpen?'1':'0') }catch{} },[navOpen])
@@ -139,7 +144,6 @@ export default function App(){
     try{ const [s,u,a] = await Promise.all([fetchStaging(), fetchUpdates(), fetchActivity()]); setStaging(s); setUpdates(u); setActivity(a) }
     catch(e){ console.warn('skills reload error',e) }
   }
-  async function loadCars(){ try{ setCars(await fetchCars()) }catch(e){ console.warn('cars reload',e) } }
   async function loadProcess(){ try{ setProcessItems(await fetchProcessItems()) }catch(e){ console.warn('process reload',e) } }
   async function loadTracker(){ try{ const [r,s]=await Promise.all([fetchTracker(),fetchTrackerSubstatuses()]); setTrackerRows(r); setTrackerSubs(s) }catch(e){ console.warn('tracker reload',e) } }
   async function loadReports(){ try{ setReports(await fetchReports()) }catch(e){ console.warn('reports reload',e) } }
@@ -147,9 +151,9 @@ export default function App(){
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, s, u, a, qs, cs, rp, st, pi] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchQuarterStats(), fetchCars(), fetchReports(), fetchSettings(), fetchProcessItems()])
+      const [d, mData, s, u, a, qs, rp, st, pi] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings(), fetchProcessItems()])
       setCats(d.cats); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setStaging(s); setUpdates(u); setActivity(a); setQuarterStats(qs); setCars(cs); setReports(rp); setSettings(st); setProcessItems(pi)
+      setMonths(mData); setStaging(s); setUpdates(u); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st); setProcessItems(pi)
       loadTracker()
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
@@ -174,7 +178,7 @@ export default function App(){
   const repealedLaws= useMemo(()=>laws.filter(l=>l.status==='repealed'),[laws])
   const stagingBatches = useMemo(()=>{ const g={}; staging.forEach(r=>{(g[r.law_code]=g[r.law_code]||[]).push(r)}); return Object.entries(g) },[staging])
   const newUpdates  = useMemo(()=>updates.filter(u=>u.status==='new'),[updates])
-  const suggest     = useMemo(()=>suggestionLists(laws,cars),[laws,cars])
+  const suggest     = useMemo(()=>suggestionLists(laws),[laws])
   const allProcess  = useMemo(()=>{
     const out = processItems.map(p=>({...p,auto:false}))
     updates.filter(u=>u.status==='new').forEach(u=>out.push({id:'u'+u.id,auto:true,stage:'discovery',title:u.title,note:'กฎหมายใหม่จาก '+(u.source||'ShawPat'),goView:'updates'}))
@@ -186,13 +190,20 @@ export default function App(){
     const q=search.trim().toLowerCase(); if(q.length<2) return []
     const out=[]
     activeLaws.forEach(l=>{ if(l.code.toLowerCase().includes(q)||(l.name||'').toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)) out.push({kind:'law',law:l,label:l.code,sub:(l.name||'').slice(0,55)}) })
-    cars.forEach(c=>{ if((c.co_no||'').toLowerCase().includes(q)||(c.finding||'').toLowerCase().includes(q)) out.push({kind:'car',label:c.co_no||'CAR',sub:(c.finding||'').slice(0,55)}) })
     reports.forEach(r=>{ if((r.title||'').toLowerCase().includes(q)) out.push({kind:'report',label:(r.title||'').slice(0,40),sub:'รายงานราชการ'}) })
     return out.slice(0,12)
-  },[search,activeLaws,cars,reports])
+  },[search,activeLaws,reports])
 
   async function handleAddStaged(code, rows){
-    try{ await addStagedLaw(rows); const d=await fetchAll(); setLaws(d.laws); await reloadSkills(); fetchQuarterStats().then(setQuarterStats) }
+    try{
+      const law = await addStagedLaw(rows)
+      const d=await fetchAll(); setLaws(d.laws); await reloadSkills(); fetchQuarterStats().then(setQuarterStats)
+      // อนุมัติเข้าทะเบียนแล้ว → เริ่มติดตามที่ขั้น 2 (หน่วยงานดำเนินการ) ข้ามถ้ามี case อยู่แล้ว
+      if(law?.id && !trackerRows.some(r=>r.law_id===law.id)){
+        try{ await createTrackerCase({ law_id: law.id, startStage: 2, startSubstatus: 'pending_assign' }); await loadTracker() }
+        catch(e2){ console.warn('createTrackerCase after staging failed', e2) }
+      }
+    }
     catch(e){ toast('เพิ่มเข้าทะเบียนไม่สำเร็จ: '+e.message) }
   }
   async function handleDropStaged(rows){
@@ -219,20 +230,20 @@ export default function App(){
     activeLaws.forEach(l=>{ if(l.status==='bad') out.push({type:'bad',law:l,text:l.code+' ยังไม่สอดคล้อง',sub:l.name.slice(0,60)}) })
     comms.forEach(c=>{ if(c.next_scheduled_date){ const d=daysTo(c.next_scheduled_date); const nb=c.notify_days_before||7; if(d>=0&&d<=nb) out.push({type:'comm',comm:c,days:d,text:'การสื่อสาร: '+c.topic.slice(0,50),sub:'ครบกำหนดใน '+d+' วัน — '+thDate(c.next_scheduled_date)}) }})
     reports.forEach(r=>{ if(r.next_due_date){ const d=daysTo(r.next_due_date); if(d<0) out.push({type:'bad',goView:'reports',text:'รายงานเกินกำหนดส่ง: '+r.title.slice(0,50),sub:'เกิน '+Math.abs(d)+' วัน — '+thDate(r.next_due_date)}) }})
-    cars.forEach(c=>{ if(c.status!=='closed'&&c.due_date){ const d=daysTo(c.due_date); if(d<0) out.push({type:'bad',goView:'car',text:'CAR เกินกำหนดแก้ไข: '+(c.co_no||''),sub:(c.finding||'').slice(0,55)}) }})
     newUpdates.slice(0,15).forEach(u=>out.push({type:'law_update',goView:'updates',text:'กฎหมายใหม่: '+u.title.slice(0,55),sub:'จาก ShawPat'+(u.published_date?' · '+u.published_date:'')}))
     return out.sort((a,b)=>(a.type==='bad'?-1:0)-(b.type==='bad'?-1:0))
-  },[activeLaws,comms,notifs,newUpdates,cars,reports])
+  },[activeLaws,comms,notifs,newUpdates,reports])
 
   async function toggleReq(law, req){
     const next = req.status==='met' ? 'unmet' : 'met'
+    const stamp = { status:next, evaluated_by:currentUserName(), evaluated_at:new Date().toISOString() }
     setLaws(prev=>prev.map(l=>{
       if(l.id!==law.id) return l
-      const reqs=l.reqs.map(r=>r.id===req.id?{...r,status:next}:r)
+      const reqs=l.reqs.map(r=>r.id===req.id?{...r,...stamp}:r)
       const status=reqs.some(r=>r.status==='unmet')?'bad':'ok'
       return {...l,reqs,status}
     }))
-    setOpenLaw(prev=>prev&&prev.id===law.id?{...prev,reqs:prev.reqs.map(r=>r.id===req.id?{...r,status:next}:r),status:prev.reqs.map(r=>r.id===req.id?{...r,status:next}:r).some(r=>r.status==='unmet')?'bad':'ok'}:prev)
+    setOpenLaw(prev=>prev&&prev.id===law.id?{...prev,reqs:prev.reqs.map(r=>r.id===req.id?{...r,...stamp}:r),status:prev.reqs.map(r=>r.id===req.id?{...r,...stamp}:r).some(r=>r.status==='unmet')?'bad':'ok'}:prev)
     try{
       await setRequirementStatus(req.id,next); await recomputeLawStatus(law.id,law.reqs.map(r=>r.id===req.id?{...r,status:next}:r))
       await logActivity({ action:'requirement', law_id:law.id, law_code:law.code, law_name:law.name, detail:(next==='met'?'ปรับเป็นสอดคล้อง: ':'ปรับเป็นยังไม่สอดคล้อง: ')+(req.text||'').slice(0,80) })
@@ -343,10 +354,19 @@ export default function App(){
     if(hasSupabase){ try{ await toggleMonthCheck(year,month,nowChecked) }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) } }
   }
 
-  function exportPDF(){ buildReport({laws:inForceLaws,catName:Object.fromEntries(cats.map(c=>[c.code,c.name])),settings}); setTimeout(()=>window.print(),60) }
+  function handleExportPdf(mode, sel){
+    let list = inForceLaws
+    if(mode==='cats') list = inForceLaws.filter(l=>sel.has(l.cat))
+    else if(mode==='nc') list = inForceLaws
+      .filter(l=>l.reqs.some(r=>r.status==='unmet'))
+      .map(l=>({...l, reqs:l.reqs.filter(r=>r.status==='unmet')}))
+    setShowPdf(false)
+    buildReport({ laws:list, catName:Object.fromEntries(cats.map(c=>[c.code,c.name])), settings, mode })
+    setTimeout(()=>window.print(),80)
+  }
 
   if(session===undefined) return <div className="loading"><div className="spin"/>กำลังตรวจสอบสิทธิ์…</div>
-  if(!authed) return <Login onAuthed={s=>setSession(s)} onBypass={()=>setSession('demo')}/>
+  if(!authed) return <Login onAuthed={s=>setSession(s)}/>
   if(loading) return (
     <div style={{minHeight:'100vh',background:'var(--paper)'}}>
       <div className="sk-grid">{Array.from({length:4}).map((_,i)=><div key={i} className="sk sk-card"/>)}</div>
@@ -357,6 +377,7 @@ export default function App(){
   const title = TITLES[view] || ['—','']
 
   return (
+    <AuthContext.Provider value={authValue}>
     <div className={'app'+(navOpen?'':' nav-collapsed')}>
       <aside className={'sidebar'+(navOpen?'':' collapsed')}>
         <div className="brand" role="button" tabIndex={0} title="กลับหน้าหลัก"
@@ -370,14 +391,13 @@ export default function App(){
         {NAV_GROUPS.map((group,gi)=>(
           <div key={gi} className="nav-group">
             {group.label && <div className="nav-label">{group.label}</div>}
-            {group.items.map(n=>{
+            {group.items.filter(n=>n.id!=='settings'||can(role,'delete')).map(n=>{
               const badge =
                 n.id==='register'      ? activeLaws.length        :
                 n.id==='compliance'    ? (stats.nc||null)         :
                 n.id==='improvements'  ? (stats.nc||null)         :
                 n.id==='repealed'      ? (repealedLaws.length||null) :
                 n.id==='reports'       ? (reportAlerts||null)     :
-                n.id==='car'           ? (cars.filter(c=>c.status!=='closed').length||null) :
                 n.id==='staging'       ? (stagingBatches.length||null) :
                 n.id==='updates'       ? (newUpdates.length||null)   :
                 n.id==='notifications' ? (bellNotifications.length||null) : null
@@ -393,8 +413,8 @@ export default function App(){
         ))}
 
         <div className="side-foot">
-          <div className="av">{(settings.user_name||'จ').trim().charAt(0)}</div>
-          <div><div className="nm">{settings.user_name||'จป. วิชาชีพ'}</div><div className="rl">{settings.org_name||'จัสเทล เน็ทเวิร์ค'}</div></div>
+          <div className="av">{(session?.name||'ผู้').trim().charAt(0)}</div>
+          <div><div className="nm">{session?.name||'ผู้ใช้งาน'}</div><div className="rl">{ROLE_LABELS[role]||role}</div></div>
         </div>
       </aside>
 
@@ -403,11 +423,9 @@ export default function App(){
           <button className="navtoggle no-print" onClick={()=>setNavOpen(o=>!o)} title={navOpen?'ปิดเมนู':'เปิดเมนู'} aria-label="toggle menu">
             <span/><span/><span/>
           </button>
-          <div className="vt">{title[0]}<small>{title[1]}</small></div>
-          <div className="spacer"/>
           <div className="search" style={{position:'relative'}}>
             <I n="search"/>
-            <input placeholder="ค้นหากฎหมาย / CAR / รายงาน…" value={search}
+            <input placeholder="ค้นหากฎหมาย / รายงาน…" value={search}
               onChange={e=>setSearch(e.target.value)}
               onFocus={()=>setSearchFocus(true)} onBlur={()=>setTimeout(()=>setSearchFocus(false),180)}/>
             {searchFocus && searchResults.length>0 && (
@@ -415,11 +433,10 @@ export default function App(){
                 {searchResults.map((r,i)=>(
                   <div key={i} className="sr-item" onMouseDown={()=>{
                     if(r.kind==='law') setOpenLaw(r.law)
-                    else if(r.kind==='car') setView('car')
                     else if(r.kind==='report') setView('reports')
                     setSearch('')
                   }}>
-                    <span className="sr-tag">{r.kind==='law'?'กฎหมาย':r.kind==='car'?'CAR':'รายงาน'}</span>
+                    <span className="sr-tag">{r.kind==='law'?'กฎหมาย':'รายงาน'}</span>
                     <span className="sr-label">{r.label}</span>
                     <span className="sr-sub">{r.sub}</span>
                   </div>
@@ -427,20 +444,41 @@ export default function App(){
               </div>
             )}
           </div>
-          {(view==='register'||view==='dashboard') && (
-            <button className="btn btn-ghost no-print" onClick={()=>exportLawsToExcel(activeLaws,catMap)}><I n="download"/>ส่งออก Excel</button>
-          )}
-          <button className="btn btn-ghost no-print" onClick={exportPDF}><I n="download"/>ส่งออก PDF</button>
           <button className="bell no-print" onClick={()=>setView('notifications')}>
             <I n="bell"/>การแจ้งเตือน{bellNotifications.length>0&&<span className="dot">{bellNotifications.length}</span>}
           </button>
-          <button className="btn btn-ghost no-print" title={dark?'โหมดสว่าง':'โหมดมืด'} onClick={()=>setDark(d=>!d)}><I n={dark?'sun':'moon'}/></button>
-          <button className="btn btn-ghost no-print" onClick={async()=>{ await signOut(); setSession(null) }}><I n="logout"/>ออกจากระบบ</button>
-          <div className="topbar-av no-print" title={settings.user_name||'ผู้ใช้งาน'}>{(settings.user_name||'จ').trim().charAt(0)}</div>
+          <div className="tb-menu no-print">
+            <button className="topbar-av" onClick={()=>setAvatarOpen(o=>!o)} title="เมนูผู้ใช้">{(session?.name||'ผู้').trim().charAt(0)}</button>
+            {avatarOpen && (<>
+              <div className="menu-scrim" onClick={()=>setAvatarOpen(false)}/>
+              <div className="menu">
+                <div className="menu-user"><div className="mu-name">{session?.name||'ผู้ใช้งาน'}</div><div className="mu-role">{ROLE_LABELS[role]||role}</div></div>
+                <button className="menu-item" onClick={()=>{ setDark(d=>!d); setAvatarOpen(false) }}><I n={dark?'sun':'moon'}/>{dark?'โหมดสว่าง':'โหมดมืด'}</button>
+                <button className="menu-item" onClick={async()=>{ setAvatarOpen(false); await authSignOut(); setSession(null) }}><I n="logout"/>ออกจากระบบ</button>
+              </div>
+            </>)}
+          </div>
         </header>
 
         <div className="content">
           {err && <div className="banner">{err}</div>}
+          <div className="page-head no-print">
+            <div><h2>{title[0]}</h2><p>{title[1]}</p></div>
+            <div className="page-actions">
+              {(view==='register'||view==='dashboard') && (
+                <div className="tb-menu">
+                  <button className="btn btn-ghost" onClick={()=>setExportOpen(o=>!o)}><I n="download"/>ส่งออก ▾</button>
+                  {exportOpen && (<>
+                    <div className="menu-scrim" onClick={()=>setExportOpen(false)}/>
+                    <div className="menu">
+                      <button className="menu-item" onClick={()=>{ exportLawsToExcel(activeLaws,catMap); setExportOpen(false) }}><I n="download"/>ส่งออก Excel</button>
+                      <button className="menu-item" onClick={()=>{ setShowPdf(true); setExportOpen(false) }}><I n="download"/>ส่งออก PDF (F-259)</button>
+                    </div>
+                  </>)}
+                </div>
+              )}
+            </div>
+          </div>
           {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} processItems={allProcess} onGoProcess={()=>setView('process')} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}/>}
           {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}/>}
@@ -449,14 +487,15 @@ export default function App(){
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
           {view==='reports'       && <Reports       reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
-          {view==='car'           && <CarOfi        cars={cars} onReload={loadCars} suggest={suggest}/>}
           {view==='process'       && <ProcessTracker items={allProcess} onReload={loadProcess} updates={updates} onGoView={setView}/>}
-          {view==='tracker'       && <LawTracker    rows={trackerRows} subs={trackerSubs} laws={activeLaws} cars={cars} suggest={suggest} onReload={loadTracker}/>}
+          {view==='tracker'       && <LawTracker    rows={trackerRows} subs={trackerSubs} laws={activeLaws} suggest={suggest} onReload={loadTracker}/>}
           {view==='analysis'      && <Analysis      laws={inForceLaws} cats={cats} catMap={catMap} allLaws={laws} onAnalyzed={reloadSkills} goView={setView} onCreateFull={handleCreateFull} suggest={suggest}/>}
           {view==='staging'       && <Staging       batches={stagingBatches} catMap={catMap} onAdd={handleAddStaged} onDrop={handleDropStaged}/>}
           {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={setView}/>}
-          {view==='settings'      && <SettingsPage settings={settings} onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }}/>}
+          {view==='settings'      && (can(role,'delete')
+            ? <SettingsPage settings={settings} onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }}/>
+            : <div className="view"><div className="panel" style={{padding:'50px 20px',textAlign:'center',color:'var(--ink-faint)'}}>เฉพาะผู้ดูแลระบบ (admin) เท่านั้นที่เข้าถึงหน้าตั้งค่าได้ — {NO_PERM}</div></div>)}
         </div>
       </div>
 
@@ -465,10 +504,12 @@ export default function App(){
           onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive}
           prog={prog} thDate={thDate}/>
       )}
+      {showPdf && <ExportPdfModal cats={cats} onClose={()=>setShowPdf(false)} onExport={handleExportPdf}/>}
       <div id="print-report"/>
       <Toaster/>
       <ConfirmHost/>
     </div>
+    </AuthContext.Provider>
   )
 }
 
@@ -798,25 +839,34 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
   return <div className="view">
     <StageBar items={processItems} onGo={onGoProcess}/>
 
-    <div className="grid stats" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
-      {cards.map((c,i)=>(<div className={'stat hero '+c.cls} key={i}>
-        <div className="lab">{c.lab}</div>
-        <div className="val num">{c.val} <small>{c.unit}</small></div>
-        <div className="delta">{c.delta}</div>
-      </div>))}
+    <div className="dash-hero" style={{marginTop:16}}>
+      <div className="hero-ring">
+        <div className="dash-sec-h">อัตราความสอดคล้อง</div>
+        <div className="ring-wrap"><Ring pct={stats.pct} met={stats.met} nc={stats.nc}/></div>
+        <div className="hero-legend">
+          <span><i style={{background:'var(--ok)'}}/>สอดคล้อง <b>{stats.met}</b></span>
+          <span><i style={{background:'var(--bad)'}}/>ยังไม่สอดคล้อง <b>{stats.nc}</b></span>
+        </div>
+      </div>
+      <div className="hero-kpis">
+        {cards.map((c,i)=>(<div className={'stat '+c.cls} key={i}>
+          <div className="lab">{c.lab}</div>
+          <div className="val num">{c.val} <small>{c.unit}</small></div>
+          <div className="delta">{c.delta}</div>
+        </div>))}
+      </div>
     </div>
 
-    <QuarterlyAddRepealChart quarterStats={quarterStats} cats={cats} catMap={catMap}/>
+    <div style={{marginTop:36}}>
+      <div className="dash-sec-h">ภาพรวมรายไตรมาส</div>
+      <QuarterlyAddRepealChart quarterStats={quarterStats} cats={cats} catMap={catMap}/>
+    </div>
 
-    <div className="cols">
-      <div className="panel"><div className="panel-h"><h3>อัตราความสอดคล้อง</h3><span className="sub" style={{marginLeft:'auto'}}>{winLabel}</span></div>
-        <div className="panel-b"><div className="ring-wrap"><Ring pct={stats.pct} met={stats.met} nc={stats.nc}/>
-          <div className="legend">
-            <div className="row"><span className="dot" style={{background:'var(--ok)'}}/>ข้อกำหนดสอดคล้อง (C)<b className="num">{stats.met}</b></div>
-            <div className="row"><span className="dot" style={{background:'var(--bad)'}}/>ยังไม่สอดคล้อง (NC)<b className="num">{stats.nc}</b></div>
-          </div></div></div></div>
-      <div className="panel"><div className="panel-h"><h3>ความสอดคล้องตามหมวดกฎหมาย</h3></div>
-        <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div></div>
+    <div style={{marginTop:36}}>
+      <div className="dash-sec-h">ความสอดคล้องตามหมวดกฎหมาย</div>
+      <div className="panel">
+        <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div>
+      </div>
     </div>
 
     {latestCases.length>0 && (
@@ -884,6 +934,7 @@ function nextCode(allLaws, catCode) {
 }
 
 function AddLawModal({ cats, allLaws, onSave, onClose }) {
+  const { can } = useAuth()
   const [catCode, setCatCode] = useState(cats[0]?.code || '')
   const [level, setLevel] = useState('1')
   const [name, setName] = useState('')
@@ -948,7 +999,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
       </div>
       <div className="modal-foot">
         <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
-        <button className="btn btn-primary" disabled={!valid||saving} onClick={save}>
+        <button className="btn btn-primary" disabled={!valid||saving||!can('edit')} title={can('edit')?'':NO_PERM} onClick={save}>
           {saving ? 'กำลังบันทึก…' : `บันทึก ${previewCode}`}
         </button>
       </div>
@@ -958,6 +1009,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
 function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months,monthYear,setMonthYear,onToggleMonth}){
+  const { can }=useAuth()
   const [cat,setCat]=usePersist('cr_reg_cat','all')
   const [act,setAct]=usePersist('cr_reg_act','all')
   const [showAdd,setShowAdd]=useState(false)
@@ -983,18 +1035,29 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
       <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({laws.filter(l=>l.active!==false).length})</span>
       <span className={'chip'+(act==='inactive'?' active':'')} onClick={()=>setAct('inactive')}>ไม่ใช้แล้ว ({laws.filter(l=>l.active===false).length})</span>
     </div>
+    <div className="cat-cards">
+      <button type="button" className={'cat-card'+(cat==='all'?' active':'')} onClick={()=>setCat('all')}>
+        <div className="cc-top"><span className="cc-dot" style={{background:'var(--ink-faint)'}}/><span className="cc-code">ทั้งหมด</span></div>
+        <span className="cc-count">{laws.length} ฉบับ</span>
+      </button>
+      {catsList.map(c=>(
+        <button type="button" key={c} className={'cat-card'+(cat===c?' active':'')} onClick={()=>setCat(c)}>
+          <div className="cc-top"><span className="cc-dot" style={{background:catMap[c]?.color||'var(--ink-faint)'}}/><span className="cc-code">{c}</span></div>
+          <span className="cc-name">{catMap[c]?.name}</span>
+          <span className="cc-count">{laws.filter(l=>l.cat===c).length} ฉบับ</span>
+        </button>
+      ))}
+    </div>
     <div className="filterbar">
-      <span className={'chip'+(cat==='all'?' active':'')} onClick={()=>setCat('all')}>ทุกหมวด ({laws.length})</span>
-      {catsList.map(c=>(<span key={c} className={'chip'+(cat===c?' active':'')} onClick={()=>setCat(c)} style={cat===c?{borderColor:catMap[c]?.color,color:catMap[c]?.color}:{}}>{c} · {catMap[c]?.name} ({laws.filter(l=>l.cat===c).length})</span>))}
       <span className="right" style={{marginLeft:'auto'}}>พบ {rows.length} ฉบับ</span>
       <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>ส่งออกที่กรอง</button>
-      <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} onClick={()=>setShowAdd(true)}><I n="plus"/>เพิ่มกฎหมาย</button>
+      <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>setShowAdd(true)}><I n="plus"/>เพิ่มกฎหมาย</button>
     </div>
     {sel.size>0 && (
       <div className="bulkbar">
         <b>เลือก {sel.size} ฉบับ</b>
-        <button className="btn btn-ghost" onClick={()=>bulk(true)}>ทำเครื่องหมายสอดคล้องทั้งหมด</button>
-        <button className="btn btn-ghost" onClick={()=>bulk(false)}>ทำเครื่องหมายยังไม่สอดคล้อง</button>
+        <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>bulk(true)}>ทำเครื่องหมายสอดคล้องทั้งหมด</button>
+        <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>bulk(false)}>ทำเครื่องหมายยังไม่สอดคล้อง</button>
         <button className="btn btn-ghost" onClick={exportSel}>ส่งออกที่เลือก</button>
         <button className="btn btn-ghost" style={{marginLeft:'auto'}} onClick={clearSel}>ล้างที่เลือก</button>
       </div>
@@ -1076,6 +1139,7 @@ function MonthlyCheckPanel({ months, year, setYear, onToggle }) {
 }
 
 function ComplianceLawRow({l,onToggle,onOpen}){
+  const { can }=useAuth()
   const [open,setOpen]=useState(false)
   const met=l.reqs.filter(r=>r.status==='met').length
   return (
@@ -1093,8 +1157,8 @@ function ComplianceLawRow({l,onToggle,onOpen}){
           {l.reqs.length===0 && <div style={{fontSize:12,color:'var(--ink-faint)',padding:'4px 0'}}>ไม่มีข้อกำหนด</div>}
           {l.reqs.map(r=>(
             <div key={r.id} style={{display:'flex',gap:9,padding:'6px 0',alignItems:'flex-start'}}>
-              <button onClick={()=>onToggle(l,r)} title="สลับ สอดคล้อง/ยังไม่สอดคล้อง"
-                style={{flexShrink:0,width:22,height:22,borderRadius:5,border:'none',cursor:'pointer',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',
+              <button onClick={()=>onToggle(l,r)} disabled={!can('edit')} title={can('edit')?'สลับ สอดคล้อง/ยังไม่สอดคล้อง':NO_PERM}
+                style={{flexShrink:0,width:22,height:22,borderRadius:5,border:'none',cursor:can('edit')?'pointer':'not-allowed',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',
                   background:r.status==='met'?'var(--ok)':'var(--grayfill)',color:r.status==='met'?'#fff':'var(--ink-faint)'}}>{r.status==='met'?'C':'·'}</button>
               <span style={{fontSize:12.5,flex:1,lineHeight:1.5,color:r.status==='met'?'var(--ink-soft)':'var(--ink)'}}>{r.text}</span>
             </div>
@@ -1260,6 +1324,8 @@ function MarkSentModal({comm,onSave,onClose}){
         <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:16}}>{comm.topic}</p>
         <label className="form-label">อ้างอิงไฟล์ / เอกสารที่ส่ง (ไม่บังคับ)</label>
         <input className="form-input" type="text" placeholder="เช่น ISD-86_2569Q1.pdf หรือ URL…" value={fileRef} onChange={e=>setFileRef(e.target.value)}/>
+        <div className="sec-t" style={{marginTop:16}}>ไฟล์แนบ</div>
+        <Attachments refType="comm" refId={comm.id}/>
       </div>
       <div className="modal-foot">
         <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
@@ -1268,6 +1334,7 @@ function MarkSentModal({comm,onSave,onClose}){
     </div></>)
 }
 function Communication({comms,onMarkSent,onScheduleUpdate}){
+  const { can }=useAuth()
   const [scope,setScope]=useState('internal')
   const [filter,setFilter]=useState('all')
   const [schedModal,setSchedModal]=useState(null)
@@ -1315,8 +1382,8 @@ function Communication({comms,onMarkSent,onScheduleUpdate}){
           </td>
           <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{c.assigned_to||'—'}</td>
           <td><div style={{display:'flex',gap:4}}>
-            <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11}} onClick={()=>setSchedModal(c)} title="ตั้งค่าตาราง">ตาราง</button>
-            <button className="btn btn-primary" style={{padding:'3px 8px',fontSize:11}} onClick={()=>setSentModal(c)} title="บันทึกการส่ง">บันทึก</button>
+            <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11}} disabled={!can('edit')} onClick={()=>setSchedModal(c)} title={can('edit')?'ตั้งค่าตาราง':NO_PERM}>ตาราง</button>
+            <button className="btn btn-primary" style={{padding:'3px 8px',fontSize:11}} disabled={!can('edit')} onClick={()=>setSentModal(c)} title={can('edit')?'บันทึกการส่ง':NO_PERM}>บันทึก</button>
           </div></td>
         </tr>
       ))}
@@ -1355,6 +1422,7 @@ function ReqEditor({reqs,setReqs,suggest}){
 }
 
 function AnalyzePanel({cats,allLaws,onCreateFull,suggest,goView,onAnalyzed}){
+  const { can }=useAuth()
   const [src,setSrc]=useState('')
   const [busy,setBusy]=useState(false)
   const [err,setErr]=useState('')
@@ -1410,7 +1478,7 @@ function AnalyzePanel({cats,allLaws,onCreateFull,suggest,goView,onAnalyzed}){
         <p style={{fontSize:12.5,color:'var(--ink-faint)',marginBottom:10,lineHeight:1.6}}>วาง URL ราชกิจจาฯ / กฤษฎีกา / ShawPat หรือวางตัวบทกฎหมาย → ระบบสรุปเป็นข้อย่อย แล้ว “เลือกเพิ่มทีละข้อ” เข้าหมวดที่ต้องการได้เลย</p>
         <textarea className="form-input" rows={4} placeholder="วาง URL หรือตัวบทกฎหมายที่นี่…" value={src} onChange={e=>setSrc(e.target.value)} style={{marginTop:0}}/>
         <div style={{display:'flex',gap:8,alignItems:'center',marginTop:12}}>
-          <button className="btn btn-primary" disabled={busy||!src.trim()} onClick={analyze}>{busy?'กำลังวิเคราะห์…':'วิเคราะห์'}</button>
+          <button className="btn btn-primary" disabled={busy||!src.trim()||!can('edit')} title={can('edit')?'':NO_PERM} onClick={analyze}>{busy?'กำลังวิเคราะห์…':'วิเคราะห์'}</button>
           <button className="btn btn-ghost" onClick={()=>goView&&goView('staging')}>ดูหน้านำเข้า / รออนุมัติ →</button>
         </div>
         {err && <div className="login-err" style={{marginTop:12}}>{err}</div>}
@@ -1452,7 +1520,7 @@ function AnalyzePanel({cats,allLaws,onCreateFull,suggest,goView,onAnalyzed}){
               </div>
             ))}
             <datalist id="dl-resp">{(suggest?.responsibles||[]).map(x=><option key={x} value={x}/>)}</datalist>
-            <button className="btn btn-primary" style={{marginTop:8}} disabled={busy} onClick={addSelected}>
+            <button className="btn btn-primary" style={{marginTop:8}} disabled={busy||!can('edit')} title={can('edit')?'':NO_PERM} onClick={addSelected}>
               เพิ่มข้อที่เลือก ({res.reqs.filter(r=>r._add).length}) เข้าหมวด {cat}
             </button>
           </div>
@@ -1463,6 +1531,7 @@ function AnalyzePanel({cats,allLaws,onCreateFull,suggest,goView,onAnalyzed}){
 }
 
 function ManualAddPanel({cats,allLaws,onCreateFull,suggest}){
+  const { can }=useAuth()
   const [cat,setCat]=useState(cats[0]?.code||'')
   const [name,setName]=useState('')
   const [ministry,setMinistry]=useState('')
@@ -1540,7 +1609,7 @@ function ManualAddPanel({cats,allLaws,onCreateFull,suggest}){
         {msg?.ok && <div className="login-msg" style={{marginTop:12}}>{msg.ok}</div>}
         {msg?.err && <div className="login-err" style={{marginTop:12}}>{msg.err}</div>}
         <div style={{marginTop:14}}>
-          <button className="btn btn-primary" disabled={!valid||busy} onClick={save}>{busy?'กำลังบันทึก…':`บันทึกเข้าหมวด ${cat||''}`}</button>
+          <button className="btn btn-primary" disabled={!valid||busy||!can('edit')} title={can('edit')?'':NO_PERM} onClick={save}>{busy?'กำลังบันทึก…':`บันทึกเข้าหมวด ${cat||''}`}</button>
         </div>
       </div>
     </div>
@@ -1558,6 +1627,7 @@ function Analysis({laws,cats,catMap,allLaws,onAnalyzed,goView,onCreateFull,sugge
 
 /* ─────────────────── STAGING (นำเข้า / รออนุมัติ) ─────────────────── */
 function Staging({batches,catMap,onAdd,onDrop}){
+  const { can }=useAuth()
   if(batches.length===0) return (
     <div className="view">
       <div className="panel" style={{padding:'60px 20px',textAlign:'center'}}>
@@ -1598,8 +1668,8 @@ function Staging({batches,catMap,onAdd,onDrop}){
             </div>
           ))}
           <div style={{display:'flex',gap:8,marginTop:14,alignItems:'center'}}>
-            <button className="btn btn-primary" onClick={()=>onAdd(code,rows)}>เพิ่มเข้าทะเบียน</button>
-            <button className="btn btn-ghost" onClick={()=>onDrop(rows)}>ไม่เพิ่ม</button>
+            <button className="btn btn-primary" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onAdd(code,rows)}>เพิ่มเข้าทะเบียน</button>
+            <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onDrop(rows)}>ไม่เพิ่ม</button>
             {f.source_url && <a className="btn btn-ghost" href={f.source_url} target="_blank" rel="noreferrer">ดูแหล่งที่มา</a>}
           </div>
         </div>
@@ -1610,6 +1680,7 @@ function Staging({batches,catMap,onAdd,onDrop}){
 
 /* ─────────────────── UPDATES (Skill: update-watch) ──────────────── */
 function Updates({updates,onMark,onScanned}){
+  const { can }=useAuth()
   const live=updates.filter(u=>u.status!=='dismissed')
   const [busy,setBusy]=useState(false)
   const [msg,setMsg]=useState(null)
@@ -1644,8 +1715,8 @@ function Updates({updates,onMark,onScanned}){
           ① เฝ้าราชกิจจาฯ/ShawPat/DLPW → คัดกฎหมาย SHE ใหม่เข้า “คิว” · ② อ่านคิว → สรุปเป็นข้อกำหนด ส่งไปหน้า “นำเข้า/รออนุมัติ”
         </p>
         <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-          <button className="btn btn-ghost" disabled={!!abusy} onClick={()=>runAgent('gazette')}>{abusy==='gazette'?'กำลังรัน…':'① รันเฝ้าราชกิจจาฯ'}</button>
-          <button className="btn btn-ghost" disabled={!!abusy} onClick={()=>runAgent('analyze')}>{abusy==='analyze'?'กำลังรัน…':'② รันวิเคราะห์คิว'}</button>
+          <button className="btn btn-ghost" disabled={!!abusy||!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>runAgent('gazette')}>{abusy==='gazette'?'กำลังรัน…':'① รันเฝ้าราชกิจจาฯ'}</button>
+          <button className="btn btn-ghost" disabled={!!abusy||!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>runAgent('analyze')}>{abusy==='analyze'?'กำลังรัน…':'② รันวิเคราะห์คิว'}</button>
         </div>
         {msg?.ok && <div className="login-msg" style={{marginTop:10}}>{msg.ok}</div>}
         {msg?.err && <div className="login-err" style={{marginTop:10}}>{msg.err}</div>}
@@ -1654,7 +1725,7 @@ function Updates({updates,onMark,onScanned}){
     <div className="panel" style={{marginBottom:14}}>
       <div className="panel-h">
         <h3>เฝ้าระวังกฎหมายใหม่จาก ShawPat</h3>
-        <button className="btn btn-primary" style={{marginLeft:'auto'}} disabled={busy} onClick={scan}>{busy?'กำลังตรวจ…':'ตรวจหากฎหมายใหม่'}</button>
+        <button className="btn btn-primary" style={{marginLeft:'auto'}} disabled={busy||!can('edit')} title={can('edit')?'':NO_PERM} onClick={scan}>{busy?'กำลังตรวจ…':'ตรวจหากฎหมายใหม่'}</button>
       </div>
       <div className="panel-b" style={{paddingTop:0}}>
         <p style={{fontSize:12.5,color:'var(--ink-faint)',lineHeight:1.6}}>Skill: update-watch — ดึงหน้า shawpat.or.th/th/safety-law เทียบกับทะเบียน แล้วเพิ่มของใหม่เป็นการแจ้งเตือน</p>
@@ -1673,9 +1744,9 @@ function Updates({updates,onMark,onScanned}){
           {u.published_date && <div style={{fontSize:12,color:'var(--ink-faint)',marginTop:3}}>ประกาศ {u.published_date}</div>}
           {u.summary && <div style={{fontSize:12.5,color:'var(--ink-soft)',marginTop:6,lineHeight:1.6}}>{u.summary}</div>}
           <div style={{display:'flex',gap:8,marginTop:12,alignItems:'center',flexWrap:'wrap'}}>
-            {u.status==='new' && <button className="btn btn-ghost" onClick={()=>onMark(u.id,'read')}>อ่านแล้ว</button>}
-            <button className="btn btn-primary" onClick={()=>onMark(u.id,'imported')}>ทำเครื่องหมายว่าเพิ่มแล้ว</button>
-            <button className="btn btn-ghost" onClick={()=>onMark(u.id,'dismissed')}>ไม่เกี่ยวข้อง</button>
+            {u.status==='new' && <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onMark(u.id,'read')}>อ่านแล้ว</button>}
+            <button className="btn btn-primary" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onMark(u.id,'imported')}>ทำเครื่องหมายว่าเพิ่มแล้ว</button>
+            <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onMark(u.id,'dismissed')}>ไม่เกี่ยวข้อง</button>
             {u.ref_url && <a className="btn btn-ghost" href={u.ref_url} target="_blank" rel="noreferrer">เปิดหน้ากฎหมาย</a>}
           </div>
         </div>
@@ -1836,6 +1907,46 @@ function Improvements({ laws, catMap, onOpen }) {
         )
       })}
     </div>
+  )
+}
+
+/* ─────────────────────────── EXPORT PDF (F-259) ─────────────────────────── */
+function ExportPdfModal({ cats, onClose, onExport }){
+  const [mode,setMode]=useState('all')   // all | cats | nc
+  const [sel,setSel]=useState(()=>new Set(cats.map(c=>c.code)))
+  const toggle=code=>setSel(p=>{ const n=new Set(p); n.has(code)?n.delete(code):n.add(code); return n })
+  const OPTS=[['all','ทั้งหมด'],['cats','เฉพาะหมวดที่เลือก'],['nc','เฉพาะรายการที่ยังไม่สอดคล้อง (NC)']]
+  return (
+    <><div className="scrim" style={{zIndex:400}} onClick={onClose}/>
+    <div className="modal" style={{zIndex:401,width:460}}>
+      <div className="modal-head"><h3>ส่งออก PDF — ทะเบียนกฎหมาย (F-259)</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
+      <div className="modal-body">
+        <label className="form-label">ขอบเขตรายงาน</label>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {OPTS.map(([k,l])=>(
+            <label key={k} style={{display:'flex',gap:8,alignItems:'center',cursor:'pointer',fontSize:13.5}}>
+              <input type="radio" name="pdfmode" checked={mode===k} onChange={()=>setMode(k)}/>{l}
+            </label>
+          ))}
+        </div>
+        {mode==='cats' && (
+          <div style={{marginTop:14}}>
+            <label className="form-label">เลือกหมวด ({sel.size})</label>
+            <div className="filterbar" style={{marginTop:4}}>
+              {cats.map(c=>(
+                <span key={c.code} className={'chip'+(sel.has(c.code)?' active':'')} style={{cursor:'pointer'}} onClick={()=>toggle(c.code)}>
+                  {c.code} · {c.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="modal-foot">
+        <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
+        <button className="btn btn-primary" disabled={mode==='cats'&&sel.size===0} onClick={()=>onExport(mode,sel)}><I n="download"/>ส่งออก PDF</button>
+      </div>
+    </div></>
   )
 }
 

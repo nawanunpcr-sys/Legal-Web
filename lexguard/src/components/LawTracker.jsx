@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { TRACKER_STAGES, TRACKER_STATUS, createTrackerCase, updateTrackerStage, deleteTrackerCase } from '../lib/supabase.js'
+import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
 import { I } from './icons.jsx'
@@ -44,7 +45,8 @@ export function CaseStepper({ c, subLabel, onClickStage }) {
   )
 }
 
-export default function LawTracker({ rows, subs, laws, cars = [], suggest, onReload }) {
+export default function LawTracker({ rows, subs, laws, suggest, onReload }) {
+  const { can } = useAuth()
   const [stageModal, setStageModal] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
   const lawById = useMemo(() => Object.fromEntries(laws.map(l => [l.id, l])), [laws])
@@ -80,7 +82,7 @@ export default function LawTracker({ rows, subs, laws, cars = [], suggest, onRel
       <div className="filterbar">
         <span className="live-dot" title="อัปเดตสดผ่าน Supabase Realtime">อัปเดตสด</span>
         <span className="right" style={{ marginRight: 'auto', color: 'var(--ink-faint)' }}>ติดตามกฎหมายผ่าน 3 ขั้น: ค้นหา/วิเคราะห์ → หน่วยงานดำเนินการ → ทวนสอบ</span>
-        <button className="btn btn-primary" onClick={() => setAddOpen(true)}><I n="plus"/>เพิ่มรายการติดตาม</button>
+        <button className="btn btn-primary" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={() => setAddOpen(true)}><I n="plus"/>เพิ่มรายการติดตาม</button>
       </div>
 
       {cases.length === 0 && <div className="panel" style={{ padding: '50px 20px', textAlign: 'center', color: 'var(--ink-faint)' }}>ยังไม่มีรายการติดตาม — กด “เพิ่มรายการติดตาม” เพื่อเริ่มติดตามกฎหมาย</div>}
@@ -92,7 +94,7 @@ export default function LawTracker({ rows, subs, laws, cars = [], suggest, onRel
             <div className="panel-h">
               <span className="law-code">{law?.code || '—'}</span>
               <span style={{ fontWeight: 600, fontSize: 14 }}>{(law?.name || 'รายการติดตาม').slice(0, 90)}</span>
-              <button className="btn btn-ghost" style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 12 }} onClick={() => delCase(c)}>ลบ</button>
+              <button className="btn btn-ghost" style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: 12 }} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={() => delCase(c)}>ลบ</button>
             </div>
             <div className="panel-b">
               <CaseStepper c={c} subLabel={subLabel} onClickStage={st => setStageModal(st)} />
@@ -108,6 +110,7 @@ export default function LawTracker({ rows, subs, laws, cars = [], suggest, onRel
 }
 
 function StageModal({ st, subs, suggest, onClose, onSaved }) {
+  const { can } = useAuth()
   const [f, setF] = useState(st)
   const [busy, setBusy] = useState(false)
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -151,13 +154,14 @@ function StageModal({ st, subs, suggest, onClose, onSaved }) {
         </div>
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
-          <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+          <button className="btn btn-primary" disabled={busy||!can('edit')} title={can('edit')?'':NO_PERM} onClick={save}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
         </div>
       </div></>
   )
 }
 
 function AddCaseModal({ laws, tracked, onClose, onSaved }) {
+  const { can } = useAuth()
   const options = laws.filter(l => l.status !== 'repealed' && !tracked.has(l.id))
   const [lawId, setLawId] = useState(options[0]?.id || '')
   const [busy, setBusy] = useState(false)
@@ -180,7 +184,7 @@ function AddCaseModal({ laws, tracked, onClose, onSaved }) {
         </div>
         <div className="modal-foot">
           <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
-          <button className="btn btn-primary" disabled={busy || !lawId} onClick={save}>{busy ? 'กำลังเพิ่ม…' : 'เพิ่มและเริ่มติดตาม'}</button>
+          <button className="btn btn-primary" disabled={busy || !lawId || !can('edit')} title={can('edit')?'':NO_PERM} onClick={save}>{busy ? 'กำลังเพิ่ม…' : 'เพิ่มและเริ่มติดตาม'}</button>
         </div>
       </div></>
   )
