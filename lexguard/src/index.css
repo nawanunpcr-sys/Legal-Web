@@ -40,6 +40,10 @@
   --gold:      #B58A3C;
   --gold-light: #F7F1E4;
 
+  /* Chart bars — steel-blue (added) / gold (repealed) */
+  --chart-add:   #3A6A97;  --chart-add-2: #5A93C0;
+  --chart-rep:   #9C7530;  --chart-rep-2: #C7A05A;
+
   /* Aliases used by component rules */
   --faint: #A9AEB6;
   --red:   #B4553F;
@@ -505,8 +509,8 @@ button.topbar-av:hover { box-shadow: 0 0 0 3px var(--brand-tint) }
 }
 .hero-ring .dash-sec-h { color: rgba(255,255,255,.55) }
 .hero-ring .ring-wrap { flex: 1; justify-content: center; margin: 6px 0 }
-.hero-ring .ring { width: 168px; height: 168px }
-.hero-ring .ring .pct { font-size: 44px; font-weight: 300; color: #fff !important }
+.hero-ring .ring { width: 156px; height: 156px }
+.hero-ring .ring .pct { font-size: 42px; font-weight: 300; color: #fff !important }
 .hero-ring .ring .pl { color: rgba(255,255,255,.6) }
 .hero-ring .ring svg circle:nth-of-type(1) { stroke: rgba(255,255,255,.14) }
 .hero-legend { display: flex; justify-content: center; gap: 20px; font-size: 12px; color: rgba(255,255,255,.8) }
@@ -517,7 +521,7 @@ button.topbar-av:hover { box-shadow: 0 0 0 3px var(--brand-tint) }
 .hero-kpis .stat { margin: 0 }
 @media (max-width: 1024px) {
   .dash-hero { grid-template-columns: 1fr }
-  .hero-ring .ring-wrap { min-height: 220px }
+  .hero-ring .ring-wrap { min-height: 200px }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -708,8 +712,8 @@ button.topbar-av:hover { box-shadow: 0 0 0 3px var(--brand-tint) }
 .mchart-col { display: flex; flex-direction: column; align-items: center; height: 100%; gap: 6px }
 .mchart-bars { flex: 1; display: flex; align-items: flex-end; gap: 4px; width: 100% }
 .mchart-bar { flex: 1; border-radius: 5px 5px 0 0; min-height: 3px; transition: height .6s var(--ease-out) }
-.mchart-bar-add { background: linear-gradient(180deg, #46d6a6 0%, #1f9d78 100%) }
-.mchart-bar-rep { background: linear-gradient(180deg, #ff9a8f 0%, #d6564c 100%) }
+.mchart-bar-add { background: linear-gradient(180deg, var(--chart-add-2) 0%, var(--chart-add) 100%) }
+.mchart-bar-rep { background: linear-gradient(180deg, var(--chart-rep-2) 0%, var(--chart-rep) 100%) }
 .mchart-lab { font-size: 10.5px; color: var(--ink-faint); font-weight: 500 }
 
 /* ─── Filter bar ─────────────────────────────────────────────── */

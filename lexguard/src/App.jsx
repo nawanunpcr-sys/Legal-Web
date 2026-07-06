@@ -690,24 +690,39 @@ function ReportDeadlinesPanel({reports=[],onGoReports}){
     .map(r=>({...r,d:daysTo(r.next_due_date)}))
     .filter(r=>r.d<0||r.d<=(r.notify_days_before||30))
     .sort((a,b)=>a.d-b.d)
-    .slice(0,8)
   ,[reports])
+  const overdue = upcoming.filter(r=>r.d<0).length
+  const soon = upcoming.length - overdue
+  const shown = upcoming.slice(0,6)
+  const accent = overdue>0 ? 'var(--bad)' : soon>0 ? 'var(--review)' : 'var(--ok)'
   return (
-    <div className="panel" style={{marginTop:16}}>
-      <div className="panel-h"><h3>รายงานราชการที่ใกล้ครบกำหนด</h3>
-        <span className="sub" style={{marginLeft:'auto',cursor:'pointer',color:'var(--brand)'}} onClick={onGoReports}>ดูทั้งหมด →</span></div>
+    <div className="panel" style={{marginTop:16, borderTop:'3px solid '+accent}}>
+      <div className="panel-h">
+        <h3>รายงานที่ต้องส่งให้ราชการ</h3>
+        <div style={{display:'flex',gap:6,alignItems:'center',marginLeft:'auto'}}>
+          {overdue>0 && <span className="pill p-bad">เกินกำหนด {overdue}</span>}
+          {soon>0 && <span className="pill" style={{background:'var(--review-bg)',color:'var(--review)'}}>ใกล้ครบ {soon}</span>}
+          <span className="sub" style={{cursor:'pointer',color:'var(--brand)'}} onClick={onGoReports}>ดูทั้งหมด →</span>
+        </div>
+      </div>
       <div className="panel-b">
-        {upcoming.length===0 && <div style={{textAlign:'center',color:'var(--ink-faint)',padding:24,fontSize:13}}>ไม่มีรายงานที่ใกล้ครบกำหนดในช่วงนี้ ✓</div>}
-        {upcoming.map(r=>(
-          <div key={r.id} className="tl-row" onClick={onGoReports} style={{padding:'8px 6px'}}>
+        {upcoming.length===0 && <div style={{textAlign:'center',color:'var(--ink-faint)',padding:24,fontSize:13}}>ไม่มีรายงานที่ต้องส่งในช่วงนี้ ✓</div>}
+        {shown.map(r=>(
+          <div key={r.id} className="tl-row" onClick={onGoReports} style={{padding:'9px 6px'}}>
             <span className="tl-tag" style={{background:r.d<0?'var(--bad)':r.d<=7?'var(--warn)':'var(--review)'}}>
-              {r.d<0?'เกิน '+Math.abs(r.d)+' วัน':r.d===0?'วันนี้':'อีก '+r.d+' วัน'}
+              {r.d<0?'เกิน '+Math.abs(r.d)+' วัน':r.d===0?'วันนี้!':'อีก '+r.d+' วัน'}
             </span>
             {r.law_code && <span className="law-code" style={{minWidth:58}}>{r.law_code}</span>}
-            <span style={{flex:1,fontSize:13}}>{r.title.slice(0,70)}{r.title.length>70?'…':''}</span>
-            <span className="sub">{thDate(r.next_due_date)}</span>
+            <span style={{flex:1,fontSize:13}}>{r.title.slice(0,60)}{r.title.length>60?'…':''}</span>
+            {r.responsible && <span className="tag" title="ผู้รับผิดชอบส่ง">{r.responsible}</span>}
+            <span className="sub" style={{whiteSpace:'nowrap'}}>{r.authority?r.authority.slice(0,20)+' · ':''}{thDate(r.next_due_date)}</span>
           </div>
         ))}
+        {upcoming.length>shown.length && (
+          <div style={{textAlign:'center',marginTop:8}}>
+            <span className="sub" style={{cursor:'pointer',color:'var(--brand)'}} onClick={onGoReports}>+ อีก {upcoming.length-shown.length} รายการ</span>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -752,8 +767,8 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
       </div>
       <div className="panel-b">
         <div style={{display:'flex',gap:18,marginBottom:16,fontSize:12.5}}>
-          <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--ok)',display:'inline-block'}}/>เพิ่ม <b className="num">{totalAdded}</b> ฉบับ</span>
-          <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--bad)',display:'inline-block'}}/>ยกเลิก <b className="num">{totalRepealed}</b> ฉบับ</span>
+          <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--chart-add)',display:'inline-block'}}/>เพิ่ม <b className="num">{totalAdded}</b> ฉบับ</span>
+          <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--chart-rep)',display:'inline-block'}}/>ยกเลิก <b className="num">{totalRepealed}</b> ฉบับ</span>
           <span style={{color:'var(--ink-faint)',marginLeft:'auto'}}>ข้อมูลจากทะเบียน F-259 (Excel) — รายไตรมาส</span>
         </div>
         <div className="mchart" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
@@ -839,6 +854,8 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
   return <div className="view">
     <StageBar items={processItems} onGo={onGoProcess}/>
 
+    <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports}/>
+
     <div className="dash-hero" style={{marginTop:16}}>
       <div className="hero-ring">
         <div className="dash-sec-h">อัตราความสอดคล้อง</div>
@@ -904,8 +921,6 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
           )})}
       </div>
     </div>
-
-    <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports}/>
 
     <Timeline laws={laws} catMap={catMap} onOpen={onOpen} curBE={curBE} fromBE={tlFromBE}/>
 
