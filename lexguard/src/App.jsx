@@ -22,6 +22,7 @@ import LawTracker, { CaseStepper, groupCases, effStatus } from './components/Law
 import { I } from './components/icons.jsx'
 import Login from './components/Login.jsx'
 import Attachments from './components/Attachments.jsx'
+import NotifyPopup, { isOverdueItem } from './components/NotifyPopup.jsx'
 import Toaster from './components/Toaster.jsx'
 import ConfirmHost from './components/ConfirmHost.jsx'
 import { toast } from './lib/toast.js'
@@ -121,6 +122,7 @@ export default function App(){
   const [trackerRows,setTrackerRows] = useState([])
   const [trackerSubs,setTrackerSubs] = useState({})
   const [reports,setReports] = useState([])
+  const [showNotify,setShowNotify] = useState(false)
 
   // auth gate — reads through auth.js (demo: localStorage lg_session · supabase: real session)
   useEffect(()=>{
@@ -233,6 +235,18 @@ export default function App(){
     newUpdates.slice(0,15).forEach(u=>out.push({type:'law_update',goView:'updates',text:'กฎหมายใหม่: '+u.title.slice(0,55),sub:'จาก ShawPat'+(u.published_date?' · '+u.published_date:'')}))
     return out.sort((a,b)=>(a.type==='bad'?-1:0)-(b.type==='bad'?-1:0))
   },[activeLaws,comms,notifs,newUpdates,reports])
+
+  useEffect(()=>{
+    if(!authed || loading || bellNotifications.length===0) return
+    const hasOverdue = bellNotifications.some(isOverdueItem)
+    const today = new Date().toISOString().slice(0,10)
+    let lastSeen=null
+    try{ lastSeen = localStorage.getItem('lex_notify_last_seen') }catch{}
+    if(hasOverdue || lastSeen!==today){
+      setShowNotify(true)
+      try{ localStorage.setItem('lex_notify_last_seen', today) }catch{}
+    }
+  },[authed, loading, bellNotifications])
 
   async function toggleReq(law, req){
     const next = req.status==='met' ? 'unmet' : 'met'
@@ -505,6 +519,10 @@ export default function App(){
           prog={prog} thDate={thDate}/>
       )}
       {showPdf && <ExportPdfModal cats={cats} onClose={()=>setShowPdf(false)} onExport={handleExportPdf}/>}
+      {showNotify && (
+        <NotifyPopup notifs={bellNotifications} onClose={()=>setShowNotify(false)}
+          onOpenLaw={setOpenLaw} onGoToView={setView}/>
+      )}
       <div id="print-report"/>
       <Toaster/>
       <ConfirmHost/>

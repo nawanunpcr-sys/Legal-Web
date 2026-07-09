@@ -10,6 +10,7 @@ export default function Login({ onAuthed }) {
   const [busy, setBusy] = useState(false)
   const [oauthBusy, setOauthBusy] = useState('')
   const [err, setErr] = useState('')
+  const [logoOk, setLogoOk] = useState(true)
   const isDemo = AUTH_MODE === 'demo'
 
   async function submit(e) {
@@ -39,10 +40,13 @@ export default function Login({ onAuthed }) {
 
       <div className="login-wrap">
         <div className="login-hero">
-          <div className="login-mark">SHE</div>
+          {logoOk
+            ? <img src="/jastel-logo.png" alt="JasTel Network" className="login-logo" onError={() => setLogoOk(false)} />
+            : <div className="login-mark">SHE</div>}
           <h1 className="login-title">ทะเบียนกฎหมาย SHE</h1>
           <p className="login-tagline">Safety · Health · Environment</p>
           <p className="login-sub">ระบบบริหารทะเบียนกฎหมายและการประเมินความสอดคล้อง</p>
+          <p className="login-company">บริษัท จัสเทล เน็ทเวิร์ค จำกัด · Jastel Network Co., Ltd.</p>
         </div>
 
         <div className="login-card">

@@ -10,11 +10,15 @@
 
 /* ── Design tokens ─────────────────────────────────────────────── */
 :root {
-  /* Ground — clean white luxury */
-  --paper:     #FAFAFA;
+  /* Ground — soft airy gray, white cards float on top */
+  --paper:     #F0F2F4;
   --surface:   #FFFFFF;
   --surface-2: #F1F2F4;
   --surface-3: #E7E8EB;
+
+  /* Frosted chip/tag surface (soft-modern mood) */
+  --frost-bg:     rgba(255,255,255,.7);
+  --frost-border: rgba(255,255,255,.6);
 
   /* Ink — navy-charcoal */
   --ink:       #1C2431;
@@ -75,10 +79,13 @@
   --shadow-sm: 0 1px 2px rgba(28,36,49,.05), 0 4px 16px rgba(28,36,49,.04);
   --shadow-md: 0 2px 8px rgba(28,36,49,.05), 0 12px 32px rgba(28,36,49,.07);
   --shadow-lg: 0 24px 64px rgba(28,36,49,.16);
+  --shadow-soft: 0 8px 30px rgba(20,24,33,.06);
 
   /* Radii */
   --radius:    16px;
   --radius-sm: 10px;
+  --radius-card: 22px;
+  --radius-pill: 999px;
   --r:    16px;
   --r-sm: 10px;
   --r-lg: 20px;
@@ -94,6 +101,11 @@
 
 /* ── Reset ──────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+/* ── Standard interactive transition baseline (overridable by later, more specific rules) ── */
+button, a, input, select, textarea, .chip, .tag, .pill, .nav-item, .cat-card, .demo-card, .doc-card, .month-cell {
+  transition: all .18s ease;
+}
 
 /* ── Scrollbar — thin, warm ─────────────────────────────────────── */
 * { scrollbar-width: thin; scrollbar-color: var(--surface-3) transparent }
@@ -220,10 +232,12 @@ h1, h2, h3, .brand h1, .vt, .panel-h h3, .stat .val, .dr-head h2, .modal-head h3
 .nav-item .label { flex: 1; text-align: left }
 .nav-item:hover { background: var(--sb-hover); color: #fff }
 .nav-item.active {
-  background: rgba(255,255,255,.10);
+  background: rgba(255,255,255,.14);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   color: #fff;
   font-weight: 500;
-  border-radius: 10px;
+  border-radius: var(--r-pill);
 }
 .nav-item .badge {
   font-size: 11px;
@@ -440,10 +454,10 @@ h1, h2, h3, .brand h1, .vt, .panel-h h3, .stat .val, .dr-head h2, .modal-head h3
 .btn-ghost {
   background: var(--surface);
   color: var(--ink);
-  border: 1px solid var(--line);
-  box-shadow: none;
+  border: none;
+  box-shadow: var(--shadow-soft);
 }
-.btn-ghost:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-tint) }
+.btn-ghost:hover { color: var(--brand); background: var(--brand-tint); box-shadow: var(--shadow-md) }
 
 .btn-danger { background: var(--bad); color: #fff }
 .btn-danger:hover:not(:disabled) { background: #9E4936 }
@@ -571,9 +585,9 @@ button.topbar-av:hover { box-shadow: 0 0 0 3px var(--brand-tint) }
   background: var(--surface);
   border: none;
   border-top: 3px solid transparent;
-  border-radius: var(--radius);
+  border-radius: var(--radius-card);
   padding: 26px 24px 22px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-soft);
   transition: box-shadow .22s var(--ease-out), transform .22s var(--ease-out);
 }
 .stat:hover {
@@ -642,8 +656,8 @@ button.topbar-av:hover { box-shadow: 0 0 0 3px var(--brand-tint) }
 .panel {
   background: var(--surface);
   border: none;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-soft);
 }
 
 /* Selected / highlighted card */
@@ -652,15 +666,15 @@ button.topbar-av:hover { box-shadow: 0 0 0 3px var(--brand-tint) }
   border-color: transparent;
 }
 .panel-h {
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--line);
+  padding: 20px 28px;
+  border-bottom: none;
   display: flex;
   align-items: center;
   gap: 12px;
 }
 .panel-h h3 { font-family: var(--sans); font-size: 14px; font-weight: 500; letter-spacing: -.01em; color: var(--ink) }
 .panel-h .sub { font-size: 10.5px; color: var(--ink-faint) }
-.panel-b { padding: 24px 26px }
+.panel-b { padding: 22px 30px 30px }
 
 /* layout */
 .cols { display: grid; grid-template-columns: 1.45fr 1fr; gap: 12px; margin-top: 12px; align-items: start }
@@ -730,13 +744,15 @@ button.topbar-av:hover { box-shadow: 0 0 0 3px var(--brand-tint) }
 .chip {
   padding: 6px 14px;
   border-radius: var(--r-pill);
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: 1px solid var(--frost-border);
+  background: var(--frost-bg);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   font-size: 12.5px;
   cursor: pointer;
   font-weight: 500;
   color: var(--ink-soft);
-  box-shadow: 0 1px 2px rgba(0,0,0,.03);
+  box-shadow: var(--shadow-soft);
   transition: border-color .15s, color .15s, background .15s;
 }
 .chip:hover { border-color: var(--brand); color: var(--brand) }
@@ -763,8 +779,10 @@ tbody td {
   font-size: 12.5px;
   vertical-align: middle;
 }
-tbody tr { cursor: pointer; transition: background .1s var(--ease-out) }
+tbody tr { cursor: pointer; transition: background .15s ease }
 tbody tr:hover { background: var(--surface-2) }
+tbody tr:hover td:first-child { border-top-left-radius: 10px; border-bottom-left-radius: 10px }
+tbody tr:hover td:last-child { border-top-right-radius: 10px; border-bottom-right-radius: 10px }
 tbody tr:last-child td { border-bottom: none }
 .law-code {
   font-family: var(--mono, ui-monospace, 'SF Mono', Menlo, monospace);
@@ -802,8 +820,10 @@ tbody tr:last-child td { border-bottom: none }
   font-size: 11px;
   padding: 3px 10px;
   border-radius: var(--r-pill, 980px);
-  background: var(--surface-3);
-  border: none;
+  background: var(--frost-bg);
+  border: 1px solid var(--frost-border);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   color: var(--ink-soft);
   font-weight: 500;
   white-space: nowrap;
@@ -1115,6 +1135,47 @@ tbody tr:last-child td { border-bottom: none }
 .modal-body { padding: 20px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px }
 .modal-foot { padding: 14px 24px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end }
 
+/* ─── Notification popup ────────────────────────────────────── */
+.notify-popup-scrim { z-index: 500; }
+.notify-popup {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 501;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  width: 480px;
+  max-width: 95vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  animation: notifyPopIn .2s var(--ease-out);
+}
+@keyframes notifyPopIn { from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)) } to { opacity: 1; transform: translate(-50%, -50%) } }
+.notify-popup .np-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; margin-left: 8px;
+  border-radius: 10px; background: var(--bad); color: #fff;
+  font-size: 11px; font-weight: 700; vertical-align: middle;
+}
+.np-body { padding: 10px 16px 16px; gap: 8px }
+.np-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: background .12s;
+}
+.np-row:hover { background: var(--surface-3, var(--surface-2)); }
+.np-ic { flex: none; width: 18px; height: 18px; margin-top: 1px }
+.np-ic svg { width: 18px; height: 18px }
+.np-text { min-width: 0 }
+.np-main { font-size: 13px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.np-sub { margin-top: 2px; font-size: 11.5px; color: var(--ink-faint) }
+
 /* ─── Forms ──────────────────────────────────────────────────── */
 .form-label { font-size: 11.5px; font-weight: 600; color: var(--ink-soft); margin-top: 8px }
 .form-input {
@@ -1280,9 +1341,9 @@ select.form-input { cursor: pointer }
   position: relative; min-height: 100vh;
   display: grid; place-items: center; overflow: hidden;
   background:
-    radial-gradient(680px 460px at 82% 6%, rgba(28,36,49,.05), transparent 60%),
-    radial-gradient(560px 420px at 12% 96%, rgba(28,36,49,.03), transparent 60%),
-    #FAFAFA;
+    radial-gradient(720px 480px at 85% 8%, rgba(59,91,255,.09), transparent 60%),
+    radial-gradient(600px 460px at 10% 94%, rgba(28,36,49,.05), transparent 60%),
+    linear-gradient(160deg, #F4F6F9 0%, #E9EDF3 55%, #EEF1F5 100%);
   padding: 40px 20px;
 }
 .login-bg {
@@ -1313,6 +1374,15 @@ select.form-input { cursor: pointer }
   font-size: 15px; font-weight: 500; letter-spacing: .5px;
   box-shadow: var(--shadow-md);
 }
+.login-logo {
+  display: block;
+  height: 60px; width: auto;
+  margin: 0 auto 20px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 12px 20px;
+  box-shadow: var(--shadow-md);
+}
 .login-title {
   font-family: var(--sans);
   font-size: 40px; font-weight: 300; letter-spacing: -1px; line-height: 1.05;
@@ -1323,13 +1393,14 @@ select.form-input { cursor: pointer }
   text-transform: uppercase; color: var(--gold);
 }
 .login-sub { margin-top: 6px; font-size: 13.5px; color: var(--ink-soft) }
+.login-company { margin-top: 8px; font-size: 12px; color: var(--ink-faint); letter-spacing: .3px }
 
 .login-card {
   width: 100%;
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  box-shadow: 0 30px 70px rgba(28,36,49,.12), 0 2px 8px rgba(28,36,49,.05);
+  border: none;
+  border-radius: 24px;
+  box-shadow: 0 30px 70px rgba(28,36,49,.10), var(--shadow-soft);
   padding: 30px 30px 24px;
   text-align: center;
 }
@@ -1352,7 +1423,15 @@ select.form-input { cursor: pointer }
   font-size: 15px; font-weight: 500; font-family: var(--sans);
   padding: 14px; border-radius: 999px; cursor: pointer;
   box-shadow: var(--shadow);
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
   transition: transform .12s var(--ease-out), box-shadow .18s, background .18s;
+}
+.login-btn::after {
+  content: '→';
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; flex-shrink: 0;
+  border-radius: 50%; background: rgba(255,255,255,.18);
+  font-size: 12px; line-height: 1;
 }
 .login-btn:hover:not(:disabled) { background: var(--brand-mid); transform: translateY(-1px); box-shadow: var(--shadow-md) }
 .login-btn:active { transform: scale(.99) }
@@ -1582,6 +1661,7 @@ tbody tr.row-sel { background: var(--brand-tint) }
   --sb-bg:#15181E; --sb-text:#C9CDD4; --sb-dim:#868C97; --sb-active:#EDEAE4;
   --sb-hover:rgba(237,234,228,.07); --sb-border:rgba(255,255,255,.08);
   --grayfill:#2E3540;
+  --frost-bg: rgba(255,255,255,.07); --frost-border: rgba(255,255,255,.12);
 }
 [data-theme="dark"] .topbar { background: var(--surface) }
 [data-theme="dark"] thead th { background: var(--surface-2) }
