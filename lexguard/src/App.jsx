@@ -550,7 +550,7 @@ export default function App(){
             </div>
           </div>
           <div className="view-swap" key={view}>
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} processItems={allProcess} rawProcessItems={processItems} onGoProcess={()=>setView('process')} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} onGoView={setView} processItems={allProcess} rawProcessItems={processItems} onGoProcess={()=>setView('process')} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}
             monthRow={curMonthRows.find(m=>m.year===new Date().getFullYear()&&m.month===new Date().getMonth()+1)}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
           {view==='registry'      && <RegistryCompliance
@@ -628,12 +628,14 @@ function Ring({pct,met=0,nc=0}){
 }
 function CatBars({laws,cats}){
   const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
-  return cats.filter(c=>byCat[c.code]).map(c=>{
-    let r=0,m=0; byCat[c.code].forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++}))
-    const p=r?Math.round(m/r*100):100
-    return <div className="catbar" key={c.code}><div className="top"><span className="nm">{c.code} · {c.name}</span><b className="num" style={{color:c.color}}>{p}%</b></div>
-      <div className="track"><div className="fill" style={{width:p+'%',background:`linear-gradient(90deg, ${c.color} 0%, color-mix(in srgb, ${c.color} 88%, #fff) 100%)`}}/></div></div>
-  })
+  return <div className="catbars-grid">
+    {cats.filter(c=>byCat[c.code]).map(c=>{
+      let r=0,m=0; byCat[c.code].forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++}))
+      const p=r?Math.round(m/r*100):100
+      return <div className="catbar" key={c.code}><div className="top"><span className="nm">{c.code} · {c.name}</span><b className="num" style={{color:c.color}}>{p}%</b></div>
+        <div className="track"><div className="fill" style={{width:p+'%',background:`linear-gradient(90deg, ${c.color} 0%, color-mix(in srgb, ${c.color} 88%, #fff) 100%)`}}/></div></div>
+    })}
+  </div>
 }
 
 const beYearFromDate = d => { if(!d) return null; const x=new Date(d); return isNaN(x)?null:x.getFullYear()+543 }
@@ -760,7 +762,7 @@ function ActivityTimeline({activity,onOpenLaw,lawById}){
   )
 }
 
-function ReportDeadlinesPanel({reports=[],onGoReports}){
+function ReportDeadlinesPanel({reports=[],onGoReports,danger=false}){
   const upcoming = useMemo(()=>reports
     .filter(r=>r.next_due_date)
     .map(r=>({...r,d:daysTo(r.next_due_date)}))
@@ -772,9 +774,9 @@ function ReportDeadlinesPanel({reports=[],onGoReports}){
   const shown = upcoming.slice(0,6)
   const accent = overdue>0 ? 'var(--bad)' : soon>0 ? 'var(--review)' : 'var(--ok)'
   return (
-    <div className="panel" style={{marginTop:16, borderTop:'3px solid '+accent}}>
+    <div className={'panel'+(danger?' report-alert':'')} style={{marginTop:16, borderTop:'3px solid '+(danger?'var(--bad)':accent)}}>
       <div className="panel-h">
-        <h3>รายงานที่ต้องส่งให้ราชการ</h3>
+        <h3>{danger && <span className="report-alert-dot">⚠</span>}รายงานที่ต้องส่งให้ราชการ</h3>
         <div style={{display:'flex',gap:6,alignItems:'center',marginLeft:'auto'}}>
           {overdue>0 && <span className="pill p-bad">เกินกำหนด {overdue}</span>}
           {soon>0 && <span className="pill" style={{background:'var(--review-bg)',color:'var(--review)'}}>ใกล้ครบ {soon}</span>}
@@ -895,7 +897,9 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
   )
 }
 
-function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,monthRow,onMarkNoNewLaws,onMarkHasNewLaws}){
+function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,onGoView,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,monthRow,onMarkNoNewLaws,onMarkHasNewLaws}){
+  // navigate to the merged registry view in a specific mode (register / compliance)
+  const goRegistry = mode => { try{ localStorage.setItem('cr_registry_mode', JSON.stringify(mode)) }catch{} ; onGoView&&onGoView('registry') }
   const trk = useMemo(()=>{
     let overdue=0
     trackerRows.forEach(r=>{ if(effStatus(r)==='overdue')overdue++ })
@@ -919,10 +923,10 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
   const newUpdates=updates.filter(u=>u.status==='new')
   const winLabel = 'ทั้งหมด'
   const cards=[
-    {cls:'s-total', lab:'กฎหมายทั้งหมด',   val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด'},
-    {cls:'s-bad',   lab:'ยังไม่สอดคล้อง',   val:stats.nc, unit:'ข้อ', delta:'จาก '+stats.req+' ข้อกำหนด'},
-    {cls:'s-bad',   lab:'เกินกำหนด',       val:trk.overdue, unit:'ขั้น', delta:'ต้องเร่งจัดการ'},
-    {cls:'s-ok',    lab:'สอดคล้อง',        val:stats.pct.toFixed(1)+'%', unit:'', delta:stats.met+' / '+stats.req+' ข้อ'},
+    {cls:'s-total', lab:'กฎหมายทั้งหมด',   val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด · ดูทะเบียน →', go:()=>goRegistry('register')},
+    {cls:'s-bad',   lab:'ยังไม่สอดคล้อง',   val:stats.nc, unit:'ข้อ', delta:'จาก '+stats.req+' ข้อกำหนด →', go:()=>goRegistry('compliance')},
+    {cls:'s-bad',   lab:'เกินกำหนด',       val:trk.overdue, unit:'ขั้น', delta:'ต้องเร่งจัดการ →', go:onGoTracker},
+    {cls:'s-ok',    lab:'สอดคล้อง',        val:stats.pct.toFixed(1)+'%', unit:'', delta:stats.met+' / '+stats.req+' ข้อ →', go:()=>goRegistry('compliance')},
   ]
   const recent = activity.slice(0,4)
   const relTime = s => { const sec=Math.floor((Date.now()-new Date(s))/1000); if(sec<60)return'เมื่อสักครู่'; const mi=Math.floor(sec/60); if(mi<60)return mi+' นาทีก่อน'; const h=Math.floor(mi/60); if(h<24)return h+' ชม.ก่อน'; const d=Math.floor(h/24); return d+' วันก่อน' }
@@ -946,8 +950,6 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
       monthLabel={TH_MONTHS[new Date().getMonth()]}
       onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
 
-    <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports}/>
-
     <div className="dash-hero" style={{marginTop:16}}>
       <div className="hero-ring">
         <div className="dash-sec-h">อัตราความสอดคล้อง</div>
@@ -958,13 +960,18 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
         </div>
       </div>
       <div className="hero-kpis">
-        {cards.map((c,i)=>(<div className={'stat '+c.cls} key={i}>
+        {cards.map((c,i)=>(<div className={'stat '+c.cls+(c.go?' stat-link':'')} key={i}
+          role={c.go?'button':undefined} tabIndex={c.go?0:undefined}
+          onClick={c.go||undefined}
+          onKeyDown={c.go?(e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); c.go() } }):undefined}>
           <div className="lab">{c.lab}</div>
           <div className="val num">{c.val} <small>{c.unit}</small></div>
           <div className="delta">{c.delta}</div>
         </div>))}
       </div>
     </div>
+
+    <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports} danger/>
 
     <div style={{marginTop:36}}>
       <div className="dash-sec-h">ภาพรวมรายไตรมาส</div>

@@ -21,33 +21,28 @@ export function StageBar({ items, onGo, monthRow, hasActiveWork, monthLabel, onM
 
   const reviewed = !!(monthRow && (monthRow.status || monthRow.checked))
 
-  if (!reviewed) {
-    return (
-      <div className="panel month-action-panel" style={{ marginBottom: 16 }}>
-        <div className="panel-b month-action-bar">
-          <span className="month-action-lab">⏳ รอการตรวจสอบประจำเดือน{monthLabel}</span>
-          <div className="month-action-btns">
-            <button className="btn btn-ghost" onClick={onMarkHasNewLaws}>🔍 พบกฎหมายใหม่ — เริ่มกระบวนการ</button>
-            <button className="btn btn-primary" onClick={onMarkNoNewLaws}>✓ ตรวจแล้ว ไม่มีกฎหมายใหม่เดือนนี้</button>
-          </div>
+  const monthPanel = !reviewed ? (
+    <div className="panel month-action-panel" style={{ marginBottom: 16 }}>
+      <div className="panel-b month-action-bar">
+        <span className="month-action-lab"><span className="month-dot month-dot--wait" />รอการตรวจสอบประจำเดือน{monthLabel}</span>
+        <div className="month-action-btns">
+          <button className="btn btn-ghost" onClick={onMarkHasNewLaws}>พบกฎหมายใหม่ — เริ่มกระบวนการ</button>
+          <button className="btn btn-primary" onClick={onMarkNoNewLaws}>ตรวจแล้ว ไม่มีกฎหมายใหม่เดือนนี้</button>
         </div>
       </div>
-    )
-  }
-
-  if (monthRow.status === 'no_new_laws') {
-    return (
-      <div className="panel month-action-panel" style={{ marginBottom: 16 }}>
-        <div className="panel-b month-action-bar month-action-bar--ok">
-          <span className="month-action-badge month-action-badge--ok">✓ เดือนนี้ตรวจแล้ว ไม่มีกฎหมายใหม่</span>
-        </div>
+    </div>
+  ) : monthRow.status === 'no_new_laws' ? (
+    <div className="panel month-action-panel" style={{ marginBottom: 16 }}>
+      <div className="panel-b month-action-bar month-action-bar--ok">
+        <span className="month-action-badge month-action-badge--ok"><span className="month-dot month-dot--ok" />เดือนนี้ตรวจแล้ว ไม่มีกฎหมายใหม่</span>
       </div>
-    )
-  }
+    </div>
+  ) : null
 
-  return (
+  // Process tracker — always shown on the dashboard so the workflow is visible at a glance
+  const trackPanel = (
     <div className="panel" style={{ marginBottom: 16 }}>
-      <div className="panel-h"><h3>ติดตามกระบวนการ</h3>
+      <div className="panel-h"><h3>ติดตามกระบวนการ (Process Tracker)</h3>
         {onGo && <span className="sub" style={{ marginLeft: 'auto', color: 'var(--brand)', cursor: 'pointer' }} onClick={onGo}>เปิดกระดาน →</span>}</div>
       <div className="panel-b">
         <div className="ptrack">
@@ -70,6 +65,8 @@ export function StageBar({ items, onGo, monthRow, hasActiveWork, monthLabel, onM
       </div>
     </div>
   )
+
+  return (<>{monthPanel}{trackPanel}</>)
 }
 
 export default function ProcessTracker({ items, onReload, updates = [], onGoView }) {
