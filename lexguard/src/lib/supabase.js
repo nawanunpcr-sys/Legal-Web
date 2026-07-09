@@ -486,6 +486,16 @@ export async function deleteProcessItem(id) {
   const { error } = await supabase.from('lg_process_items').delete().eq('id', id)
   if (error) throw error
 }
+// Realtime: subscribe to live changes on lg_process_items so the tracker moves
+// across open tabs/devices without a manual refresh. Returns an unsubscribe fn.
+export function subscribeProcessItems(onChange) {
+  if (!hasSupabase) return () => {}
+  const ch = supabase
+    .channel('rt-process-items')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'lg_process_items' }, onChange)
+    .subscribe()
+  return () => { try { supabase.removeChannel(ch) } catch { /* noop */ } }
+}
 
 // ---- Process Tracker (3-stage per-law workflow) ----
 export const TRACKER_STAGES = [
@@ -643,5 +653,15 @@ export async function toggleMonthCheck(year, month, checked) {
   const { error } = await supabase
     .from('lg_compliance_months')
     .upsert({ year, month, checked, checked_at: checkedAt }, { onConflict: 'year,month' })
+  if (error) throw error
+}
+
+// Record the outcome of the monthly new-law scan: 'no_new_laws' or 'has_new_laws'.
+// Always marks the month as checked — the status carries the detail.
+export async function setMonthReviewStatus(year, month, status, checkedBy) {
+  const checkedAt = new Date().toISOString()
+  const { error } = await supabase
+    .from('lg_compliance_months')
+    .upsert({ year, month, checked: true, checked_at: checkedAt, status, checked_by: checkedBy }, { onConflict: 'year,month' })
   if (error) throw error
 }

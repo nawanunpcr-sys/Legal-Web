@@ -1,20 +1,50 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PROCESS_STAGES, createProcessItem, updateProcessItem, deleteProcessItem } from '../lib/supabase.js'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
 import { I } from './icons.jsx'
+import EmptyState from './EmptyState.jsx'
 
 const STAGE = Object.fromEntries(PROCESS_STAGES.map(s => [s.key, s]))
 const nextKey = k => { const i = PROCESS_STAGES.findIndex(s => s.key === k); return PROCESS_STAGES[Math.min(i + 1, PROCESS_STAGES.length - 1)].key }
 
-// shipment-style tracker (used on the dashboard)
-export function StageBar({ items, onGo }) {
+// shipment-style tracker (used on the dashboard) — leads with the *current
+// month's* new-law-scan status, and only falls back to the 5-stage tracker
+// once that scan has turned up new laws still being worked through.
+export function StageBar({ items, onGo, monthRow, hasActiveWork, monthLabel, onMarkNoNewLaws, onMarkHasNewLaws }) {
   const counts = useMemo(() => {
     const c = Object.fromEntries(PROCESS_STAGES.map(s => [s.key, 0]))
     items.forEach(i => { if (c[i.stage] != null) c[i.stage]++ })
     return c
   }, [items])
   const activeIdx = PROCESS_STAGES.reduce((acc, s, i) => (s.key !== 'done' && counts[s.key] > 0 ? i : acc), 0)
+
+  const reviewed = !!(monthRow && (monthRow.status || monthRow.checked))
+
+  if (!reviewed) {
+    return (
+      <div className="panel month-action-panel" style={{ marginBottom: 16 }}>
+        <div className="panel-b month-action-bar">
+          <span className="month-action-lab">⏳ รอการตรวจสอบประจำเดือน{monthLabel}</span>
+          <div className="month-action-btns">
+            <button className="btn btn-ghost" onClick={onMarkHasNewLaws}>🔍 พบกฎหมายใหม่ — เริ่มกระบวนการ</button>
+            <button className="btn btn-primary" onClick={onMarkNoNewLaws}>✓ ตรวจแล้ว ไม่มีกฎหมายใหม่เดือนนี้</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (monthRow.status === 'no_new_laws') {
+    return (
+      <div className="panel month-action-panel" style={{ marginBottom: 16 }}>
+        <div className="panel-b month-action-bar month-action-bar--ok">
+          <span className="month-action-badge month-action-badge--ok">✓ เดือนนี้ตรวจแล้ว ไม่มีกฎหมายใหม่</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
       <div className="panel-h"><h3>ติดตามกระบวนการ</h3>
@@ -24,8 +54,9 @@ export function StageBar({ items, onGo }) {
           {PROCESS_STAGES.map((s, i) => {
             const active = counts[s.key] > 0
             const on = active || i < activeIdx
+            const isNow = i === activeIdx && hasActiveWork
             return (
-              <div key={s.key} className={'track-step' + (on ? ' on' : '') + (i === activeIdx ? ' now' : '')} onClick={onGo}>
+              <div key={s.key} className={'track-step' + (on ? ' on' : '') + (isNow ? ' now' : '')} onClick={onGo}>
                 {i > 0 && <div className="track-line" style={on ? { background: 'var(--brand)' } : null} />}
                 <div className="track-node" style={on ? { background: 'var(--brand)', borderColor: 'var(--brand)', color: '#fff' } : null}>
                   {s.key === 'done' ? '✓' : counts[s.key]}
@@ -43,16 +74,23 @@ export function StageBar({ items, onGo }) {
 
 export default function ProcessTracker({ items, onReload, updates = [], onGoView }) {
   const [modal, setModal] = useState(null)
+  // optimistic stage overrides: { [itemId]: stageKey } applied on top of `items`
+  // so a card jumps columns instantly; cleared when fresh `items` arrive.
+  const [override, setOverride] = useState({})
+  useEffect(() => { setOverride({}) }, [items])
+
   const byStage = useMemo(() => {
     const g = Object.fromEntries(PROCESS_STAGES.map(s => [s.key, []]))
-    items.forEach(i => { (g[i.stage] || (g[i.stage] = [])).push(i) })
+    items.forEach(i => { const stage = override[i.id] || i.stage; (g[stage] || (g[stage] = [])).push({ ...i, stage }) })
     return g
-  }, [items])
+  }, [items, override])
 
-  async function advance(it) {
-    try { await updateProcessItem(it.id, { stage: nextKey(it.stage) }); onReload() } catch (e) { toast('อัปเดตไม่สำเร็จ: ' + e.message) }
+  async function moveTo(it, stage) {
+    setOverride(o => ({ ...o, [it.id]: stage }))   // optimistic
+    try { await updateProcessItem(it.id, { stage }); onReload() }
+    catch (e) { setOverride(o => { const n = { ...o }; delete n[it.id]; return n }); toast('อัปเดตไม่สำเร็จ: ' + e.message, 'error') }
   }
-  async function setStage(it, stage) { try { await updateProcessItem(it.id, { stage }); onReload() } catch (e) { toast(e.message) } }
+  const advance = it => moveTo(it, nextKey(it.stage))
   async function remove(it) { if (!(await confirmDialog('ลบรายการนี้จากกระบวนการ?', { danger: true }))) return; try { await deleteProcessItem(it.id); onReload() } catch (e) { toast(e.message) } }
 
   async function pullFromUpdates() {
@@ -72,6 +110,11 @@ export default function ProcessTracker({ items, onReload, updates = [], onGoView
         <button className="btn btn-primary" onClick={() => setModal({ stage: 'discovery' })}><I n="plus"/>เพิ่มรายการ</button>
       </div>
 
+      {items.length === 0 ? (
+        <div className="panel"><EmptyState icon="inbox" title="ยังไม่มีงานในกระบวนการ"
+          hint="เพิ่มรายการใหม่ หรือดึงกฎหมายใหม่ที่พบเข้าสู่กระบวนการเพื่อเริ่มติดตาม"
+          action="เพิ่มรายการแรก" onAction={() => setModal({ stage: 'discovery' })} /></div>
+      ) : (
       <div className="kanban">
         {PROCESS_STAGES.map(s => (
           <div className="kcol" key={s.key}>
@@ -99,11 +142,12 @@ export default function ProcessTracker({ items, onReload, updates = [], onGoView
                   )}
                 </div>
               ))}
-              {(byStage[s.key] || []).length === 0 && <div className="kempty">—</div>}
+              {(byStage[s.key] || []).length === 0 && <div className="kempty">ไม่มีงานในขั้นนี้</div>}
             </div>
           </div>
         ))}
       </div>
+      )}
 
       {modal && <ItemModal item={modal} onClose={() => setModal(null)} onSaved={() => { setModal(null); onReload() }} />}
     </div>

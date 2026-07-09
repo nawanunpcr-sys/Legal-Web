@@ -37,7 +37,17 @@
       "Bash(sips -c 400 700 -o shots/modal-crop.png shots/dashboard3.png --cropOffset 850 400)",
       "Bash('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless=new --disable-gpu --no-sandbox --window-size=1440,2400 --user-data-dir=/private/tmp/claude-501/-Users-nawanunlakornrach-Desktop-Web/fba5ccda-036d-4d35-9f99-d4ef3d1361c2/scratchpad/chrome-profile --virtual-time-budget=8000 --screenshot=/private/tmp/claude-501/-Users-nawanunlakornrach-Desktop-Web/fba5ccda-036d-4d35-9f99-d4ef3d1361c2/scratchpad/shots/dashboard-clean2.png http://localhost:5173)",
       "Bash(pkill -9 -f \"chrome-profile\")",
-      "Bash(pkill -f \"vite\")"
+      "Bash(pkill -f \"vite\")",
+      "Bash(git push *)",
+      "mcp__claude_ai_Vercel__get_project",
+      "Bash(npx --yes vercel@latest inspect lexguard)",
+      "Bash(npx --yes vercel@latest ls lexguard)",
+      "Bash(npx --yes vercel@latest ls legal-web)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" https://lexguard-delta-swart.vercel.app)",
+      "Bash(curl -s http://localhost:9222/json/list)",
+      "Bash(sips -c 60 400 -o shots/action-bar-crop.png --cropOffset 210 260 shots/register-live.png)",
+      "Bash(sips -c 260 520 -o shots/toast-crop.png --cropOffset 1730 900 shots/polish-toast.png)",
+      "Bash(git add *)"
     ]
   }
 }

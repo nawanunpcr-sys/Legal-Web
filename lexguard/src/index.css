@@ -440,8 +440,23 @@ h1, h2, h3, .brand h1, .vt, .panel-h h3, .stat .val, .dr-head h2, .modal-head h3
   white-space: nowrap;
 }
 .btn svg { width: 15px; height: 15px; stroke-width: 2; flex-shrink: 0 }
-.btn:active { opacity: .85; transform: scale(.98) }
+.btn:active { opacity: .85; transform: scale(.97) }
 .btn:disabled { opacity: .4; cursor: not-allowed }
+
+/* keyboard focus ring (accent) — pointer clicks don't show it, only Tab/keys.
+   Covers all interactive controls, not just .btn. */
+:focus-visible { outline: none }
+.btn:focus-visible, .chip:focus-visible, .nav-item:focus-visible,
+.month-yr-btn:focus-visible, .bell:focus-visible, .navtoggle:focus-visible,
+.menu-item:focus-visible, .topbar-av:focus-visible, .oauth-btn:focus-visible,
+.login-btn:focus-visible, .demo-card:focus-visible, .month-cell:focus-visible,
+a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-tint), 0 0 0 1px var(--accent);
+}
+.form-input:focus-visible, .login-input:focus-visible {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint);
+}
 
 .btn-primary {
   background: var(--brand); color: #F7F5F1;
@@ -573,6 +588,11 @@ button.topbar-av:hover { box-shadow: 0 0 0 3px var(--brand-tint) }
   from { opacity: 0; transform: translateY(6px) }
   to   { opacity: 1; transform: none }
 }
+/* page transition on sidebar view switch — the keyed wrapper remounts, so this
+   fires every switch. The inner .view keeps its own fade suppressed to avoid
+   a double animation. */
+.view-swap { animation: fade .18s var(--ease-out) both }
+.view-swap > .view { animation: none }
 
 /* ═══════════════════════════════════════════════════════════════
    STAT CARDS — SIGNATURE ELEMENT
@@ -779,7 +799,13 @@ tbody td {
   font-size: 12.5px;
   vertical-align: middle;
 }
-tbody tr { cursor: pointer; transition: background .15s ease }
+tbody tr {
+  cursor: pointer; transition: background .15s ease;
+  /* skip rendering off-screen rows — helps the 130+ row register table.
+     intrinsic size reserves height so the scrollbar stays stable. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
 tbody tr:hover { background: var(--surface-2) }
 tbody tr:hover td:first-child { border-top-left-radius: 10px; border-bottom-left-radius: 10px }
 tbody tr:hover td:last-child { border-top-right-radius: 10px; border-bottom-right-radius: 10px }
@@ -1265,6 +1291,24 @@ select.form-input { cursor: pointer }
 }
 .month-yr-btn:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-tint) }
 
+/* ─── Monthly review action bar (live "current month" prompt) ────────── */
+.month-action-panel .panel-b { padding: 0 }
+.month-action-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+  padding: 14px 20px;
+  border-radius: var(--radius-card, 16px);
+  background: var(--warn-bg); border-left: 3px solid var(--warn);
+}
+.month-panel .month-action-bar { margin: 0 20px 16px; width: calc(100% - 40px); border-radius: 12px }
+.month-action-lab { font-size: 13px; font-weight: 600; color: #78350f; flex: 1; min-width: 200px }
+.month-action-btns { display: flex; gap: 8px; flex-wrap: wrap }
+.month-action-badge { font-size: 13px; font-weight: 600 }
+/* state modifiers — override the default amber "pending" look */
+.month-action-bar--ok     { background: var(--ok-bg);     border-left-color: var(--ok) }
+.month-action-bar--active { background: var(--brand-tint); border-left-color: var(--brand) }
+.month-action-badge--ok     { color: var(--ok-ink, var(--ok)) }
+.month-action-badge--active { color: var(--brand) }
+
 .month-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -1570,8 +1614,12 @@ tbody tr.row-sel { background: var(--brand-tint) }
   display: grid; place-items: center; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums;
   transition: transform .18s var(--ease-out), background .3s, border-color .3s;
 }
-.track-step.now .track-node { transform: scale(1.12); box-shadow: 0 4px 14px rgba(0,0,0,.16) }
+.track-step.now .track-node { transform: scale(1.12); box-shadow: 0 4px 14px rgba(0,0,0,.16); animation: track-pulse 1.8s ease-in-out infinite }
 .track-step:hover .track-node { transform: scale(1.06) }
+@keyframes track-pulse {
+  0%,100% { box-shadow: 0 4px 14px rgba(0,0,0,.16), 0 0 0 0 rgba(59,91,255,.35) }
+  50%     { box-shadow: 0 4px 14px rgba(0,0,0,.16), 0 0 0 8px rgba(59,91,255,0) }
+}
 .track-lab { font-size: 12px; font-weight: 600; color: var(--ink); margin-top: 9px; line-height: 1.3 }
 .track-step:not(.on) .track-lab { color: var(--ink-faint); font-weight: 500 }
 .track-role { font-size: 10.5px; color: var(--ink-faint); margin-top: 1px }
@@ -1615,7 +1663,26 @@ tbody tr.row-sel { background: var(--brand-tint) }
 .kcard .ka { font-size: 11px; color: var(--ink-faint); margin-top: 4px }
 .kcard .kn { font-size: 11px; color: var(--ink-soft); margin-top: 3px }
 .kcard .kacts { display: flex; gap: 5px; margin-top: 8px; flex-wrap: wrap }
-.kempty { text-align: center; color: var(--ink-faint); font-size: 12px; padding: 10px }
+.kempty {
+  text-align: center; color: var(--ink-faint); font-size: 11.5px; padding: 18px 8px;
+  border: 1px dashed var(--line); border-radius: 10px; background: transparent;
+}
+
+/* ─── Shared empty state ─────────────────────────────────────── */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 56px 24px; gap: 4px;
+}
+.empty-state--sm { padding: 28px 16px }
+.empty-state-ic {
+  width: 52px; height: 52px; border-radius: 16px;
+  background: var(--surface-2); color: var(--ink-faint);
+  display: grid; place-items: center; margin-bottom: 12px;
+}
+.empty-state-ic svg { width: 24px; height: 24px; stroke-width: 1.8 }
+.empty-state-title { font-size: 15px; font-weight: 600; color: var(--ink) }
+.empty-state-hint { font-size: 13px; color: var(--ink-faint); max-width: 380px; line-height: 1.6 }
+.empty-state-btn { margin-top: 14px }
 @media (max-width: 1100px){ .kanban { grid-template-columns: repeat(2, 1fr) } }
 @media (max-width: 640px){ .kanban { grid-template-columns: 1fr } }
 
@@ -1623,17 +1690,27 @@ tbody tr.row-sel { background: var(--brand-tint) }
 .toaster { position: fixed; bottom: 20px; right: 20px; z-index: 9000; display: flex; flex-direction: column; gap: 8px; pointer-events: none }
 .toast {
   pointer-events: auto;
+  display: flex; align-items: center; gap: 10px;
   min-width: 220px; max-width: 380px;
   background: var(--ink); color: #fff;
-  padding: 11px 16px; border-radius: 10px;
+  padding: 11px 15px; border-radius: 12px;
   font-size: 13px; line-height: 1.45;
   box-shadow: 0 8px 30px rgba(0,0,0,.28);
-  animation: toast-in .25s var(--ease-out);
+  animation: toast-in .28s var(--ease-out) both;
 }
+.toast-ic {
+  flex-shrink: 0;
+  width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; line-height: 1;
+  background: rgba(255,255,255,.22);
+}
+.toast-msg { flex: 1; min-width: 0 }
 .toast-error   { background: var(--bad) }
 .toast-success { background: var(--ok) }
 .toast-info    { background: var(--ink) }
-@keyframes toast-in { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+/* slide in from the right edge + settle */
+@keyframes toast-in { from { opacity: 0; transform: translateX(24px) } to { opacity: 1; transform: none } }
 
 /* ─── Skeleton loading ───────────────────────────────────────── */
 .sk { background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 37%, var(--surface-2) 63%); background-size: 400% 100%; animation: sk 1.3s ease infinite; border-radius: 8px }

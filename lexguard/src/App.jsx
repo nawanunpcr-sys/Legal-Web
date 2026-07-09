@@ -4,11 +4,11 @@ import { supabase, hasSupabase, fetchAll,
          repealLaw, restoreLaw, createLaw, createLawFull, uploadLawDoc,
          markCommSent, updateCommSchedule,
          dismissNotification,
-         fetchComplianceMonths, toggleMonthCheck,
+         fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
          fetchStaging, fetchUpdates, addStagedLaw, dismissStaged, setUpdateStatus,
          logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
-         fetchProcessItems,
+         fetchProcessItems, createProcessItem, subscribeProcessItems,
          fetchTracker, fetchTrackerSubstatuses, subscribeTracker, createTrackerCase,
          fetchSettings, saveSettings, DEFAULT_SETTINGS,
          onAuthChange,
@@ -23,6 +23,7 @@ import { I } from './components/icons.jsx'
 import Login from './components/Login.jsx'
 import Attachments from './components/Attachments.jsx'
 import NotifyPopup, { isOverdueItem } from './components/NotifyPopup.jsx'
+import { DashboardSkeleton } from './components/Skeleton.jsx'
 import Toaster from './components/Toaster.jsx'
 import ConfirmHost from './components/ConfirmHost.jsx'
 import { toast } from './lib/toast.js'
@@ -106,6 +107,7 @@ export default function App(){
   const [loading,setLoading] = useState(true)
   const [err,setErr]       = useState('')
   const [search,setSearch] = useState('')
+  const [searchDebounced,setSearchDebounced] = useState('')  // 250ms-debounced — feeds the heavy Register/Repealed table filters
   const [searchFocus,setSearchFocus] = useState(false)
   const [openLaw,setOpenLaw] = useState(null)
   const [showPdf,setShowPdf] = useState(false)
@@ -123,6 +125,7 @@ export default function App(){
   const [trackerSubs,setTrackerSubs] = useState({})
   const [reports,setReports] = useState([])
   const [showNotify,setShowNotify] = useState(false)
+  const [curMonthRows,setCurMonthRows] = useState([])   // compliance_months rows for the *real* current year — drives the live Dashboard StageBar regardless of whatever year is browsed in the Register monthly panel
 
   // auth gate — reads through auth.js (demo: localStorage lg_session · supabase: real session)
   useEffect(()=>{
@@ -137,6 +140,8 @@ export default function App(){
   const authValue = useMemo(()=>({ session, role, can:(action)=>can(role,action) }),[session,role])
 
   useEffect(()=>{ try{ localStorage.setItem('cr_view',view) }catch{} },[view])
+  // debounce the search term feeding table filters (250ms) so typing stays snappy
+  useEffect(()=>{ const t=setTimeout(()=>setSearchDebounced(search),250); return ()=>clearTimeout(t) },[search])
   useEffect(()=>{ try{ localStorage.setItem('cr_nav',navOpen?'1':'0') }catch{} },[navOpen])
   useEffect(()=>{ document.documentElement.setAttribute('data-theme',dark?'dark':'light'); try{ localStorage.setItem('cr_dark',dark?'1':'0') }catch{} },[dark])
   // auto-collapse sidebar to icon rail on tablet/narrow screens
@@ -149,13 +154,14 @@ export default function App(){
   async function loadProcess(){ try{ setProcessItems(await fetchProcessItems()) }catch(e){ console.warn('process reload',e) } }
   async function loadTracker(){ try{ const [r,s]=await Promise.all([fetchTracker(),fetchTrackerSubstatuses()]); setTrackerRows(r); setTrackerSubs(s) }catch(e){ console.warn('tracker reload',e) } }
   async function loadReports(){ try{ setReports(await fetchReports()) }catch(e){ console.warn('reports reload',e) } }
+  async function loadCurMonth(){ try{ setCurMonthRows(await fetchComplianceMonths(new Date().getFullYear())) }catch(e){ console.warn('cur month reload',e) } }
 
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
       const [d, mData, s, u, a, qs, rp, st, pi] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings(), fetchProcessItems()])
       setCats(d.cats); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setStaging(s); setUpdates(u); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st); setProcessItems(pi)
+      setMonths(mData); setCurMonthRows(mData); setStaging(s); setUpdates(u); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st); setProcessItems(pi)
       loadTracker()
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
@@ -167,6 +173,16 @@ export default function App(){
     let t=null
     const unsub = subscribeTracker(()=>{ clearTimeout(t); t=setTimeout(loadTracker, 250) })
     return ()=>{ clearTimeout(t); unsub() }
+  },[authed])
+
+  // Live process tracker: realtime subscription + a 60s visible-tab poll as a
+  // fallback in case the `lg_process_items` table hasn't been added to the
+  // Supabase realtime publication (see migration notes).
+  useEffect(()=>{ if(!authed || !hasSupabase) return
+    let t=null
+    const unsub = subscribeProcessItems(()=>{ clearTimeout(t); t=setTimeout(loadProcess, 250) })
+    const iv = setInterval(()=>{ if(document.visibilityState==='visible') loadProcess() }, 60000)
+    return ()=>{ clearTimeout(t); clearInterval(iv); unsub() }
   },[authed])
 
   useEffect(()=>{ (async()=>{
@@ -251,6 +267,9 @@ export default function App(){
   async function toggleReq(law, req){
     const next = req.status==='met' ? 'unmet' : 'met'
     const stamp = { status:next, evaluated_by:currentUserName(), evaluated_at:new Date().toISOString() }
+    // snapshot for rollback if the write fails (optimistic UI)
+    const prevLaws = laws
+    const prevOpen = openLaw
     setLaws(prev=>prev.map(l=>{
       if(l.id!==law.id) return l
       const reqs=l.reqs.map(r=>r.id===req.id?{...r,...stamp}:r)
@@ -263,7 +282,7 @@ export default function App(){
       await logActivity({ action:'requirement', law_id:law.id, law_code:law.code, law_name:law.name, detail:(next==='met'?'ปรับเป็นสอดคล้อง: ':'ปรับเป็นยังไม่สอดคล้อง: ')+(req.text||'').slice(0,80) })
       fetchActivity().then(setActivity)
     }
-    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
+    catch(e){ setLaws(prevLaws); setOpenLaw(prevOpen); toast('บันทึกไม่สำเร็จ: '+e.message,'error') }
   }
 
   async function handleRepeal(law, data){
@@ -368,6 +387,33 @@ export default function App(){
     if(hasSupabase){ try{ await toggleMonthCheck(year,month,nowChecked) }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) } }
   }
 
+  // The two "current month" review actions — always act on the real current
+  // year/month (not whatever year is being browsed in the Register panel).
+  async function syncCurrentMonthEverywhere(year){
+    await loadCurMonth()
+    if(monthYear===year){ try{ setMonths(await fetchComplianceMonths(year)) }catch(e){ console.warn('months reload',e) } }
+  }
+  async function handleMonthNoNewLaws(){
+    const now=new Date(), year=now.getFullYear(), month=now.getMonth()+1
+    try{
+      await setMonthReviewStatus(year, month, 'no_new_laws', currentUserName())
+      await syncCurrentMonthEverywhere(year)
+      toast('บันทึกแล้ว: เดือนนี้ไม่มีกฎหมายใหม่','success')
+    }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
+  }
+  async function handleMonthHasNewLaws(){
+    const now=new Date(), year=now.getFullYear(), month=now.getMonth()+1
+    try{
+      await setMonthReviewStatus(year, month, 'has_new_laws', currentUserName())
+      const monthLabel = TH_MONTHS[month-1]+' '+(year+543)
+      const item = await createProcessItem({ title:`ตรวจสอบกฎหมายใหม่ประจำเดือน ${monthLabel}`, ref_type:'monthly_review', stage:'discovery', note:'สร้างอัตโนมัติจากการตรวจสอบรายเดือน' })
+      setProcessItems(prev=>[item, ...prev])
+      await syncCurrentMonthEverywhere(year)
+      setView('process')
+      toast('เริ่มกระบวนการตรวจสอบกฎหมายใหม่แล้ว','success')
+    }catch(e){ toast('ดำเนินการไม่สำเร็จ: '+e.message) }
+  }
+
   function handleExportPdf(mode, sel){
     let list = inForceLaws
     if(mode==='cats') list = inForceLaws.filter(l=>sel.has(l.cat))
@@ -382,9 +428,8 @@ export default function App(){
   if(session===undefined) return <div className="loading"><div className="spin"/>กำลังตรวจสอบสิทธิ์…</div>
   if(!authed) return <Login onAuthed={s=>setSession(s)}/>
   if(loading) return (
-    <div style={{minHeight:'100vh',background:'var(--paper)'}}>
-      <div className="sk-grid">{Array.from({length:4}).map((_,i)=><div key={i} className="sk sk-card"/>)}</div>
-      {Array.from({length:5}).map((_,i)=><div key={i} className="sk sk-row"/>)}
+    <div style={{minHeight:'100vh',background:'var(--paper)',padding:'32px 36px'}}>
+      <DashboardSkeleton/>
     </div>
   )
 
@@ -493,12 +538,16 @@ export default function App(){
               )}
             </div>
           </div>
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} processItems={allProcess} onGoProcess={()=>setView('process')} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}/>}
-          {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={search} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
-            months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}/>}
+          <div className="view-swap" key={view}>
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} processItems={allProcess} rawProcessItems={processItems} onGoProcess={()=>setView('process')} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}
+            monthRow={curMonthRows.find(m=>m.year===new Date().getFullYear()&&m.month===new Date().getMonth()+1)}
+            onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
+          {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
+            months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
+            onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
           {view==='compliance'    && <Compliance    laws={inForceLaws} cats={cats} stats={stats} onOpen={setOpenLaw} onToggle={toggleReq}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
-          {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={search} onOpen={setOpenLaw} onRestore={handleRestore}/>}
+          {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={searchDebounced} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
           {view==='reports'       && <Reports       reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
           {view==='process'       && <ProcessTracker items={allProcess} onReload={loadProcess} updates={updates} onGoView={setView}/>}
@@ -510,6 +559,7 @@ export default function App(){
           {view==='settings'      && (can(role,'delete')
             ? <SettingsPage settings={settings} onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }}/>
             : <div className="view"><div className="panel" style={{padding:'50px 20px',textAlign:'center',color:'var(--ink-faint)'}}>เฉพาะผู้ดูแลระบบ (admin) เท่านั้นที่เข้าถึงหน้าตั้งค่าได้ — {NO_PERM}</div></div>)}
+          </div>
         </div>
       </div>
 
@@ -837,7 +887,7 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
   )
 }
 
-function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,processItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker}){
+function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,monthRow,onMarkNoNewLaws,onMarkHasNewLaws}){
   const trk = useMemo(()=>{
     let overdue=0
     trackerRows.forEach(r=>{ if(effStatus(r)==='overdue')overdue++ })
@@ -870,7 +920,9 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
   const relTime = s => { const sec=Math.floor((Date.now()-new Date(s))/1000); if(sec<60)return'เมื่อสักครู่'; const mi=Math.floor(sec/60); if(mi<60)return mi+' นาทีก่อน'; const h=Math.floor(mi/60); if(h<24)return h+' ชม.ก่อน'; const d=Math.floor(h/24); return d+' วันก่อน' }
 
   return <div className="view">
-    <StageBar items={processItems} onGo={onGoProcess}/>
+    <StageBar items={processItems} onGo={onGoProcess} monthRow={monthRow} hasActiveWork={rawProcessItems.some(p=>p.stage!=='done')}
+      monthLabel={TH_MONTHS[new Date().getMonth()]}
+      onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
 
     <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports}/>
 
@@ -1041,7 +1093,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 }
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
-function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months,monthYear,setMonthYear,onToggleMonth}){
+function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months,monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws}){
   const { can }=useAuth()
   const [cat,setCat]=usePersist('cr_reg_cat','all')
   const [act,setAct]=usePersist('cr_reg_act','all')
@@ -1061,7 +1113,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
   return <div className="view">
     {showAdd && <AddLawModal cats={cats} allLaws={allLaws} onSave={onCreate} onClose={()=>setShowAdd(false)}/>}
     <div style={{marginBottom:16}}>
-      <MonthlyCheckPanel months={months} year={monthYear} setYear={setMonthYear} onToggle={onToggleMonth}/>
+      <MonthlyCheckPanel months={months} year={monthYear} setYear={setMonthYear} onToggle={onToggleMonth} onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
     </div>
     <div className="filterbar">
       <span className={'chip'+(act==='all'?' active':'')} onClick={()=>setAct('all')}>ทั้งหมด</span>
@@ -1133,10 +1185,15 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
 /* ─────────────────────────── COMPLIANCE ─────────────────────────── */
 const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
 
-function MonthlyCheckPanel({ months, year, setYear, onToggle }) {
+function MonthlyCheckPanel({ months, year, setYear, onToggle, onMarkNoNewLaws, onMarkHasNewLaws }) {
   const toBE = y => y + 543
   const getMonth = m => months.find(r=>r.year===year && r.month===m) || {checked:false}
   const checkedCount = months.filter(m=>m.year===year && m.checked).length
+  const now = new Date()
+  const curMonth = now.getMonth()+1
+  const isViewingCurrentYear = year===now.getFullYear()
+  const curRec = isViewingCurrentYear ? getMonth(curMonth) : null
+  const curReviewed = !!(curRec && (curRec.status || curRec.checked))
 
   return (
     <div className="panel month-panel">
@@ -1149,6 +1206,25 @@ function MonthlyCheckPanel({ months, year, setYear, onToggle }) {
         </div>
         <span className="sub">{checkedCount}/12 เดือน</span>
       </div>
+
+      {isViewingCurrentYear && (
+        <div className={'month-action-bar'+(curReviewed?(curRec.status==='has_new_laws'?' month-action-bar--active':' month-action-bar--ok'):'')}>
+          {!curReviewed ? (<>
+            <span className="month-action-lab">⏳ เดือน{TH_MONTHS[curMonth-1]}นี้ยังไม่ได้ตรวจสอบกฎหมายใหม่</span>
+            <div className="month-action-btns">
+              <button className="btn btn-ghost" onClick={onMarkHasNewLaws}>🔍 พบกฎหมายใหม่ — เริ่มกระบวนการ</button>
+              <button className="btn btn-primary" onClick={onMarkNoNewLaws}>✓ ตรวจแล้ว ไม่มีกฎหมายใหม่เดือนนี้</button>
+            </div>
+          </>) : curRec.status==='no_new_laws' ? (
+            <span className="month-action-badge month-action-badge--ok">ไม่มีกฎหมายใหม่ ✓ (ตรวจโดย {curRec.checked_by||'—'}{curRec.checked_at?' '+thDate(curRec.checked_at):''})</span>
+          ) : curRec.status==='has_new_laws' ? (
+            <span className="month-action-badge month-action-badge--active">🔍 พบกฎหมายใหม่ — อยู่ระหว่างดำเนินการ (ตรวจโดย {curRec.checked_by||'—'}{curRec.checked_at?' '+thDate(curRec.checked_at):''})</span>
+          ) : (
+            <span className="month-action-badge month-action-badge--ok">✓ ตรวจสอบแล้ว{curRec.checked_at?' — '+thDate(curRec.checked_at):''}</span>
+          )}
+        </div>
+      )}
+
       <div className="month-grid">
         {TH_MONTHS.map((label, i) => {
           const m = i + 1

@@ -3,6 +3,7 @@ import { RECURRENCE_LABELS } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import Attachments from './Attachments.jsx'
 import { I } from './icons.jsx'
+import EmptyState from './EmptyState.jsx'
 
 const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
 const thDate = s => { if(!s) return '—'; const d=new Date(s); return d.getDate()+' '+TH_MONTHS[d.getMonth()]+' '+(d.getFullYear()+543) }
@@ -139,7 +140,10 @@ export default function Reports({ reports, onSetEvent, onSubmit }){
           </div></td>
         </tr>
       ))}
-      {rows.length===0 && <tr><td colSpan="6" style={{textAlign:'center',color:'var(--ink-faint)',padding:32}}>ไม่มีรายการที่ตรงกับตัวกรอง</td></tr>}
-      </tbody></table></div></div>
+      {rows.length===0 && reports.length>0 && <tr><td colSpan="6" style={{textAlign:'center',color:'var(--ink-faint)',padding:32}}>ไม่มีรายการที่ตรงกับตัวกรอง</td></tr>}
+      </tbody></table></div>
+      {reports.length===0 && <EmptyState icon="inbox" title="ยังไม่มีรายงานราชการ"
+        hint="เมื่อมีการเพิ่มรายงานที่ต้องส่งหน่วยงานราชการ รายการจะแสดงที่นี่พร้อมกำหนดส่งและการนับถอยหลัง" />}
+      </div>
   </div>
 }
