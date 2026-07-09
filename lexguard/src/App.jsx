@@ -217,7 +217,7 @@ export default function App(){
   const searchResults = useMemo(()=>{
     const q=search.trim().toLowerCase(); if(q.length<2) return []
     const out=[]
-    activeLaws.forEach(l=>{ if(l.code.toLowerCase().includes(q)||(l.name||'').toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)) out.push({kind:'law',law:l,label:l.code,sub:(l.name||'').slice(0,55)}) })
+    activeLaws.forEach(l=>{ const min=(l.ministry||''); const byMin=min.toLowerCase().includes(q); if(l.code.toLowerCase().includes(q)||(l.name||'').toLowerCase().includes(q)||byMin) out.push({kind:'law',law:l,label:l.code,sub:(l.name||'').slice(0,50),ministry:min,byMin}) })
     reports.forEach(r=>{ if((r.title||'').toLowerCase().includes(q)) out.push({kind:'report',label:(r.title||'').slice(0,40),sub:'รายงานราชการ'}) })
     return out.slice(0,12)
   },[search,activeLaws,reports])
@@ -495,7 +495,7 @@ export default function App(){
           </button>
           <div className="search" style={{position:'relative'}}>
             <I n="search"/>
-            <input placeholder="ค้นหากฎหมาย / รายงาน…" value={search}
+            <input placeholder="ค้นหากฎหมาย / กระทรวง / รายงาน…" value={search}
               onChange={e=>setSearch(e.target.value)}
               onFocus={()=>setSearchFocus(true)} onBlur={()=>setTimeout(()=>setSearchFocus(false),180)}/>
             {searchFocus && searchResults.length>0 && (
@@ -509,6 +509,7 @@ export default function App(){
                     <span className="sr-tag">{r.kind==='law'?'กฎหมาย':'รายงาน'}</span>
                     <span className="sr-label">{r.label}</span>
                     <span className="sr-sub">{r.sub}</span>
+                    {r.ministry && <span className={'sr-min'+(r.byMin?' hit':'')}>{r.ministry.slice(0,26)}</span>}
                   </div>
                 ))}
               </div>
@@ -632,8 +633,19 @@ function CatBars({laws,cats}){
     {cats.filter(c=>byCat[c.code]).map(c=>{
       let r=0,m=0; byCat[c.code].forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++}))
       const p=r?Math.round(m/r*100):100
-      return <div className="catbar" key={c.code}><div className="top"><span className="nm">{c.code} · {c.name}</span><b className="num" style={{color:c.color}}>{p}%</b></div>
-        <div className="track"><div className="fill" style={{width:p+'%',background:`linear-gradient(90deg, ${c.color} 0%, color-mix(in srgb, ${c.color} 88%, #fff) 100%)`}}/></div></div>
+      const unmet=r-m
+      return <div className="catbar" key={c.code}>
+        <div className="top">
+          <span className="nm">{c.code} · {c.name}</span>
+          <span className="cat-meta">
+            {unmet>0
+              ? <span className="cat-remain">เหลือ {unmet} ข้อ</span>
+              : <span className="cat-done">ครบ {r} ข้อ ✓</span>}
+            <b className="num" style={{color:c.color}}>{p}%</b>
+          </span>
+        </div>
+        <div className="track"><div className="fill" style={{width:p+'%',background:`linear-gradient(90deg, ${c.color} 0%, color-mix(in srgb, ${c.color} 88%, #fff) 100%)`}}/></div>
+      </div>
     })}
   </div>
 }

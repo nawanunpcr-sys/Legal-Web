@@ -44,9 +44,9 @@
   --gold:      #B58A3C;
   --gold-light: #F7F1E4;
 
-  /* Chart bars — Apple blue (added) / gold (repealed) */
+  /* Chart bars — Apple blue (added) / red (repealed) */
   --chart-add:   #0071E3;  --chart-add-2: #66A9F0;
-  --chart-rep:   #B58A3C;  --chart-rep-2: #D4B478;
+  --chart-rep:   #C0392B;  --chart-rep-2: #E0725F;
 
   /* Aliases used by component rules */
   --faint: #8B9099;
@@ -1300,11 +1300,11 @@ select.form-input { cursor: pointer }
 .month-action-panel .panel-b { padding: 0 }
 .month-action-bar {
   display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
-  padding: 16px 22px;
+  padding: 15px 22px;
   border-radius: var(--radius-card, 16px);
-  background: linear-gradient(180deg, var(--warn-bg), color-mix(in srgb, var(--warn-bg) 60%, #fff));
-  border: 1px solid color-mix(in srgb, var(--warn) 22%, transparent);
-  border-left: 3px solid var(--warn);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--warn-bg) 70%, #fff), #fff);
+  border: 1px solid color-mix(in srgb, var(--warn) 20%, transparent);
+  box-shadow: var(--shadow-soft);
 }
 .month-panel .month-action-bar { margin: 0 20px 16px; width: calc(100% - 40px); border-radius: 12px }
 .month-action-lab { display: flex; align-items: center; gap: 9px; font-size: 13.5px; font-weight: 600; color: #7a5212; flex: 1; min-width: 200px }
@@ -1332,8 +1332,13 @@ select.form-input { cursor: pointer }
 .report-alert-dot { margin-right: 7px }
 
 /* Category compliance bars — 2-up grid so each bar is shorter */
-.catbars-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 32px }
+.catbars-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 34px }
 .catbars-grid .catbar { margin-bottom: 0 }
+.catbar .top .nm { flex: 1; min-width: 0 }
+.cat-meta { display: inline-flex; align-items: center; gap: 10px; flex-shrink: 0 }
+.cat-remain { font-size: 10.5px; font-weight: 600; color: var(--bad); background: var(--bad-bg); padding: 2px 9px; border-radius: 999px; white-space: nowrap }
+.cat-done { font-size: 10.5px; font-weight: 600; color: var(--ok); white-space: nowrap }
+.catbar .top b.num { min-width: 40px; text-align: right }
 @media (max-width: 720px) { .catbars-grid { grid-template-columns: 1fr } }
 
 .month-grid {
@@ -1617,7 +1622,9 @@ select.form-input { cursor: pointer }
 .sr-item:hover { background: var(--brand-tint) }
 .sr-tag { flex-shrink: 0; font-size: 9.5px; font-weight: 600; color: #fff; background: var(--brand); padding: 2px 7px; border-radius: 20px }
 .sr-label { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--brand); flex-shrink: 0 }
-.sr-sub { font-size: 12px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.sr-sub { font-size: 12px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0 }
+.sr-min { flex-shrink: 0; margin-left: auto; font-size: 10.5px; color: var(--ink-faint); background: var(--surface-2); padding: 2px 8px; border-radius: 999px; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis }
+.sr-min.hit { color: var(--accent); background: var(--brand-tint); font-weight: 600 }
 
 /* ─── Sticky headers only inside an explicit scroll container ─── */
 .tablewrap.sticky { max-height: 70vh; overflow: auto }
@@ -1632,6 +1639,11 @@ select.form-input { cursor: pointer }
 }
 .bulkbar .btn { padding: 5px 11px; font-size: 12px }
 tbody tr.row-sel { background: var(--brand-tint) }
+/* near-due / overdue report rows — red warning */
+tbody tr.row-danger td { background: var(--bad-bg) }
+tbody tr.row-danger:hover td { background: color-mix(in srgb, var(--bad-bg) 80%, var(--bad) 8%) }
+tbody tr.row-danger td:first-child { box-shadow: inset 3px 0 0 var(--bad) }
+.row-danger-mark { color: var(--bad); font-weight: 700; margin-right: 6px }
 
 /* ─── Hero stat cards (prominent dashboard top) ──────────────── */
 .stat.hero { border-top-width: 4px; padding: 22px 24px 18px; box-shadow: var(--shadow-sm) }

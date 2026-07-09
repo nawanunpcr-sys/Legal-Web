@@ -166,7 +166,7 @@ export default function Landing({ onEnter }) {
             <span className="lgl-card-title">กฎหมายที่เพิ่ม / ยกเลิก รายเดือน · ปี {monthly.yr + 543}</span>
             <span className="lgl-chart-legend">
               <span><i style={{ background: '#0071E3' }} />เพิ่ม <b>{monthly.totalAdded}</b></span>
-              <span><i style={{ background: '#B58A3C' }} />ยกเลิก <b>{monthly.totalRepealed}</b></span>
+              <span><i style={{ background: '#C0392B' }} />ยกเลิก <b>{monthly.totalRepealed}</b></span>
             </span>
           </div>
           <div className="mchart lgl-mchart">

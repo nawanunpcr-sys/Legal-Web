@@ -116,9 +116,13 @@ export default function Reports({ reports, onSetEvent, onSubmit }){
         <th>หน่วยงานที่รับ</th><th>ความถี่</th><th>กำหนดส่งถัดไป</th>
         <th>ผู้รับผิดชอบ</th><th style={{width:150}}>การดำเนินการ</th>
       </tr></thead>
-      <tbody>{rows.map(r=>(
-        <tr key={r.id}>
+      <tbody>{rows.map(r=>{
+        const d = r.next_due_date ? daysTo(r.next_due_date) : null
+        const urgent = d!==null && d<=(r.notify_days_before||30)   // เกินกำหนด/ใกล้ครบภายในช่วงแจ้งเตือน → เตือนสีแดง
+        return (
+        <tr key={r.id} className={urgent?'row-danger':''}>
           <td style={{fontWeight:500,maxWidth:300,lineHeight:1.4}}>
+            {urgent && <span className="row-danger-mark" title="ใกล้/เกินกำหนด">⚠</span>}
             {r.title}
             <div style={{fontSize:11.5,color:'var(--ink-faint)',marginTop:3}}>
               {r.law_code && <span className="law-code" style={{marginRight:6}}>{r.law_code}</span>}
@@ -139,7 +143,7 @@ export default function Reports({ reports, onSetEvent, onSubmit }){
             <button className="btn btn-primary" style={{padding:'3px 8px',fontSize:11}} disabled={!can('edit')} onClick={()=>setSubmitModal(r)} title={can('edit')?'บันทึกการส่ง':NO_PERM}>ส่งแล้ว</button>
           </div></td>
         </tr>
-      ))}
+      )})}
       {rows.length===0 && reports.length>0 && <tr><td colSpan="6" style={{textAlign:'center',color:'var(--ink-faint)',padding:32}}>ไม่มีรายการที่ตรงกับตัวกรอง</td></tr>}
       </tbody></table></div>
       {reports.length===0 && <EmptyState icon="inbox" title="ยังไม่มีรายงานราชการ"
