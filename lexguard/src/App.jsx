@@ -11,16 +11,16 @@ import { supabase, hasSupabase, fetchAll,
          fetchProcessItems, createProcessItem, subscribeProcessItems,
          fetchTracker, fetchTrackerSubstatuses, subscribeTracker, createTrackerCase,
          fetchSettings, saveSettings, DEFAULT_SETTINGS,
-         onAuthChange,
          STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
-import { AUTH_MODE, AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
-         getSession as getAuthSession, signOut as authSignOut } from './lib/auth.js'
+import { AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
+         getSession as getAuthSession, signOut as authSignOut, onAuthChange } from './lib/auth.js'
 import LawDrawer from './components/LawDrawer.jsx'
 import Reports from './components/Reports.jsx'
 import ProcessTracker, { StageBar } from './components/ProcessTracker.jsx'
 import LawTracker, { CaseStepper, groupCases, effStatus } from './components/LawTracker.jsx'
 import { I } from './components/icons.jsx'
 import Login from './components/Login.jsx'
+import Landing from './components/Landing.jsx'
 import Attachments from './components/Attachments.jsx'
 import NotifyPopup, { isOverdueItem } from './components/NotifyPopup.jsx'
 import { DashboardSkeleton } from './components/Skeleton.jsx'
@@ -50,10 +50,15 @@ const daysTo = s => Math.ceil((new Date(s)-new Date())/86400000)
 const Pill = ({s}) => <span className={'pill '+(STATUS[s]?.cls||'p-ok')}>{STATUS[s]?.label||s}</span>
 const Tag = ({c,color}) => <span className="tag" style={{borderColor:(color||'#888')+'33',color:color||'#888'}}>{c}</span>
 
+// Display-only category color override (LA–LG) — matches the Landing palette.
+// Never written back to the DB; falls back to the seeded color for anything unmapped.
+const CAT_COLORS = { LA:'#1C2431', LB:'#3A6A97', LC:'#B4553F', LD:'#B58A3C', LE:'#5F7A61', LF:'#2A3547', LG:'#6E6E73' }
+const withCatColors = cats => (cats||[]).map(c=>({ ...c, color: CAT_COLORS[c.code] || c.color }))
+
 const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
-    { id:'register',      label:'ทะเบียนกฎหมาย',        icon:'book'    },
+    { id:'registry',      label:'ทะเบียน & ความสอดคล้อง', icon:'book'    },
     { id:'process',       label:'ติดตามกระบวนการ',       icon:'inbox'   },
     { id:'tracker',       label:'ติดตามสถานะกฎหมาย',     icon:'update'  },
   ]},
@@ -68,7 +73,6 @@ const NAV_GROUPS = [
     { id:'comm',          label:'การสื่อสาร (ISD-86)',   icon:'chat'    },
   ]},
   { label: '④ ตรวจสอบ & ติดตาม', items: [
-    { id:'compliance',    label:'ติดตามความสอดคล้อง',   icon:'check'   },
     { id:'reports',       label:'การส่งรายงานราชการ',    icon:'inbox'   },
   ]},
   { label: 'อ้างอิง & ระบบ', items: [
@@ -80,6 +84,7 @@ const NAV_GROUPS = [
 
 const TITLES = {
   dashboard:     ['Dashboard',             'สรุปสถานะความสอดคล้องตามกฎหมาย SHE'],
+  registry:      ['ทะเบียน & ความสอดคล้อง','ทะเบียนกฎหมายพร้อมสถานะความสอดคล้องรายข้อกำหนด'],
   register:      ['ทะเบียนกฎหมาย',         'กฎหมายที่เกี่ยวข้องและสถานะการปฏิบัติ'],
   compliance:    ['ติดตามความสอดคล้อง',    'สถานะรายข้อกำหนดแยกตามหมวดและลำดับชั้น'],
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
@@ -97,8 +102,12 @@ const TITLES = {
 
 export default function App(){
   const [session,setSession] = useState(undefined) // undefined=checking, null=logged out
+  const [showLogin,setShowLogin] = useState(false)  // false=show public Landing, true=show Login form
   const [navOpen,setNavOpen] = useState(()=>{ try{ return localStorage.getItem('cr_nav')!=='0' }catch{ return true } })
-  const [view,setView]     = useState(()=>{ try{ return localStorage.getItem('cr_view')||'dashboard' }catch{ return 'dashboard' } })
+  const [view,setView]     = useState(()=>{ try{ const v=localStorage.getItem('cr_view')||'dashboard';
+    // backward-compat: the old split 'register'/'compliance' views are now one 'registry' view
+    if(v==='register'||v==='compliance'){ try{ localStorage.setItem('cr_registry_mode', JSON.stringify(v==='compliance'?'compliance':'register')) }catch{} return 'registry' }
+    return v }catch{ return 'dashboard' } })
   const [dark,setDark]     = useState(()=>{ try{ const v=localStorage.getItem('cr_dark'); return v==null?false:v==='1' }catch{ return false } })
   const [cats,setCats]     = useState([])
   const [laws,setLaws]     = useState([])
@@ -131,7 +140,8 @@ export default function App(){
   useEffect(()=>{
     let alive=true
     ;(async()=>{ try{ const s=await getAuthSession(); if(alive) setSession(s||null) }catch{ if(alive) setSession(null) } })()
-    const unsub = AUTH_MODE==='supabase' ? onAuthChange(s=>setSession(s||null)) : ()=>{}
+    // Always listen for Microsoft (Supabase) sign-in/out; no-op when Supabase isn't configured
+    const unsub = onAuthChange(s=>{ if(alive) setSession(s||null) })
     return ()=>{ alive=false; unsub() }
   },[])
 
@@ -160,7 +170,7 @@ export default function App(){
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
       const [d, mData, s, u, a, qs, rp, st, pi] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings(), fetchProcessItems()])
-      setCats(d.cats); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
+      setCats(withCatColors(d.cats)); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
       setMonths(mData); setCurMonthRows(mData); setStaging(s); setUpdates(u); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st); setProcessItems(pi)
       loadTracker()
     }
@@ -201,7 +211,7 @@ export default function App(){
     const out = processItems.map(p=>({...p,auto:false}))
     updates.filter(u=>u.status==='new').forEach(u=>out.push({id:'u'+u.id,auto:true,stage:'discovery',title:u.title,note:'กฎหมายใหม่จาก '+(u.source||'ShawPat'),goView:'updates'}))
     stagingBatches.forEach(([code,rows])=>out.push({id:'s'+code,auto:true,stage:'review',title:rows[0]?.law_name||code,note:rows.length+' ข้อกำหนด รออนุมัติ',goView:'staging'}))
-    activeLaws.filter(l=>l.status==='bad').forEach(l=>out.push({id:'law'+l.id,auto:true,stage:'verify',title:l.code+' — '+(l.name||'').slice(0,50),note:'ยังไม่สอดคล้อง · '+l.reqs.filter(r=>r.status!=='met').length+' ข้อ',goView:'register'}))
+    activeLaws.filter(l=>l.status==='bad').forEach(l=>out.push({id:'law'+l.id,auto:true,stage:'verify',title:l.code+' — '+(l.name||'').slice(0,50),note:'ยังไม่สอดคล้อง · '+l.reqs.filter(r=>r.status!=='met').length+' ข้อ',goView:'registry'}))
     return out
   },[processItems,updates,stagingBatches,activeLaws])
   const searchResults = useMemo(()=>{
@@ -426,7 +436,9 @@ export default function App(){
   }
 
   if(session===undefined) return <div className="loading"><div className="spin"/>กำลังตรวจสอบสิทธิ์…</div>
-  if(!authed) return <Login onAuthed={s=>setSession(s)}/>
+  if(!authed) return showLogin
+    ? <Login onAuthed={s=>setSession(s)}/>
+    : <Landing onEnter={()=>setShowLogin(true)}/>
   if(loading) return (
     <div style={{minHeight:'100vh',background:'var(--paper)',padding:'32px 36px'}}>
       <DashboardSkeleton/>
@@ -452,8 +464,7 @@ export default function App(){
             {group.label && <div className="nav-label">{group.label}</div>}
             {group.items.filter(n=>n.id!=='settings'||can(role,'delete')).map(n=>{
               const badge =
-                n.id==='register'      ? activeLaws.length        :
-                n.id==='compliance'    ? (stats.nc||null)         :
+                n.id==='registry'      ? activeLaws.length        :
                 n.id==='improvements'  ? (stats.nc||null)         :
                 n.id==='repealed'      ? (repealedLaws.length||null) :
                 n.id==='reports'       ? (reportAlerts||null)     :
@@ -524,7 +535,7 @@ export default function App(){
           <div className="page-head no-print">
             <div><h2>{title[0]}</h2><p>{title[1]}</p></div>
             <div className="page-actions">
-              {(view==='register'||view==='dashboard') && (
+              {(view==='registry'||view==='dashboard') && (
                 <div className="tb-menu">
                   <button className="btn btn-ghost" onClick={()=>setExportOpen(o=>!o)}><I n="download"/>ส่งออก ▾</button>
                   {exportOpen && (<>
@@ -542,10 +553,11 @@ export default function App(){
           {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} processItems={allProcess} rawProcessItems={processItems} onGoProcess={()=>setView('process')} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}
             monthRow={curMonthRows.find(m=>m.year===new Date().getFullYear()&&m.month===new Date().getMonth()+1)}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
-          {view==='register'      && <Register      laws={activeLaws} cats={cats} catMap={catMap} search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
+          {view==='registry'      && <RegistryCompliance
+            regLaws={activeLaws} compLaws={inForceLaws} cats={cats} catMap={catMap} stats={stats}
+            search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} onToggle={toggleReq} allLaws={laws}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
-          {view==='compliance'    && <Compliance    laws={inForceLaws} cats={cats} stats={stats} onOpen={setOpenLaw} onToggle={toggleReq}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={searchDebounced} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
@@ -596,18 +608,14 @@ function Ring({pct,met=0,nc=0}){
                     {big:fmt(pct)+'%', lab:'สอดคล้อง', col:'var(--ok)'}
   return <div className="ring">
     <svg width="150" height="150" viewBox="0 0 150 150">
-      <defs>
-        <linearGradient id="rgOk" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#3ad07e"/><stop offset="1" stopColor="#1f9d57"/></linearGradient>
-        <linearGradient id="rgBad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ff6b5e"/><stop offset="1" stopColor="#d6342a"/></linearGradient>
-      </defs>
-      <circle cx="75" cy="75" r={r} fill="none" stroke="var(--line-soft)" strokeWidth="13"/>
-      <circle cx="75" cy="75" r={r} fill="none" stroke="url(#rgOk)" strokeLinecap="round"
-        strokeWidth={hover==='met'?17:13}
+      <circle cx="75" cy="75" r={r} fill="none" stroke="var(--ring-track,rgba(255,255,255,.14))" strokeWidth="8"/>
+      <circle cx="75" cy="75" r={r} fill="none" stroke="#34D0A0" strokeLinecap="round"
+        strokeWidth={hover==='met'?11:8}
         strokeDasharray={`${Math.max(0,c*metFrac-gap)} ${c}`} strokeDashoffset={0}
         style={{transition:'stroke-dashoffset 1s var(--ease-out), stroke-width .18s',cursor:'pointer'}}
         onMouseEnter={()=>setHover('met')} onMouseLeave={()=>setHover(null)}/>
-      {nc>0 && <circle cx="75" cy="75" r={r} fill="none" stroke="url(#rgBad)" strokeLinecap="round"
-        strokeWidth={hover==='nc'?17:13}
+      {nc>0 && <circle cx="75" cy="75" r={r} fill="none" stroke="#FF8A73" strokeLinecap="round"
+        strokeWidth={hover==='nc'?11:8}
         strokeDasharray={`${Math.max(0,c*ncFrac-gap)} ${c}`} strokeDashoffset={-c*metFrac}
         style={{transition:'stroke-dashoffset 1s var(--ease-out), stroke-width .18s',cursor:'pointer'}}
         onMouseEnter={()=>setHover('nc')} onMouseLeave={()=>setHover(null)}/>}
@@ -624,7 +632,7 @@ function CatBars({laws,cats}){
     let r=0,m=0; byCat[c.code].forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++}))
     const p=r?Math.round(m/r*100):100
     return <div className="catbar" key={c.code}><div className="top"><span className="nm">{c.code} · {c.name}</span><b className="num" style={{color:c.color}}>{p}%</b></div>
-      <div className="track"><div className="fill" style={{width:p+'%',background:c.color}}/></div></div>
+      <div className="track"><div className="fill" style={{width:p+'%',background:`linear-gradient(90deg, ${c.color} 0%, color-mix(in srgb, ${c.color} 88%, #fff) 100%)`}}/></div></div>
   })
 }
 
@@ -919,7 +927,21 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
   const recent = activity.slice(0,4)
   const relTime = s => { const sec=Math.floor((Date.now()-new Date(s))/1000); if(sec<60)return'เมื่อสักครู่'; const mi=Math.floor(sec/60); if(mi<60)return mi+' นาทีก่อน'; const h=Math.floor(mi/60); if(h<24)return h+' ชม.ก่อน'; const d=Math.floor(h/24); return d+' วันก่อน' }
 
+  const strip=[
+    {val:stats.total.toLocaleString('en-US'), lab:'กฎหมายในทะเบียน (ฉบับ)'},
+    {val:String(cats.length),                 lab:'หมวด (LA–LG)'},
+    {val:stats.req.toLocaleString('en-US'),   lab:'ข้อกำหนดรายข้อ'},
+    {val:stats.pct.toFixed(1)+'%',            lab:'ความสอดคล้อง ('+stats.met+'/'+stats.req+')', accent:true},
+  ]
+
   return <div className="view">
+    <div className="dash-strip">
+      {strip.map((s,i)=>(<div className="dash-strip-cell" key={i}>
+        <div className={'dash-strip-val'+(s.accent?' is-accent':'')}>{s.val}</div>
+        <div className="dash-strip-lab">{s.lab}</div>
+      </div>))}
+    </div>
+
     <StageBar items={processItems} onGo={onGoProcess} monthRow={monthRow} hasActiveWork={rawProcessItems.some(p=>p.stage!=='done')}
       monthLabel={TH_MONTHS[new Date().getMonth()]}
       onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
@@ -1090,6 +1112,36 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
       </div>
     </div></>
   )
+}
+
+/* ─────────── REGISTRY + COMPLIANCE (merged view) ─────────── */
+function RegistryCompliance({regLaws,compLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,onToggle,allLaws,months,monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws}){
+  const [mode,setMode]=usePersist('cr_registry_mode','register')
+  const kpis=[
+    {lab:'ข้อกำหนดทั้งหมด',   val:stats.req, accent:'#1C2431'},
+    {lab:'ผ่านการประเมิน (C)', val:stats.met, accent:'#5F7A61'},
+    {lab:'ยังไม่สอดคล้อง (NC)', val:stats.nc, accent:'#B4553F'},
+  ]
+  return <div className="view">
+    <div className="rc-stats">
+      {kpis.map((k,i)=>(
+        <div className="stat" key={i} style={{borderTopColor:k.accent}}>
+          <div className="lab">{k.lab}</div>
+          <div className="val num" style={{color:k.accent}}>{k.val}</div>
+        </div>
+      ))}
+    </div>
+
+    <div className="seg" role="tablist" aria-label="สลับมุมมองทะเบียน / ความสอดคล้อง">
+      <button role="tab" aria-selected={mode==='register'} className={'seg-btn'+(mode==='register'?' active':'')} onClick={()=>setMode('register')}>ทะเบียนกฎหมาย</button>
+      <button role="tab" aria-selected={mode==='compliance'} className={'seg-btn'+(mode==='compliance'?' active':'')} onClick={()=>setMode('compliance')}>ติดตามความสอดคล้อง</button>
+    </div>
+
+    {mode==='register'
+      ? <Register laws={regLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
+          months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={onToggleMonth} onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
+      : <Compliance laws={compLaws} cats={cats} onOpen={onOpen} onToggle={onToggle}/>}
+  </div>
 }
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
@@ -1278,16 +1330,10 @@ function ComplianceLawRow({l,onToggle,onOpen}){
   )
 }
 
-function Compliance({laws,cats,stats,onOpen,onToggle}){
+function Compliance({laws,cats,onOpen,onToggle}){
   const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
   return <div className="view">
-    <div className="grid" style={{gridTemplateColumns:'repeat(3,1fr)',marginBottom:16}}>
-      <div className="panel" style={{padding:18}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>ข้อกำหนดทั้งหมด</div><div className="num" style={{fontSize:28,fontWeight:700}}>{stats.req}</div></div>
-      <div className="panel" style={{padding:18}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>ผ่านการประเมิน (C)</div><div className="num" style={{fontSize:28,fontWeight:700,color:'var(--ok)'}}>{stats.met}</div></div>
-      <div className="panel" style={{padding:18}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>ยังไม่สอดคล้อง (NC)</div><div className="num" style={{fontSize:28,fontWeight:700,color:'var(--bad)'}}>{stats.nc}</div></div>
-    </div>
-
-    <div className="panel" style={{marginTop:14}}><div className="panel-h"><h3>สถานะรายหมวด / ลำดับชั้นกฎหมาย</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกที่กฎหมายเพื่อดูข้อกำหนดและแก้ไข</span></div>
+    <div className="panel" style={{marginTop:0}}><div className="panel-h"><h3>สถานะรายหมวด / ลำดับชั้นกฎหมาย</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกที่กฎหมายเพื่อดูข้อกำหนดและแก้ไข</span></div>
       <div className="panel-b">
         {cats.filter(c=>byCat[c.code]).map(c=>{
           let r=0,m=0; byCat[c.code].forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++}))
