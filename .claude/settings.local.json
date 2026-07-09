@@ -47,7 +47,11 @@
       "Bash(curl -s http://localhost:9222/json/list)",
       "Bash(sips -c 60 400 -o shots/action-bar-crop.png --cropOffset 210 260 shots/register-live.png)",
       "Bash(sips -c 260 520 -o shots/toast-crop.png --cropOffset 1730 900 shots/polish-toast.png)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('scripts:',d.get\\('scripts'\\)\\); print\\('dev needs supabase env from .env'\\)\")",
+      "Read(//Users/nawanunlakornrach/.claude/projects/-Users-nawanunlakornrach-Desktop-Web/memory/**)",
+      "Bash(ls MEMORY.md)"
     ]
   }
 }
