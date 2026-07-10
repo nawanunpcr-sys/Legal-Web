@@ -616,7 +616,7 @@ export async function setReportEvent(id, eventDate, offsetDays) {
 }
 
 // Mark a report as submitted → advance to next occurrence (calendar) or clear (event/once)
-export async function markReportSubmitted(id, fileRef) {
+export async function markReportSubmitted(id, fileRef, sentDate) {
   const { data: r, error: fe } = await supabase.from('lg_reports')
     .select('recurrence,trigger_type,next_due_date').eq('id', id).single()
   if (fe) throw fe
@@ -629,8 +629,10 @@ export async function markReportSubmitted(id, fileRef) {
   }
   // event-based: clear due date until the next trigger date is entered
 
+  // Actual submission timestamp — use the date the user picked, fall back to now.
+  const submittedAt = sentDate ? new Date(sentDate + 'T00:00:00').toISOString() : new Date().toISOString()
   const patch = {
-    last_submitted_at: new Date().toISOString(),
+    last_submitted_at: submittedAt,
     file_reference: fileRef || null,
     next_due_date: next,
     event_date: r.trigger_type === 'event' ? null : undefined,

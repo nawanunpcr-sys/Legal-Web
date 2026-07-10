@@ -49,6 +49,10 @@ const thDate = s => { if(!s) return '—'; const m=['ม.ค.','ก.พ.','ม�
 const daysTo = s => Math.ceil((new Date(s)-new Date())/86400000)
 const Pill = ({s}) => <span className={'pill '+(STATUS[s]?.cls||'p-ok')}>{STATUS[s]?.label||s}</span>
 const Tag = ({c,color}) => <span className="tag" style={{borderColor:(color||'#888')+'33',color:color||'#888'}}>{c}</span>
+// Small "in-force" marker — green "ใช้อยู่" when the law is active, grey "ไม่ใช้แล้ว" when retired.
+const ActiveBadge = ({active,size}) => active===false
+  ? <span className={'active-badge is-off'+(size==='sm'?' active-badge--sm':'')} title="กฎหมายนี้ไม่ใช้แล้ว"><i/>ไม่ใช้แล้ว</span>
+  : <span className={'active-badge is-on'+(size==='sm'?' active-badge--sm':'')} title="กฎหมายนี้ยังใช้อยู่"><i/>ใช้อยู่</span>
 
 // Display-only category color override (LA–LG) — matches the Landing palette.
 // Never written back to the DB; falls back to the seeded color for anything unmapped.
@@ -380,8 +384,8 @@ export default function App(){
     try{ await setReportEvent(id, eventDate, offsetDays); await loadReports() }
     catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
-  async function handleReportSubmit(id, fileRef){
-    try{ await markReportSubmitted(id, fileRef); await loadReports() }
+  async function handleReportSubmit(id, fileRef, sentDate){
+    try{ await markReportSubmitted(id, fileRef, sentDate); await loadReports() }
     catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
@@ -857,18 +861,34 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
       </div>
       <div className="panel-b">
         <div style={{display:'flex',gap:18,marginBottom:16,fontSize:12.5}}>
-          <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--chart-add)',display:'inline-block'}}/>เพิ่ม <b className="num">{totalAdded}</b> ฉบับ</span>
-          <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--chart-rep)',display:'inline-block'}}/>ยกเลิก <b className="num">{totalRepealed}</b> ฉบับ</span>
+          <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--chart-add)',display:'inline-block'}}/>เพิ่ม <b className="num" style={{fontSize:15,fontWeight:800,color:'var(--chart-add)'}}>{totalAdded}</b> ฉบับ</span>
+          <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--chart-rep)',display:'inline-block'}}/>ยกเลิก <b className="num" style={{fontSize:15,fontWeight:800,color:'var(--chart-rep)'}}>{totalRepealed}</b> ฉบับ</span>
           <span style={{color:'var(--ink-faint)',marginLeft:'auto'}}>ข้อมูลจากทะเบียน F-259 (Excel) — รายไตรมาส</span>
         </div>
-        <div className="mchart" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+        <div className="mchart qchart" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
           {QUARTER_LABEL.map((q,i)=>(
             <div className="mchart-col" key={i}>
+              <div className="qbar-vals">
+                <span className={'qbar-val qbar-val-add'+(added[i]?'':' qbar-val-zero')}>{added[i]}</span>
+                <span className={'qbar-val qbar-val-rep'+(repealed[i]?'':' qbar-val-zero')}>{repealed[i]}</span>
+              </div>
               <div className="mchart-bars">
                 <div className="mchart-bar mchart-bar-add" style={{height:(added[i]/max*100)+'%'}} title={`เพิ่ม ${added[i]} ฉบับ`}/>
                 <div className="mchart-bar mchart-bar-rep" style={{height:(repealed[i]/max*100)+'%'}} title={`ยกเลิก ${repealed[i]} ฉบับ`}/>
               </div>
               <div className="mchart-lab">{q}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="qsum-grid">
+          {QUARTER_LABEL.map((q,i)=>(
+            <div className={'qsum-card'+(added[i]||repealed[i]?'':' qsum-card--empty')} key={i}>
+              <div className="qsum-q">{q}</div>
+              <div className="qsum-pills">
+                <span className="qsum-pill qsum-pill--add"><b className="num">{added[i]}</b><small>เพิ่ม</small></span>
+                <span className="qsum-pill qsum-pill--rep"><b className="num">{repealed[i]}</b><small>ยกเลิก</small></span>
+              </div>
             </div>
           ))}
         </div>
@@ -893,10 +913,10 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
                 {catRows.map(({c,added,repealed})=>(
                   <tr key={c.code}>
                     <td><Tag c={c.code} color={catMap[c.code]?.color}/></td>
-                    {repealed.map((n,i)=><td key={'r'+i} style={{textAlign:'center',color:n?'var(--bad)':'var(--ink-faint)'}} className="num">{n||'—'}</td>)}
-                    {added.map((n,i)=><td key={'a'+i} style={{textAlign:'center',color:n?'var(--ok)':'var(--ink-faint)'}} className="num">{n||'—'}</td>)}
-                    <td style={{textAlign:'center',fontWeight:600,color:'var(--bad)'}} className="num">{repealed.reduce((a,b)=>a+b,0)}</td>
-                    <td style={{textAlign:'center',fontWeight:600,color:'var(--ok)'}} className="num">{added.reduce((a,b)=>a+b,0)}</td>
+                    {repealed.map((n,i)=><td key={'r'+i} style={{textAlign:'center',fontWeight:n?700:400,color:n?'var(--bad)':'var(--ink-faint)'}} className="num">{n||'—'}</td>)}
+                    {added.map((n,i)=><td key={'a'+i} style={{textAlign:'center',fontWeight:n?700:400,color:n?'var(--ok)':'var(--ink-faint)'}} className="num">{n||'—'}</td>)}
+                    <td style={{textAlign:'center',fontWeight:800,fontSize:14,color:'var(--bad)'}} className="num">{repealed.reduce((a,b)=>a+b,0)}</td>
+                    <td style={{textAlign:'center',fontWeight:800,fontSize:14,color:'var(--ok)'}} className="num">{added.reduce((a,b)=>a+b,0)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -919,7 +939,6 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
   },[trackerRows])
   const latestCases = useMemo(()=>groupCases(trackerRows).slice(0,3),[trackerRows])
   const subLabel = (stage,code)=>(trackerSubs[stage]||[]).find(x=>x.code===code)?.label||code
-  const lawById = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
   const curBE = new Date().getFullYear()+543
   const tlFromBE = curBE-2   // ไทม์ไลน์: 3 ปีย้อนหลัง
 
@@ -940,8 +959,6 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
     {cls:'s-bad',   lab:'เกินกำหนด',       val:trk.overdue, unit:'ขั้น', delta:'ต้องเร่งจัดการ →', go:onGoTracker},
     {cls:'s-ok',    lab:'สอดคล้อง',        val:stats.pct.toFixed(1)+'%', unit:'', delta:stats.met+' / '+stats.req+' ข้อ →', go:()=>goRegistry('compliance')},
   ]
-  const recent = activity.slice(0,4)
-  const relTime = s => { const sec=Math.floor((Date.now()-new Date(s))/1000); if(sec<60)return'เมื่อสักครู่'; const mi=Math.floor(sec/60); if(mi<60)return mi+' นาทีก่อน'; const h=Math.floor(mi/60); if(h<24)return h+' ชม.ก่อน'; const d=Math.floor(h/24); return d+' วันก่อน' }
 
   const strip=[
     {val:stats.total.toLocaleString('en-US'), lab:'กฎหมายในทะเบียน (ฉบับ)'},
@@ -1013,26 +1030,6 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
       </div>
     )}
 
-    <div className="panel" style={{marginTop:16,borderTop:'3px solid var(--brand)'}}>
-      <div className="panel-h"><h3>อัปเดตล่าสุด</h3><span className="sub" style={{marginLeft:'auto'}}>ความเคลื่อนไหวรายวัน</span></div>
-      <div className="panel-b">
-        <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:recent.length?12:0}}>
-          {newUpdates.length>0 && <span className="pill p-bad">กฎหมายใหม่จาก ShawPat {newUpdates.length} รายการ</span>}
-          {staging.length>0 && <span className="pill" style={{background:'var(--brand-tint)',color:'var(--brand)'}}>รออนุมัตินำเข้า {staging.length} ฉบับ</span>}
-          {newUpdates.length===0 && staging.length===0 && recent.length===0 && <span style={{fontSize:13,color:'var(--ink-faint)'}}>ยังไม่มีความเคลื่อนไหว — เมื่อมีการเพิ่ม/แก้/ยกเลิกกฎหมาย จะแสดงที่นี่</span>}
-        </div>
-        {recent.map(a=>{ const m=ACT_META[a.action]||{t:a.action,c:'var(--ink-faint)'}; const law=lawById[a.law_id]
-          return (
-            <div key={a.id} className="tl-row" onClick={()=>law&&onOpen(law)} style={{padding:'7px 6px'}}>
-              <span className="tl-tag" style={{background:m.c}}>{m.t}</span>
-              {a.law_code && <span className="law-code" style={{minWidth:58}}>{a.law_code}</span>}
-              <span style={{flex:1,fontSize:13}}>{a.detail||a.law_name}</span>
-              <span className="sub">{relTime(a.created_at)}</span>
-            </div>
-          )})}
-      </div>
-    </div>
-
     <Timeline laws={laws} catMap={catMap} onOpen={onOpen} curBE={curBE} fromBE={tlFromBE}/>
 
     <div className="panel" style={{marginTop:16}}>
@@ -1040,7 +1037,7 @@ function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],qu
       <div className="tablewrap"><table><thead><tr><th>รหัส / ชื่อกฎหมาย</th><th>หมวด</th><th>กระทรวง</th><th>สถานะ</th></tr></thead><tbody>
         {bad.length===0 && <tr><td colSpan="4" style={{textAlign:'center',color:'var(--ok)',fontWeight:600,padding:30}}>ทุกข้อกำหนดสอดคล้องครบถ้วน ✓</td></tr>}
         {bad.map(l=>(<tr key={l.id} onClick={()=>onOpen(l)}>
-          <td><div className="law-code">{l.code}</div><div className="law-title" style={{fontSize:13}}>{l.name.slice(0,70)}{l.name.length>70?'…':''}</div></td>
+          <td><div className="law-code" style={{display:'flex',alignItems:'center',gap:8}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/></div><div className="law-title" style={{fontSize:13}}>{l.name.slice(0,70)}{l.name.length>70?'…':''}</div></td>
           <td><Tag c={l.cat} color={catMap[l.cat]?.color}/></td>
           <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
           <td><Pill s={l.status}/></td>
@@ -1236,7 +1233,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
                 <tbody>{grouped[c][t.level].map(l=>(
                   <tr key={l.id} className={sel.has(l.id)?'row-sel':''} style={l.active===false?{opacity:.55}:null}>
                     <td onClick={e=>{e.stopPropagation();toggleSel(l.id)}} style={{textAlign:'center'}}><input type="checkbox" checked={sel.has(l.id)} onChange={()=>toggleSel(l.id)} onClick={e=>e.stopPropagation()}/></td>
-                    <td onClick={()=>onOpen(l)}><div className="law-code">{l.code}{l.active===false&&<span className="tag" style={{marginLeft:8,fontSize:9.5,padding:'1px 7px'}}>ไม่ใช้แล้ว</span>}</div><div className="law-title">{l.name}</div></td>
+                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/></div><div className="law-title">{l.name}</div></td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.issue_date||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.effective_date||'—'}</td>

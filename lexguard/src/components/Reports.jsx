@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { RECURRENCE_LABELS } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import Attachments from './Attachments.jsx'
@@ -24,7 +25,7 @@ function EventDateModal({ report, onSave, onClose }){
   const [date,setDate]=useState(report.event_date||today())
   const off=report.offset_days||0
   const preview=useMemo(()=>{ if(!date) return null; const d=new Date(date); d.setDate(d.getDate()+off); return d.toISOString().slice(0,10) },[date,off])
-  return (<><div className="scrim" onClick={onClose}/>
+  return createPortal(<><div className="scrim" onClick={onClose}/>
     <div className="modal">
       <div className="modal-head"><h3>กรอกวันเกิดเหตุ → คำนวณกำหนดส่ง</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
       <div className="modal-body">
@@ -41,31 +42,61 @@ function EventDateModal({ report, onSave, onClose }){
         <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
         <button className="btn btn-primary" disabled={!date} onClick={()=>{ onSave(report.id,date,off); onClose() }}>บันทึก</button>
       </div>
-    </div></>)
+    </div></>, document.body)
 }
 
-/* ─── Mark a report submitted ─── */
+/* ─── Mark a report submitted (บันทึกเอกสาร/การส่ง) ─── */
 function SubmitModal({ report, onSave, onClose }){
   const [fileRef,setFileRef]=useState(report.file_reference||'')
-  return (<><div className="scrim" onClick={onClose}/>
-    <div className="modal">
+  const [sentDate,setSentDate]=useState(today())
+  const due=report.next_due_date
+  const isRecurring=report.trigger_type==='fixed' && report.recurrence!=='once'
+  const lateBy = due ? -daysTo(due) : null   // >0 = ส่งช้ากว่ากำหนด
+  return createPortal(<><div className="scrim" onClick={onClose}/>
+    <div className="modal modal--submit">
       <div className="modal-head"><h3>บันทึกการส่งรายงาน</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
       <div className="modal-body">
-        <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:8}}>{report.title}</p>
-        <p style={{fontSize:12.5,color:'var(--ink-faint)',marginBottom:14}}>ยื่นที่: {report.authority||'—'}</p>
-        <label className="form-label">อ้างอิงไฟล์ / เลขที่หนังสือ (ไม่บังคับ)</label>
-        <input className="form-input" type="text" placeholder="เช่น จป.ว_2569_รอบ1.pdf หรือเลขรับ…" value={fileRef} onChange={e=>setFileRef(e.target.value)}/>
-        <div className="sec-t" style={{marginTop:16}}>ไฟล์แนบ</div>
+        {/* บริบทของรายงานที่กำลังบันทึก */}
+        <div className="submit-ctx">
+          <div className="submit-ctx-title">{report.title}</div>
+          <div className="submit-ctx-meta">
+            <span><I n="scale"/>{report.authority||'ไม่ระบุหน่วยงาน'}</span>
+            {report.recurrence && <span><I n="update"/>{RECURRENCE_LABELS[report.recurrence]||'—'}</span>}
+            {due && <span><I n="clock"/>กำหนดส่ง {thDate(due)}</span>}
+            {due && countdownChip(due)}
+          </div>
+        </div>
+
+        <div className="submit-grid">
+          <div>
+            <label className="form-label">วันที่ส่งจริง</label>
+            <input className="form-input" type="date" max={today()} value={sentDate} onChange={e=>setSentDate(e.target.value)}/>
+          </div>
+          <div>
+            <label className="form-label">อ้างอิงไฟล์ / เลขที่หนังสือ <span style={{color:'var(--ink-faint)',fontWeight:400}}>(ไม่บังคับ)</span></label>
+            <input className="form-input" type="text" placeholder="เช่น จป.ว_2569_รอบ1.pdf หรือเลขรับ…" value={fileRef} onChange={e=>setFileRef(e.target.value)}/>
+          </div>
+        </div>
+
+        {due && sentDate && (lateBy>0
+          ? <div className="submit-flag submit-flag--late">⚠ ส่งช้ากว่ากำหนด {lateBy} วัน — จะบันทึกไว้ในประวัติ</div>
+          : <div className="submit-flag submit-flag--ok">✓ ส่งภายในกำหนด</div>)}
+
+        <div className="sec-t" style={{marginTop:12}}>ไฟล์แนบ</div>
         <Attachments refType="report" refId={report.id}/>
-        {report.trigger_type==='fixed' && report.recurrence!=='once'
-          ? <p style={{fontSize:12,color:'var(--ink-faint)',marginTop:12}}>เมื่อยืนยัน ระบบจะเลื่อนกำหนดส่งไปยังรอบถัดไป ({RECURRENCE_LABELS[report.recurrence]}) โดยอัตโนมัติ</p>
-          : <p style={{fontSize:12,color:'var(--ink-faint)',marginTop:12}}>เมื่อยืนยัน รายการนี้จะรอกรอกวันเกิดเหตุครั้งถัดไป</p>}
+
+        <div className="submit-next">
+          <I n="info"/>
+          {isRecurring
+            ? <span>เมื่อยืนยัน ระบบจะเลื่อนกำหนดส่งไปยังรอบถัดไป ({RECURRENCE_LABELS[report.recurrence]}) โดยอัตโนมัติ</span>
+            : <span>เมื่อยืนยัน รายการนี้จะรอกรอกวันเกิดเหตุครั้งถัดไป</span>}
+        </div>
       </div>
       <div className="modal-foot">
         <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
-        <button className="btn btn-primary" onClick={()=>{ onSave(report.id,fileRef); onClose() }}>ยืนยันการส่ง</button>
+        <button className="btn btn-primary" onClick={()=>{ onSave(report.id,fileRef,sentDate); onClose() }}>ยืนยันการส่ง</button>
       </div>
-    </div></>)
+    </div></>, document.body)
 }
 
 export default function Reports({ reports, onSetEvent, onSubmit }){
