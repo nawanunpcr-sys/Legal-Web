@@ -2109,3 +2109,7 @@ tbody tr.row-danger td:first-child { box-shadow: inset 3px 0 0 var(--bad) }
     transition-duration: .01ms !important;
   }
 }
+
+/* โหมดผู้เยี่ยมชม (auditor / viewer) — ซ่อนปุ่มแก้ไข/ลบทุกจุดที่สิทธิ์ไม่พอ
+   ปุ่มที่ถูกกั้นสิทธิ์จะตั้ง title="สิทธิ์ไม่เพียงพอ" (NO_PERM) อยู่แล้ว จึงเจาะจงซ่อนได้แม่นยำ */
+.role-viewer [title="สิทธิ์ไม่เพียงพอ"] { display: none !important; }

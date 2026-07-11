@@ -1,8 +1,10 @@
 // Repealed page — laws that have been repealed / superseded (restorable).
 // Moved verbatim from App.jsx (pure refactor).
 import { Tag, thDate } from '../lib/ui.jsx'
+import { useAuth, NO_PERM } from '../lib/auth.js'
 
 export default function Repealed({laws,catMap,search,onOpen,onRestore}){
+  const { can }=useAuth()
   const q=search.toLowerCase()
   const rows=laws.filter(l=>!q||l.name.toLowerCase().includes(q)||l.code.toLowerCase().includes(q))
 
@@ -45,7 +47,7 @@ export default function Repealed({laws,catMap,search,onOpen,onRestore}){
               </div>
               <div style={{display:'flex',gap:8,flexShrink:0}}>
                 <button className="btn btn-ghost" style={{padding:'5px 12px',fontSize:12}} onClick={()=>onOpen(l)}>ดูรายละเอียด</button>
-                <button className="btn btn-primary" style={{padding:'5px 12px',fontSize:12}} onClick={()=>onRestore(l)}>กู้คืน</button>
+                <button className="btn btn-primary" style={{padding:'5px 12px',fontSize:12}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onRestore(l)}>กู้คืน</button>
               </div>
             </div>
             {/* repeal details */}

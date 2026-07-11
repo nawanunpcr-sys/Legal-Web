@@ -241,6 +241,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
 /* ─────────────────────────── COMPLIANCE ─────────────────────────── */
 
 function MonthlyCheckPanel({ months, year, setYear, onToggle, onMarkNoNewLaws, onMarkHasNewLaws }) {
+  const { can }=useAuth()
   const toBE = y => y + 543
   const getMonth = m => months.find(r=>r.year===year && r.month===m) || {checked:false}
   const checkedCount = months.filter(m=>m.year===year && m.checked).length
@@ -267,8 +268,8 @@ function MonthlyCheckPanel({ months, year, setYear, onToggle, onMarkNoNewLaws, o
           {!curReviewed ? (<>
             <span className="month-action-lab">⏳ เดือน{TH_MONTHS[curMonth-1]}นี้ยังไม่ได้ตรวจสอบกฎหมายใหม่</span>
             <div className="month-action-btns">
-              <button className="btn btn-ghost" onClick={onMarkHasNewLaws}>🔍 พบกฎหมายใหม่ — เริ่มกระบวนการ</button>
-              <button className="btn btn-primary" onClick={onMarkNoNewLaws}>✓ ตรวจแล้ว ไม่มีกฎหมายใหม่เดือนนี้</button>
+              <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={onMarkHasNewLaws}>🔍 พบกฎหมายใหม่ — เริ่มกระบวนการ</button>
+              <button className="btn btn-primary" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={onMarkNoNewLaws}>✓ ตรวจแล้ว ไม่มีกฎหมายใหม่เดือนนี้</button>
             </div>
           </>) : curRec.status==='no_new_laws' ? (
             <span className="month-action-badge month-action-badge--ok">ไม่มีกฎหมายใหม่ ✓ (ตรวจโดย {curRec.checked_by||'—'}{curRec.checked_at?' '+thDate(curRec.checked_at):''})</span>
@@ -289,8 +290,9 @@ function MonthlyCheckPanel({ months, year, setYear, onToggle, onMarkNoNewLaws, o
             <button
               key={m}
               className={'month-cell'+(rec.checked?' month-checked':'')+(isCurrentMonth?' month-current':'')}
+              disabled={!can('edit')}
               onClick={()=>onToggle(year, m)}
-              title={rec.checked && rec.checked_at ? 'ตรวจสอบแล้ว: '+new Date(rec.checked_at).toLocaleDateString('th-TH') : 'คลิกเพื่อทำเครื่องหมาย'}
+              title={rec.checked && rec.checked_at ? 'ตรวจสอบแล้ว: '+new Date(rec.checked_at).toLocaleDateString('th-TH') : (can('edit')?'คลิกเพื่อทำเครื่องหมาย':'อ่านอย่างเดียว')}
             >
               <span className="month-name">{label}</span>
               <span className="month-tick">{rec.checked ? '✓' : ''}</span>

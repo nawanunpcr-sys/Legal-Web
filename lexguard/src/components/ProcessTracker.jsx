@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { PROCESS_STAGES, createProcessItem, updateProcessItem, deleteProcessItem } from '../lib/supabase.js'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
+import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from './icons.jsx'
 import EmptyState from './EmptyState.jsx'
 
@@ -12,6 +13,7 @@ const nextKey = k => { const i = PROCESS_STAGES.findIndex(s => s.key === k); ret
 // month's* new-law-scan status, and only falls back to the 5-stage tracker
 // once that scan has turned up new laws still being worked through.
 export function StageBar({ items, onGo, monthRow, hasActiveWork, monthLabel, onMarkNoNewLaws, onMarkHasNewLaws }) {
+  const { can } = useAuth()
   const counts = useMemo(() => {
     const c = Object.fromEntries(PROCESS_STAGES.map(s => [s.key, 0]))
     items.forEach(i => { if (c[i.stage] != null) c[i.stage]++ })
@@ -26,8 +28,8 @@ export function StageBar({ items, onGo, monthRow, hasActiveWork, monthLabel, onM
       <div className="panel-b month-action-bar">
         <span className="month-action-lab"><span className="month-dot month-dot--wait" />รอการตรวจสอบประจำเดือน{monthLabel}</span>
         <div className="month-action-btns">
-          <button className="btn btn-ghost" onClick={onMarkHasNewLaws}>พบกฎหมายใหม่ — เริ่มกระบวนการ</button>
-          <button className="btn btn-primary" onClick={onMarkNoNewLaws}>ตรวจแล้ว ไม่มีกฎหมายใหม่เดือนนี้</button>
+          <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={onMarkHasNewLaws}>พบกฎหมายใหม่ — เริ่มกระบวนการ</button>
+          <button className="btn btn-primary" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={onMarkNoNewLaws}>ตรวจแล้ว ไม่มีกฎหมายใหม่เดือนนี้</button>
         </div>
       </div>
     </div>
@@ -70,6 +72,7 @@ export function StageBar({ items, onGo, monthRow, hasActiveWork, monthLabel, onM
 }
 
 export default function ProcessTracker({ items, onReload, updates = [], onGoView }) {
+  const { can } = useAuth()
   const [modal, setModal] = useState(null)
   // optimistic stage overrides: { [itemId]: stageKey } applied on top of `items`
   // so a card jumps columns instantly; cleared when fresh `items` arrive.
@@ -103,8 +106,8 @@ export default function ProcessTracker({ items, onReload, updates = [], onGoView
     <div className="view">
       <div className="filterbar">
         <span className="right" style={{ marginRight: 'auto', color: 'var(--ink-faint)' }}>ลากงานผ่าน 4 สเตจ: ค้นพบ → ตรวจเนื้อหา → ส่งต่อ → ตรวจสอบ/ติดตาม</span>
-        <button className="btn btn-ghost" onClick={pullFromUpdates}>ดึงจากกฎหมายใหม่</button>
-        <button className="btn btn-primary" onClick={() => setModal({ stage: 'discovery' })}><I n="plus"/>เพิ่มรายการ</button>
+        <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={pullFromUpdates}>ดึงจากกฎหมายใหม่</button>
+        <button className="btn btn-primary" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={() => setModal({ stage: 'discovery' })}><I n="plus"/>เพิ่มรายการ</button>
       </div>
 
       {items.length === 0 ? (
@@ -132,9 +135,9 @@ export default function ProcessTracker({ items, onReload, updates = [], onGoView
                     </div>
                   ) : (
                     <div className="kacts">
-                      {it.stage !== 'done' && <button className="btn btn-primary" style={{ padding: '3px 9px', fontSize: 11 }} onClick={() => advance(it)}>ถัดไป →</button>}
-                      <button className="btn btn-ghost" style={{ padding: '3px 9px', fontSize: 11 }} onClick={() => setModal(it)}>แก้ไข</button>
-                      <button className="btn btn-ghost" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => remove(it)}>ลบ</button>
+                      {it.stage !== 'done' && <button className="btn btn-primary" style={{ padding: '3px 9px', fontSize: 11 }} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={() => advance(it)}>ถัดไป →</button>}
+                      <button className="btn btn-ghost" style={{ padding: '3px 9px', fontSize: 11 }} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={() => setModal(it)}>แก้ไข</button>
+                      <button className="btn btn-ghost" style={{ padding: '3px 8px', fontSize: 11 }} disabled={!can('delete')} title={can('delete')?'':NO_PERM} onClick={() => remove(it)}>ลบ</button>
                     </div>
                   )}
                 </div>

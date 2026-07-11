@@ -454,7 +454,7 @@ export default function App(){
 
   return (
     <AuthContext.Provider value={authValue}>
-    <div className={'app'+(navOpen?'':' nav-collapsed')}>
+    <div className={'app'+(navOpen?'':' nav-collapsed')+(role==='viewer'?' role-viewer':'')}>
       <aside className={'sidebar'+(navOpen?'':' collapsed')}>
         <div className="brand" role="button" tabIndex={0} title="กลับหน้าหลัก"
           onClick={()=>setView('dashboard')}
