@@ -422,7 +422,9 @@ export async function fetchUpdates() {
 // Promote a staged batch (one law_code group) into the live registry
 export async function addStagedLaw(rows) {
   const first = rows[0]
-  let { data: law } = await supabase.from('lg_laws').select('id').eq('code', first.law_code).maybeSingle()
+  // รหัสกฎหมายซ้ำข้ามหมวดได้ (เช่น LF-001 มีทั้งหมวด LF และ LG) จึงต้อง lookup ด้วย (cat, code) เสมอ
+  let { data: law } = await supabase.from('lg_laws').select('id')
+    .eq('code', first.law_code).eq('cat', first.cat || 'LA').maybeSingle()
   if (!law) {
     const { data: ins, error } = await supabase.from('lg_laws').insert({
       code: first.law_code, cat: first.cat || 'LA', ministry: first.ministry || '',

@@ -208,13 +208,14 @@ export default function App(){
   const catMap      = useMemo(()=>Object.fromEntries(cats.map(c=>[c.code,c])),[cats])
   const activeLaws  = useMemo(()=>laws.filter(l=>l.status!=='repealed'),[laws])
   const repealedLaws= useMemo(()=>laws.filter(l=>l.status==='repealed'),[laws])
-  const stagingBatches = useMemo(()=>{ const g={}; staging.forEach(r=>{(g[r.law_code]=g[r.law_code]||[]).push(r)}); return Object.entries(g) },[staging])
+  // จัดกลุ่มด้วย (cat, law_code) เพราะรหัสซ้ำข้ามหมวดได้ — ถ้าจัดกลุ่มด้วย law_code เดี่ยวๆ กฎหมายคนละหมวดที่เลขชนกันจะถูกรวมเป็นฉบับเดียว
+  const stagingBatches = useMemo(()=>{ const g={}; staging.forEach(r=>{ const k=(r.cat||'')+'|'+r.law_code; (g[k]=g[k]||[]).push(r)}); return Object.entries(g) },[staging])
   const newUpdates  = useMemo(()=>updates.filter(u=>u.status==='new'),[updates])
   const suggest     = useMemo(()=>suggestionLists(laws),[laws])
   const allProcess  = useMemo(()=>{
     const out = processItems.map(p=>({...p,auto:false}))
     updates.filter(u=>u.status==='new').forEach(u=>out.push({id:'u'+u.id,auto:true,stage:'discovery',title:u.title,note:'กฎหมายใหม่จาก '+(u.source||'ShawPat'),goView:'updates'}))
-    stagingBatches.forEach(([code,rows])=>out.push({id:'s'+code,auto:true,stage:'review',title:rows[0]?.law_name||code,note:rows.length+' ข้อกำหนด รออนุมัติ',goView:'staging'}))
+    stagingBatches.forEach(([key,rows])=>out.push({id:'s'+key,auto:true,stage:'review',title:rows[0]?.law_name||rows[0]?.law_code||key,note:rows.length+' ข้อกำหนด รออนุมัติ',goView:'staging'}))
     activeLaws.filter(l=>l.status==='bad').forEach(l=>out.push({id:'law'+l.id,auto:true,stage:'verify',title:l.code+' — '+(l.name||'').slice(0,50),note:'ยังไม่สอดคล้อง · '+l.reqs.filter(r=>r.status!=='met').length+' ข้อ',goView:'registry'}))
     return out
   },[processItems,updates,stagingBatches,activeLaws])
@@ -1808,11 +1809,11 @@ function Staging({batches,catMap,onAdd,onDrop}){
     </div>
   )
   return <div className="view">
-    {batches.map(([code,rows])=>{ const f=rows[0]; return (
-      <div className="panel" key={code} style={{marginBottom:14}}>
+    {batches.map(([key,rows])=>{ const f=rows[0]; return (
+      <div className="panel" key={key} style={{marginBottom:14}}>
         <div className="panel-h">
-          <span className="law-code">{code}</span>
-          <span style={{fontWeight:600,fontSize:14}}>{f.law_name||code}</span>
+          <span className="law-code">{f.law_code}</span>
+          <span style={{fontWeight:600,fontSize:14}}>{f.law_name||f.law_code}</span>
           <span className="sub" style={{marginLeft:'auto'}}>{f.cat?catMap[f.cat]?.name||f.cat:''}{f.ministry?' · '+f.ministry:''} · {rows.length} ข้อกำหนด</span>
         </div>
         <div className="panel-b">
@@ -1839,7 +1840,7 @@ function Staging({batches,catMap,onAdd,onDrop}){
             </div>
           ))}
           <div style={{display:'flex',gap:8,marginTop:14,alignItems:'center'}}>
-            <button className="btn btn-primary" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onAdd(code,rows)}>เพิ่มเข้าทะเบียน</button>
+            <button className="btn btn-primary" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onAdd(key,rows)}>เพิ่มเข้าทะเบียน</button>
             <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onDrop(rows)}>ไม่เพิ่ม</button>
             {f.source_url && <a className="btn btn-ghost" href={f.source_url} target="_blank" rel="noreferrer">ดูแหล่งที่มา</a>}
           </div>
