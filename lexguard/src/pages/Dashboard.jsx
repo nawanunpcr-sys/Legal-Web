@@ -151,7 +151,6 @@ function ActivityTimeline({activity,onOpenLaw,lawById}){
     return Object.entries(g).sort((a,b)=>b[0].localeCompare(a[0]))
   },[activity])
   const shownDays = showAll ? days : days.slice(0,2)
-  const fullDate = s => { if(!s) return ''; const m=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; const d=new Date(s); return d.getDate()+' '+m[d.getMonth()]+' '+(d.getFullYear()+543) }
   const hhmm = s => { const d=new Date(s); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0') }
   return (
     <div className="panel" style={{marginTop:16}}>
@@ -161,7 +160,7 @@ function ActivityTimeline({activity,onOpenLaw,lawById}){
         {days.length===0 && <div style={{textAlign:'center',color:'var(--ink-faint)',padding:24,fontSize:13}}>ยังไม่มีเหตุการณ์ — เมื่อมีการเพิ่ม/แก้/ยกเลิกกฎหมาย จะบันทึกที่นี่พร้อมวันเวลา</div>}
         {shownDays.map(([date,items])=>(
           <div key={date} className="tl-year">
-            <div className="tl-head"><span className="tl-dot"/><b style={{fontSize:14}}>{fullDate(date)}</b><span className="sub" style={{marginLeft:10}}>{items.length} เหตุการณ์</span></div>
+            <div className="tl-head"><span className="tl-dot"/><b style={{fontSize:14}}>{thDate(date)}</b><span className="sub" style={{marginLeft:10}}>{items.length} เหตุการณ์</span></div>
             <div className="tl-items">
               {items.map(a=>{ const m=ACT_META[a.action]||{t:a.action,c:'var(--ink-faint)'}; const law=lawById[a.law_id]
                 return (

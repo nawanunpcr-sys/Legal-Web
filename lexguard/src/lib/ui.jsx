@@ -53,7 +53,14 @@ export function roundCounts(laws, q, beYear) {
   }
   return { added, repealed }
 }
-export const thDate = s => { if (!s) return '—'; const d = new Date(s); return d.getDate() + ' ' + TH_MONTHS[d.getMonth()] + ' ' + (d.getFullYear() + 543) }
+// util วันที่ไทยเดียวของทั้งแอป: "วัน เดือนย่อ ปีพ.ศ." (คืน '—' ถ้าว่าง, คืนค่าดิบถ้าแปลงไม่ได้)
+export const formatThaiDate = s => {
+  if (!s) return '—'
+  const d = new Date(s)
+  if (isNaN(d)) return String(s)
+  return d.getDate() + ' ' + TH_MONTHS[d.getMonth()] + ' ' + (d.getFullYear() + 543)
+}
+export const thDate = formatThaiDate   // ชื่อย่อเดิม (alias)
 export const daysTo = s => Math.ceil((new Date(s) - new Date()) / 86400000)
 export const beYearFromDate = d => { if (!d) return null; const x = new Date(d); return isNaN(x) ? null : x.getFullYear() + 543 }
 

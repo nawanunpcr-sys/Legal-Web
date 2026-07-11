@@ -6,7 +6,7 @@ import { RECURRENCE_LABELS } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import Attachments from '../components/Attachments.jsx'
-import { daysTo } from '../lib/ui.jsx'
+import { daysTo, thDate } from '../lib/ui.jsx'
 
 function CommScheduleModal({comm,onSave,onClose}){
   const [date,setDate]=useState(comm.scheduled_date||'')
@@ -100,7 +100,7 @@ export default function Communication({comms,onMarkSent,onScheduleUpdate}){
           <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{c.receiver}</td>
           <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{RECURRENCE_LABELS[c.recurrence_type]||c.frequency||'—'}</td>
           <td style={{fontSize:12,whiteSpace:'nowrap'}}>
-            {c.next_scheduled_date?<><div>{c.next_scheduled_date}</div>{countdownChip(c)}</>:<span style={{color:'var(--ink-faint)'}}>ยังไม่ตั้งค่า</span>}
+            {c.next_scheduled_date?<><div>{thDate(c.next_scheduled_date)}</div>{countdownChip(c)}</>:<span style={{color:'var(--ink-faint)'}}>ยังไม่ตั้งค่า</span>}
           </td>
           <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{c.assigned_to||'—'}</td>
           <td><div style={{display:'flex',gap:4}}>

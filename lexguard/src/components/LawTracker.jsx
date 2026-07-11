@@ -4,8 +4,7 @@ import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
 import { I } from './icons.jsx'
-
-const thDate = s => { if (!s) return '—'; const m = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; const d = new Date(s); if (isNaN(d)) return s; return d.getDate() + ' ' + m[d.getMonth()] + ' ' + (d.getFullYear() + 543) }
+import { thDate } from '../lib/ui.jsx'
 const isOverdue = st => st.status !== 'done' && st.due_at && new Date(st.due_at) < new Date()
 export const effStatus = st => isOverdue(st) ? 'overdue' : st.status
 

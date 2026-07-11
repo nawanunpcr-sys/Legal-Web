@@ -3,9 +3,7 @@ import { uploadAttachment, fetchAttachments, deleteAttachment } from '../lib/sup
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
 import { I } from './icons.jsx'
-
-const TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
-const thDate = s => { if (!s) return '—'; const d = new Date(s); if (isNaN(d)) return s; return d.getDate() + ' ' + TH[d.getMonth()] + ' ' + (d.getFullYear() + 543) }
+import { thDate } from '../lib/ui.jsx'
 
 // Reusable real-file attachment list. Self-manages fetch/upload/delete against lg_attachments.
 // refId falsy → prompt to save the parent record first.

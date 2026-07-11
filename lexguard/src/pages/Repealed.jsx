@@ -1,11 +1,10 @@
 // Repealed page — laws that have been repealed / superseded (restorable).
 // Moved verbatim from App.jsx (pure refactor).
-import { Tag } from '../lib/ui.jsx'
+import { Tag, thDate } from '../lib/ui.jsx'
 
 export default function Repealed({laws,catMap,search,onOpen,onRestore}){
   const q=search.toLowerCase()
   const rows=laws.filter(l=>!q||l.name.toLowerCase().includes(q)||l.code.toLowerCase().includes(q))
-  const thDate = s => { if(!s) return '—'; const m=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; const d=new Date(s); return d.getDate()+' '+m[d.getMonth()]+' '+(d.getFullYear()+543) }
 
   if (rows.length===0) return (
     <div className="view">

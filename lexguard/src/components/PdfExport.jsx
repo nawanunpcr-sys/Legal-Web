@@ -2,15 +2,9 @@
 // #print-report, then App calls window.print(). Layout mirrors the real
 // source-data/F-259 workbook: form no. top-right, per-category pages, C/NC
 // evaluation and an end-of-report signature block.
-const ESC = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+import { thDate } from '../lib/ui.jsx'
 
-const TH_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
-const thDate = s => {
-  if (!s) return '—'
-  const d = new Date(s)
-  if (isNaN(d)) return String(s)
-  return d.getDate() + ' ' + TH_MONTHS[d.getMonth()] + ' ' + (d.getFullYear() + 543)
-}
+const ESC = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 // F-259 form metadata (from the source workbook header)
 const FORM = { no: 'F-259', rev: 'Rev.1', effective: '10/01/66' }
