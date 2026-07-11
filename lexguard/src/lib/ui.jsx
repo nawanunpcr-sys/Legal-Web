@@ -1,6 +1,14 @@
 // Shared UI helpers & primitives used across App layout and page components.
 // Extracted verbatim from App.jsx during the page split — behavior unchanged.
+import { useState, useEffect } from 'react'
 import { STATUS } from './supabase.js'
+
+// localStorage-backed state (persists filters/mode across reloads).
+export function usePersist(key, def){
+  const [v,setV]=useState(()=>{ try{ const s=localStorage.getItem(key); return s==null?def:JSON.parse(s) }catch{ return def } })
+  useEffect(()=>{ try{ localStorage.setItem(key,JSON.stringify(v)) }catch{} },[key,v])
+  return [v,setV]
+}
 
 // Progress % of a law from its requirements (no reqs = 100%).
 export const prog = l => !l.reqs.length ? 100 : Math.round(l.reqs.filter(r => r.status === 'met').length / l.reqs.length * 100)
