@@ -8,6 +8,9 @@ const NOTIF_META = {
   comm:      { label:'กำหนดสื่อสาร',   icon:'chat',     bg:'var(--brand-tint)',fg:'var(--brand)'  },
   submitted: { label:'ส่งเรียบร้อย',   icon:'check',    bg:'var(--ok-bg)',     fg:'var(--ok)'     },
   law_update:{ label:'กฎหมายใหม่',     icon:'spark',    bg:'var(--brand-tint)',fg:'var(--brand)'  },
+  report_jorpor: { label:'รายงาน จป.ว',   icon:'clock', bg:'var(--review-bg)', fg:'var(--review)' },
+  effective_soon:{ label:'จะบังคับใช้',    icon:'clock', bg:'var(--review-bg)', fg:'var(--review)' },
+  training:      { label:'อบรม จป.',       icon:'spark', bg:'var(--review-bg)', fg:'var(--review)' },
 }
 export default function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
   const [filter, setFilter] = useState('all')

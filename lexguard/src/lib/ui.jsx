@@ -32,6 +32,37 @@ export const quarterOfDate = d => { const x = new Date(d); return isNaN(x) ? nul
 export const roundLabel = (q, beYear) => `รอบที่ ${q} (${QUARTER_LABEL[q - 1]}) ปี ${beYear}`
 // รอบประเมินปัจจุบันจากวันนี้ { q, by } (by = ปี พ.ศ.)
 export const currentRound = () => { const n = new Date(); return { q: Math.floor(n.getMonth() / 3) + 1, by: n.getFullYear() + 543 } }
+// ── หน้าที่ตามกฎหมายของ จป. ──
+// เส้นตายรายงาน จป.ว 2 ครั้ง/ปี: ยื่นภายใน 30 วันนับแต่ 30 มิ.ย. / 31 ธ.ค. → เส้นตาย 30 ก.ค. / 30 ม.ค.
+function nextOccur(month, day, now) { // month 0-based
+  let d = new Date(now.getFullYear(), month, day)
+  if (d < now) d = new Date(now.getFullYear() + 1, month, day)
+  return d
+}
+export function jorporReportDeadlines(now = new Date()) {
+  const jul = nextOccur(6, 30, now), jan = nextOccur(0, 30, now)
+  return [
+    { key: 'jorpor-jul', label: 'ส่งรายงาน จป.ว (ครึ่งปีแรก) — ภายใน 30 ก.ค.', due: jul, days: Math.ceil((jul - now) / 86400000) },
+    { key: 'jorpor-jan', label: 'ส่งรายงาน จป.ว (ครึ่งปีหลัง) — ภายใน 30 ม.ค.', due: jan, days: Math.ceil((jan - now) / 86400000) },
+  ]
+}
+// กฎหมายที่ "ประกาศแล้วแต่ยังไม่ถึงวันบังคับใช้" — คืน { days } ถ้า effective_date เป็นวันในอนาคต (ข้าม freeform)
+export function effectiveInfo(law, now = new Date()) {
+  if (!law?.effective_date) return null
+  const d = new Date(law.effective_date)
+  if (isNaN(d)) return null
+  const days = Math.ceil((d - now) / 86400000)
+  return days > 0 ? { days } : null
+}
+// สถานะอบรมพัฒนาความรู้ จป. 12 ชม./ปี (t = {hours, target, year})
+export function trainingStatus(t, now = new Date()) {
+  const target = Number(t?.target ?? 12)
+  const hours = Number(t?.hours ?? 0)
+  const daysLeft = Math.ceil((new Date(now.getFullYear(), 11, 31) - now) / 86400000)
+  const done = hours >= target
+  return { hours, target, daysLeft, done, remain: Math.max(0, target - hours), alert: !done && daysLeft <= 90 }
+}
+
 // นับกฎหมายมาใหม่/ยกเลิก รายเดือน (12 เดือน) ของปี พ.ศ. beYear — ตรงรูปแบบชีท Masterlist
 export function monthlyCounts(laws, beYear) {
   const gYear = beYear - 543

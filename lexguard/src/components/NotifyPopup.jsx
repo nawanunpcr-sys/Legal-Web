@@ -20,8 +20,9 @@ export function isOverdueItem(n) {
 const URGENCY_COLOR = { red: 'var(--bad)', orange: 'var(--review)', blue: 'var(--accent)' }
 
 function notifIcon(n) {
-  if (n.type === 'law_update') return 'spark'
+  if (n.type === 'law_update' || n.type === 'training') return 'spark'
   if (n.type === 'comm') return 'chat'
+  if (n.type === 'report_jorpor' || n.type === 'effective_soon') return 'clock'
   if (n.type === 'bad' && n.goView === 'reports') return 'inbox'
   return 'alert'
 }

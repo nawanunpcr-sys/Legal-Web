@@ -28,7 +28,8 @@ import { toast } from './lib/toast.js'
 import { confirmDialog } from './lib/confirm.js'
 import { buildReport } from './components/PdfExport.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
-import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, currentRound } from './lib/ui.jsx'
+import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, currentRound,
+         jorporReportDeadlines, effectiveInfo, trainingStatus } from './lib/ui.jsx'
 import RoundSelect from './components/RoundSelect.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import RegistryCompliance from './pages/Registry.jsx'
@@ -111,6 +112,7 @@ export default function App(){
   const [avatarOpen,setAvatarOpen] = useState(false)   // avatar menu (UI only)
   const [monthYear,setMonthYear] = useState(new Date().getFullYear())
   const [round,setRound]     = usePersist('cr_round', currentRound())   // รอบประเมิน F-259 { q, by(พ.ศ.) }
+  const [training,setTraining] = usePersist('lex_training', { hours:0, target:12, year:new Date().getFullYear()+543 })  // อบรม จป. 12 ชม./ปี
   const [months,setMonths]   = useState([])
   const [staging,setStaging] = useState([])
   const [updates,setUpdates] = useState([])
@@ -256,8 +258,14 @@ export default function App(){
     comms.forEach(c=>{ if(c.next_scheduled_date){ const d=daysTo(c.next_scheduled_date); const nb=c.notify_days_before||7; if(d>=0&&d<=nb) out.push({type:'comm',comm:c,days:d,text:'การสื่อสาร: '+c.topic.slice(0,50),sub:'ครบกำหนดใน '+d+' วัน — '+thDate(c.next_scheduled_date)}) }})
     reports.forEach(r=>{ if(r.next_due_date){ const d=daysTo(r.next_due_date); if(d<0) out.push({type:'bad',goView:'reports',text:'รายงานเกินกำหนดส่ง: '+r.title.slice(0,50),sub:'เกิน '+Math.abs(d)+' วัน — '+thDate(r.next_due_date)}) }})
     newUpdates.slice(0,15).forEach(u=>out.push({type:'law_update',goView:'updates',text:'กฎหมายใหม่: '+u.title.slice(0,55),sub:'จาก ShawPat'+(u.published_date?' · '+u.published_date:'')}))
+    // จป.ว: เตือนล่วงหน้า 14 วันก่อนเส้นตายรายงาน 2 ครั้ง/ปี (กฎกระทรวง 2565 ข้อ 47)
+    jorporReportDeadlines().forEach(d=>{ if(d.days>=0 && d.days<=14) out.push({type:'report_jorpor',goView:'reports',days:d.days,text:d.label,sub:'ครบกำหนดใน '+d.days+' วัน — '+thDate(d.due.toISOString())}) })
+    // กฎหมายประกาศแล้วแต่ยังไม่บังคับใช้: เตือนล่วงหน้า 30 วัน
+    activeLaws.forEach(l=>{ const e=effectiveInfo(l); if(e && e.days<=30) out.push({type:'effective_soon',law:l,days:e.days,text:l.code+' จะบังคับใช้ใน '+e.days+' วัน',sub:l.name.slice(0,60)}) })
+    // อบรม จป. 12 ชม./ปี: เตือนเมื่อเหลือ <90 วันแล้วยังไม่ครบ
+    { const ts=trainingStatus(training); if(ts.alert) out.push({type:'training',goView:'settings',text:'อบรมพัฒนาความรู้ จป. ยังไม่ครบ '+ts.target+' ชม.',sub:'ทำได้ '+ts.hours+' ชม. · เหลืออีก '+ts.remain+' ชม. · เหลือเวลา '+ts.daysLeft+' วัน'}) }
     return out.sort((a,b)=>(a.type==='bad'?-1:0)-(b.type==='bad'?-1:0))
-  },[activeLaws,comms,notifs,newUpdates,reports])
+  },[activeLaws,comms,notifs,newUpdates,reports,training])
 
   useEffect(()=>{
     if(!authed || loading || bellNotifications.length===0) return
@@ -569,7 +577,7 @@ export default function App(){
           {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={setView}/>}
           {view==='settings'      && (can(role,'delete')
-            ? <SettingsPage settings={settings} onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }}/>
+            ? <SettingsPage settings={settings} onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }} training={training} setTraining={setTraining}/>
             : <div className="view"><div className="panel" style={{padding:'50px 20px',textAlign:'center',color:'var(--ink-faint)'}}>เฉพาะผู้ดูแลระบบ (admin) เท่านั้นที่เข้าถึงหน้าตั้งค่าได้ — {NO_PERM}</div></div>)}
           </div>
         </div>

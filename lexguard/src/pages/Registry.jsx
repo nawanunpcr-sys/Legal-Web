@@ -6,7 +6,7 @@ import { LAW_TYPES } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
-import { usePersist, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, roundLabel, roundCounts, quarterOfDate, daysTo } from '../lib/ui.jsx'
+import { usePersist, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, roundLabel, roundCounts, quarterOfDate, daysTo, effectiveInfo } from '../lib/ui.jsx'
 import RoundSelect from '../components/RoundSelect.jsx'
 
 /* ─────────────────────────── ADD LAW MODAL ───────────────────────── */
@@ -193,7 +193,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
                 <tbody>{grouped[c][t.level].map(l=>(
                   <tr key={l.id} className={sel.has(l.id)?'row-sel':''} style={l.active===false?{opacity:.55}:null}>
                     <td onClick={e=>{e.stopPropagation();toggleSel(l.id)}} style={{textAlign:'center'}}><input type="checkbox" checked={sel.has(l.id)} onChange={()=>toggleSel(l.id)} onClick={e=>e.stopPropagation()}/></td>
-                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/></div><div className="law-title">{l.name}</div></td>
+                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/>{(()=>{ const e=effectiveInfo(l); return e?<span className="pill" style={{fontSize:10,padding:'1px 7px',background:'var(--review-bg)',color:'var(--review)'}}>จะบังคับใช้ใน {e.days} วัน</span>:null })()}</div><div className="law-title">{l.name}</div></td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.issue_date||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.effective_date||'—'}</td>
