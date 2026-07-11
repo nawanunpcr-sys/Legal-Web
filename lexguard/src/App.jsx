@@ -28,7 +28,7 @@ import Toaster from './components/Toaster.jsx'
 import ConfirmHost from './components/ConfirmHost.jsx'
 import { toast } from './lib/toast.js'
 import { confirmDialog } from './lib/confirm.js'
-import { buildReport } from './components/report.jsx'
+import { buildReport } from './components/PdfExport.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
 
 function usePersist(key, def){
