@@ -21,8 +21,43 @@ function strip(html){
   return html.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ')
              .replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim()
 }
+
+// ── โดเมนที่อนุญาตให้ fetch ได้ (กัน SSRF) — เฉพาะเว็บราชการ/แหล่งกฎหมาย รวม subdomain ──
+const ALLOWED_HOSTS = ['ratchakitcha.soc.go.th','dlpw.go.th','labour.go.th','shawpat.or.th','ddc.moph.go.th','moph.go.th','diw.go.th']
+function isAllowedUrl(u){
+  try{
+    const url = new URL(u)
+    if(url.protocol!=='http:' && url.protocol!=='https:') return false
+    const host = url.hostname.toLowerCase()
+    return ALLOWED_HOSTS.some(d => host===d || host.endsWith('.'+d))
+  }catch{ return false }
+}
+
+// ── การป้องกันขั้นต่ำ 2 ชั้น ──
+// TODO: การป้องกันจริงต้องใช้ Supabase Auth JWT เมื่อเลิกโหมด demo
+//       (rate-limit ในหน่วยความจำใช้ไม่ได้ข้าม serverless instance — เป็นเพียงเบรกชั่วคราว)
+// (ก) ตรวจ Origin/Referer ว่ามาจากโดเมนของแอปเอง (อ่านจาก env ALLOWED_ORIGIN)
+function sameOrigin(req){
+  const allowed = process.env.ALLOWED_ORIGIN
+  if(!allowed) return false
+  const origin = req.headers.origin || req.headers.referer || ''
+  return origin.startsWith(allowed)
+}
+// (ข) จำกัดความถี่แบบง่ายในหน่วยความจำ: ไม่เกิน 10 ครั้ง/นาที/IP
+const RATE_LIMIT = 10, RATE_WINDOW = 60_000
+const rateMap = new Map()
+function clientIp(req){ return String(req.headers['x-forwarded-for']||'').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown' }
+function rateLimited(ip){
+  const now = Date.now()
+  const hits = (rateMap.get(ip)||[]).filter(t => now-t < RATE_WINDOW)
+  hits.push(now); rateMap.set(ip, hits)
+  return hits.length > RATE_LIMIT
+}
+
 export default async function handler(req,res){
   if(req.method!=='POST') return res.status(405).json({error:'POST only'})
+  if(!sameOrigin(req)) return res.status(403).json({error:'คำขอไม่ได้มาจากโดเมนของแอป'})
+  if(rateLimited(clientIp(req))) return res.status(429).json({error:'เรียกใช้งานถี่เกินไป กรุณารอสักครู่แล้วลองใหม่'})
   if(!SUPA_URL||!SUPA_KEY) return res.status(500).json({error:'ยังไม่ได้ตั้งค่า Supabase (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)'})
   if(!process.env.ANTHROPIC_API_KEY) return res.status(500).json({error:'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Vercel'})
   try{
@@ -32,6 +67,7 @@ export default async function handler(req,res){
     const isUrl = /^https?:\/\//i.test(source.trim())
     if(isUrl && kind!=='text'){
       srcUrl = source.trim()
+      if(!isAllowedUrl(srcUrl)) return res.status(400).json({error:'รองรับเฉพาะเว็บราชการ/แหล่งกฎหมายที่กำหนดไว้เท่านั้น'})
       const r = await fetch(srcUrl,{headers:{'user-agent':'Mozilla/5.0 LexRegistry'}})
       const ct = r.headers.get('content-type')||''
       if(ct.includes('pdf')) return res.status(415).json({error:'ลิงก์เป็น PDF — กรุณาเปิดไฟล์แล้ววางตัวบทเป็นข้อความแทน'})

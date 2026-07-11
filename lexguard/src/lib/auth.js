@@ -18,12 +18,20 @@ export const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || 'demo'   // 'demo' | 
 // Change to 'viewer' if Microsoft sign-ins should be read-only by default.
 export const MICROSOFT_ROLE = 'admin'
 
+// รหัสผ่านโหมด demo อ่านจาก environment เท่านั้น — ห้ามฝังรหัสในโค้ด
+// ถ้าไม่ได้ตั้ง VITE_DEMO_PASSWORD จะล็อกอินโหมด demo ไม่ได้เลย
+const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || ''
+
+// ข้อความเตือนเมื่อยังไม่ได้ตั้งค่ารหัสผ่าน demo
+const NO_DEMO_PASSWORD = 'ยังไม่ได้ตั้งค่า VITE_DEMO_PASSWORD — ไม่สามารถล็อกอินโหมด demo ได้ กรุณาตั้งค่า environment variable ก่อน'
+
 // Built-in internal accounts. Only two now:
 //   admin  — จป.วิชาชีพ: แก้ไขได้ทุกอย่าง (รวมลบ)
 //   viewer — ผู้เยี่ยมชม: ดูอย่างเดียว
+// รหัสผ่านของทุกบัญชีมาจาก DEMO_PASSWORD (env) ไม่ฝังในโค้ดอีกต่อไป
 export const DEMO_USERS = [
-  { username: 'jorpor', password: 'she2026', name: 'จป.วิชาชีพ',  role: 'admin'  },
-  { username: 'viewer', password: 'she2026', name: 'ผู้เยี่ยมชม',  role: 'viewer' },
+  { username: 'jorpor', name: 'จป.วิชาชีพ',  role: 'admin'  },
+  { username: 'viewer', name: 'ผู้เยี่ยมชม',  role: 'viewer' },
 ]
 
 export const ROLE_LABELS = { admin: 'ผู้ดูแลระบบ', editor: 'ผู้แก้ไข', viewer: 'ผู้เยี่ยมชม' }
@@ -34,8 +42,9 @@ const SESSION_KEY = 'lg_session'
 
 // ---- Demo session helpers ----
 export function demoSignIn(username, password) {
-  const u = DEMO_USERS.find(x => x.username === String(username || '').trim() && x.password === password)
-  if (!u) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง')
+  if (!DEMO_PASSWORD) throw new Error(NO_DEMO_PASSWORD)
+  const u = DEMO_USERS.find(x => x.username === String(username || '').trim())
+  if (!u || password !== DEMO_PASSWORD) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง')
   const session = { name: u.name, role: u.role, username: u.username, mode: 'demo', ts: Date.now() }
   try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)) } catch { /* ignore */ }
   return session
@@ -44,6 +53,7 @@ export function demoSignIn(username, password) {
 // Sign in as a built-in account using only the username (password is fixed for
 // the internal accounts, so the on-screen role buttons don't need to expose it).
 export function demoLoginAs(username) {
+  if (!DEMO_PASSWORD) throw new Error(NO_DEMO_PASSWORD)
   const u = DEMO_USERS.find(x => x.username === username)
   if (!u) throw new Error('ไม่พบบัญชีผู้ใช้')
   const session = { name: u.name, role: u.role, username: u.username, mode: 'demo', ts: Date.now() }

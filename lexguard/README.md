@@ -31,9 +31,13 @@ npm run dev        # เปิด http://localhost:5173
 ## Deploy ขึ้น Vercel
 1. push โฟลเดอร์นี้ขึ้น GitHub
 2. ที่ vercel.com → New Project → Import repo
-3. เพิ่ม Environment Variables 2 ตัว (จากไฟล์ `.env`):
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+3. เพิ่ม Environment Variables (จากไฟล์ `.env`):
+   - `VITE_SUPABASE_URL` — URL ของโครงการ Supabase
+   - `VITE_SUPABASE_ANON_KEY` — publishable key (ปลอดภัยที่จะฝังใน client)
+   - `VITE_DEMO_PASSWORD` — รหัสผ่านบัญชี demo (jorpor/viewer); **ถ้าไม่ตั้ง จะล็อกอินโหมด demo ไม่ได้เลย**
+   - `ANTHROPIC_API_KEY` — คีย์ Claude สำหรับฟีเจอร์วิเคราะห์/สรุป (server-side เท่านั้น)
+   - `CRON_SECRET` — โทเคนลับสำหรับ Vercel Cron ป้องกันไม่ให้เรียก `api/agent-*` จากภายนอก (Vercel ส่ง header `Authorization: Bearer <CRON_SECRET>` ให้อัตโนมัติ)
+   - `ALLOWED_ORIGIN` — โดเมนของแอปเอง เช่น `https://your-app.vercel.app` ใช้ตรวจ Origin/Referer ของ `api/law-*`
 4. Framework = Vite, Build = `npm run build`, Output = `dist` → Deploy
 
 หรือใช้ CLI:
@@ -55,8 +59,7 @@ lexguard/
 │     ├─ LawDrawer.jsx        # แผงรายละเอียดกฎหมาย + แก้ไขสถานะ
 │     └─ report.jsx           # ตัวสร้างรายงาน PDF สำหรับตรวจประเมิน
 ├─ supabase/schema.sql        # โครงสร้างฐานข้อมูล
-├─ source-data/               # ไฟล์ Excel ต้นฉบับขององค์กร
-├─ .env                       # ค่าเชื่อมต่อ Supabase
+├─ .env                       # ค่าเชื่อมต่อ Supabase (ไม่ commit)
 └─ package.json
 ```
 

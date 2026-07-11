@@ -61,6 +61,10 @@ async function analyzeItem(item) {
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'GET/POST only' })
+  // ตรวจสิทธิ์: ต้องมี header Authorization: Bearer <CRON_SECRET> ให้ตรง (Vercel Cron ส่งให้อัตโนมัติ)
+  if (!process.env.CRON_SECRET || (req.headers.authorization || '') !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'unauthorized' })
+  }
   if (!SUPA_URL || !SUPA_KEY) return res.status(500).json({ error: 'ยังไม่ได้ตั้งค่า Supabase (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)' })
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY' })
   const run = (await supa('POST', 'lg_agent_runs', [{ agent: 'analyze' }], 'return=representation'))[0]

@@ -6,3 +6,8 @@ dist
 .env.local
 .env.*.local
 .vercel
+
+# เอกสารภายในบริษัท — ห้าม commit ขึ้น git
+source-data/
+local-data/
+*.xlsx
