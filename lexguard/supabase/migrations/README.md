@@ -1,6 +1,6 @@
 # Migrations — ลำดับการรันและหมายเหตุ
 
-รันไฟล์ `.sql` ใน Supabase SQL editor **เรียงตามหมายเลข 001 → 016** (ต้องเรียงลำดับ
+รันไฟล์ `.sql` ใน Supabase SQL editor **เรียงตามหมายเลข 001 → 017** (ต้องเรียงลำดับ
 เพราะบางไฟล์อ้างถึงตาราง/คอลัมน์ที่สร้างในไฟล์ก่อนหน้า) `schema.sql` ที่โฟลเดอร์แม่คือ
 โครงสร้างฐานเริ่มต้น — รันก่อนไฟล์ในโฟลเดอร์นี้ทั้งหมด
 
@@ -35,6 +35,7 @@
 | `014_code_unique_per_cat.sql` | **ใหม่** | ✅ ใช่ (รันแล้ว 2026-07-11) | เปลี่ยน unique ของ lg_laws จาก (code) → (cat, code) เพื่อรองรับรหัสซ้ำข้ามหมวด (LF/LG) |
 | `015_missing_tables.sql` | **ใหม่** | ✅ ใช่ (รันแล้ว 2026-07-11 · no-op — ตารางมีอยู่ก่อนแล้ว) | formalize lg_settings / lg_import_staging / lg_reports — รันเพื่อ setup เครื่องใหม่; ใน prod เป็น no-op เพราะ `if not exists` |
 | `016_law_active_flag.sql` | **ใหม่** | ✅ ใช่ (รันแล้ว 2026-07-11 · no-op — คอลัมน์มีอยู่ก่อนแล้ว เพิ่มด้วยมือ 2026-06-20 เป็น `add_law_active`) | คอลัมน์ `lg_laws.active` = กฎหมายยังบังคับใช้ / "ไม่ใช้แล้ว" (ใช้โดย `setLawActive` / `ActiveBadge`) — รันเพื่อ setup เครื่องใหม่; ใน prod เป็น no-op เพราะ `if not exists` |
+| `017_sync_f259_2569r1.sql` | **ใหม่** (สร้างอัตโนมัติโดย `scripts/sync_f259.py`) | ⛔ ยัง — รอตรวจแล้วค่อยรัน | ซิงก์ทะเบียน F-259 รอบที่ 1 ปี 2569: upsert lg_laws (cat,code), หมวดใหม่ CC, insert ข้อกำหนดเฉพาะกฎหมายใหม่ (กันทับข้อมูลผู้ใช้) — ต้องรัน 014 ก่อน (ต้องมี unique cat,code) |
 
 ## หมายเหตุพิเศษ
 - **014** รันใน production แล้วเมื่อ 2026-07-11 — constraint `lg_laws_code_key` (UNIQUE code)
@@ -46,3 +47,8 @@
 - **016** ใน production มีคอลัมน์ `lg_laws.active` อยู่แล้ว (เพิ่มด้วยมือเมื่อ 2026-06-20 ผ่าน
   migration ชื่อ `add_law_active`) การรันไฟล์นี้จึงเป็น **no-op** เพราะ `add column if not exists`
   ไฟล์นี้มีไว้ให้ setup ฐานใหม่ได้ schema ตรงกับที่โค้ดคาดหวัง
+- **017** สร้างใหม่จากไฟล์ Excel จริง (`local-data/F-259_2569_R1.xlsx`) โดยรัน `python3 scripts/sync_f259.py`
+  ต้องรัน **014 ก่อน** (พึ่ง unique `(cat, code)`) · ปลอดภัยต่อข้อมูลผู้ใช้: อัปเดตเฉพาะฟิลด์ทะเบียนของ
+  `lg_laws` และ insert `lg_requirements` เฉพาะกฎหมายที่ **ยังไม่มีข้อกำหนดในฐาน** (ไม่ทับ C/NC,
+  evidence, note ที่ผู้ใช้กรอกไว้) · ห่อด้วย `begin; … commit;` — ถ้าพลาดกลางคันจะ rollback ทั้งชุด
+  · รันซ้ำได้ (idempotent) เพราะเป็น upsert + guard `where not exists`

@@ -12,8 +12,8 @@ import { fetchAll } from '../lib/supabase.js'
 const ACCENT = '#0071E3'
 const INK = '#1D1D1F'
 const SOFT = '#6E6E73'
-// Display-only category color override (LA–LG) — matches the app palette.
-const CAT_COLORS = { LA: '#1C2431', LB: '#3A6A97', LC: '#B4553F', LD: '#B58A3C', LE: '#5F7A61', LF: '#2A3547', LG: '#6E6E73' }
+// Display-only category color override (LA–LG, CC) — matches the app palette.
+const CAT_COLORS = { LA: '#1C2431', LB: '#3A6A97', LC: '#B4553F', LD: '#B58A3C', LE: '#5F7A61', LF: '#2A3547', LG: '#6E6E73', CC: '#00B3A4' }
 const TH_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
 
 export default function Landing({ onEnter }) {

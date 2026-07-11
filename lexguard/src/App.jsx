@@ -56,7 +56,7 @@ const ActiveBadge = ({active,size}) => active===false
 
 // Display-only category color override (LA–LG) — matches the Landing palette.
 // Never written back to the DB; falls back to the seeded color for anything unmapped.
-const CAT_COLORS = { LA:'#1C2431', LB:'#3A6A97', LC:'#B4553F', LD:'#B58A3C', LE:'#5F7A61', LF:'#2A3547', LG:'#6E6E73' }
+const CAT_COLORS = { LA:'#1C2431', LB:'#3A6A97', LC:'#B4553F', LD:'#B58A3C', LE:'#5F7A61', LF:'#2A3547', LG:'#6E6E73', CC:'#00B3A4' }
 const withCatColors = cats => (cats||[]).map(c=>({ ...c, color: CAT_COLORS[c.code] || c.color }))
 
 const NAV_GROUPS = [
