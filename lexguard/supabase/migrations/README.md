@@ -32,14 +32,14 @@
 | `011_attachments.sql` | เดิม | ✅ ใช่ | lg_attachments |
 | `012_drop_car_ofi.sql` | เดิม | ✅ ใช่ | ยกเลิกตารางจาก 004 |
 | `013_monthly_review_status.sql` | เดิม | ✅ ใช่ | คอลัมน์ status/checked_by บน lg_compliance_months |
-| `014_code_unique_per_cat.sql` | **ใหม่** | ⛔ ยัง — ต้องรัน | เปลี่ยน unique ของ lg_laws จาก (code) → (cat, code) เพื่อรองรับรหัสซ้ำข้ามหมวด (LF/LG) |
-| `015_missing_tables.sql` | **ใหม่** | ⚠️ ตารางมีอยู่แล้วใน prod (สร้างด้วยมือ) | formalize lg_settings / lg_import_staging / lg_reports — รันเพื่อ setup เครื่องใหม่; ใน prod เป็น no-op เพราะ `if not exists` |
-| `016_law_active_flag.sql` | **ใหม่** | ⚠️ คอลัมน์มีอยู่แล้วใน prod (เพิ่มด้วยมือ 2026-06-20 เป็น `add_law_active`) | คอลัมน์ `lg_laws.active` = กฎหมายยังบังคับใช้ / "ไม่ใช้แล้ว" (ใช้โดย `setLawActive` / `ActiveBadge`) — รันเพื่อ setup เครื่องใหม่; ใน prod เป็น no-op เพราะ `if not exists` |
+| `014_code_unique_per_cat.sql` | **ใหม่** | ✅ ใช่ (รันแล้ว 2026-07-11) | เปลี่ยน unique ของ lg_laws จาก (code) → (cat, code) เพื่อรองรับรหัสซ้ำข้ามหมวด (LF/LG) |
+| `015_missing_tables.sql` | **ใหม่** | ✅ ใช่ (รันแล้ว 2026-07-11 · no-op — ตารางมีอยู่ก่อนแล้ว) | formalize lg_settings / lg_import_staging / lg_reports — รันเพื่อ setup เครื่องใหม่; ใน prod เป็น no-op เพราะ `if not exists` |
+| `016_law_active_flag.sql` | **ใหม่** | ✅ ใช่ (รันแล้ว 2026-07-11 · no-op — คอลัมน์มีอยู่ก่อนแล้ว เพิ่มด้วยมือ 2026-06-20 เป็น `add_law_active`) | คอลัมน์ `lg_laws.active` = กฎหมายยังบังคับใช้ / "ไม่ใช้แล้ว" (ใช้โดย `setLawActive` / `ActiveBadge`) — รันเพื่อ setup เครื่องใหม่; ใน prod เป็น no-op เพราะ `if not exists` |
 
 ## หมายเหตุพิเศษ
-- **014** ต้องรันใน production ก่อนจะ import กฎหมาย LF/LG ที่รหัสชนกัน ไม่งั้น unique เดิม
-  (`lg_laws_code_key`) จะบล็อก ถ้าใน prod เคย drop constraint นี้ด้วยมือไปแล้ว ส่วน
-  `drop constraint if exists` จะข้ามให้เอง ปลอดภัย
+- **014** รันใน production แล้วเมื่อ 2026-07-11 — constraint `lg_laws_code_key` (UNIQUE code)
+  ถูกแทนที่ด้วย `lg_laws_cat_code_key` (UNIQUE cat, code) เรียบร้อย พร้อม import กฎหมาย LF/LG
+  ที่รหัสชนกันข้ามหมวดได้แล้ว
 - **015** ใน production ตาราง 3 ตัวนี้ถูกสร้างด้วยมือไว้ก่อนแล้ว การรันซ้ำจะไม่ทับข้อมูลเดิม
   (`create table if not exists`) แต่ถ้า schema ที่สร้างด้วยมือ **ต่างจากไฟล์นี้** จะไม่ถูกแก้ให้
   ตรงกันอัตโนมัติ — ควรเทียบคอลัมน์ให้ตรงเองหากพบความต่าง
