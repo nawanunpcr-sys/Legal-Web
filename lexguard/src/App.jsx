@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, hasSupabase, fetchAll,
          setRequirementStatus, recomputeLawStatus, bulkSetCompliance, setLawActive,
-         repealLaw, restoreLaw, createLaw, createLawFull, uploadLawDoc,
+         repealLaw, restoreLaw, createLaw, createLawFull,
          markCommSent, updateCommSchedule,
          dismissNotification,
          fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
@@ -10,18 +10,16 @@ import { supabase, hasSupabase, fetchAll,
          fetchReports, setReportEvent, markReportSubmitted,
          fetchProcessItems, createProcessItem, subscribeProcessItems,
          fetchTracker, fetchTrackerSubstatuses, subscribeTracker, createTrackerCase,
-         fetchSettings, saveSettings, DEFAULT_SETTINGS,
-         STATUS, LAW_TYPES, RECURRENCE_LABELS } from './lib/supabase.js'
+         fetchSettings, saveSettings, DEFAULT_SETTINGS } from './lib/supabase.js'
 import { AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
          getSession as getAuthSession, signOut as authSignOut, onAuthChange } from './lib/auth.js'
 import LawDrawer from './components/LawDrawer.jsx'
 import Reports from './components/Reports.jsx'
-import ProcessTracker, { StageBar } from './components/ProcessTracker.jsx'
-import LawTracker, { CaseStepper, groupCases, effStatus } from './components/LawTracker.jsx'
+import ProcessTracker from './components/ProcessTracker.jsx'
+import LawTracker from './components/LawTracker.jsx'
 import { I } from './components/icons.jsx'
 import Login from './components/Login.jsx'
 import Landing from './components/Landing.jsx'
-import Attachments from './components/Attachments.jsx'
 import NotifyPopup, { isOverdueItem } from './components/NotifyPopup.jsx'
 import { DashboardSkeleton } from './components/Skeleton.jsx'
 import Toaster from './components/Toaster.jsx'
@@ -30,9 +28,7 @@ import { toast } from './lib/toast.js'
 import { confirmDialog } from './lib/confirm.js'
 import { buildReport } from './components/PdfExport.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
-import { usePersist, prog, lawBEYear, thDate, daysTo, beYearFromDate, TH_MONTHS,
-         Pill, Tag, ActiveBadge, CAT_COLORS, withCatColors,
-         nextCode, normName, dupCheck } from './lib/ui.jsx'
+import { prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode } from './lib/ui.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import RegistryCompliance from './pages/Registry.jsx'
 import Analysis from './pages/Analysis.jsx'
@@ -124,7 +120,7 @@ export default function App(){
   const [trackerSubs,setTrackerSubs] = useState({})
   const [reports,setReports] = useState([])
   const [showNotify,setShowNotify] = useState(false)
-  const [curMonthRows,setCurMonthRows] = useState([])   // compliance_months rows for the *real* current year — drives the live Dashboard StageBar regardless of whatever year is browsed in the Register monthly panel
+  const [curMonthRows,setCurMonthRows] = useState([])   // compliance_months rows for the *real* current year — drives the live Dashboard monthly stage bar regardless of whatever year is browsed in the Register monthly panel
 
   // auth gate — reads through auth.js (demo: localStorage lg_session · supabase: real session)
   useEffect(()=>{
