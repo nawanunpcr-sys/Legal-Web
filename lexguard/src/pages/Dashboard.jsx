@@ -4,7 +4,7 @@
 import { useState, useMemo } from 'react'
 import { StageBar } from '../components/ProcessTracker.jsx'
 import { CaseStepper, groupCases, effStatus } from '../components/LawTracker.jsx'
-import { Pill, Tag, ActiveBadge, thDate, daysTo, lawBEYear, beYearFromDate, TH_MONTHS, QUARTER_LABEL, roundCounts, roundLabel } from '../lib/ui.jsx'
+import { Pill, Tag, ActiveBadge, thDate, daysTo, lawBEYear, beYearFromDate, TH_MONTHS, QUARTER_LABEL, roundCounts, roundLabel, monthlyCounts } from '../lib/ui.jsx'
 import RoundSelect from '../components/RoundSelect.jsx'
 
 /* ─────────────────────────── DASHBOARD ─────────────────────────── */
@@ -334,6 +334,41 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
   )
 }
 
+// ตารางกฎหมายมาใหม่/ยกเลิก รายเดือน 12 เดือน (ปี พ.ศ. beYear) — รูปแบบชีท Masterlist ให้คัดลอกตัวเลขไปกรอกได้
+function MonthlyAddRepealTable({laws,beYear}){
+  const { added, repealed } = monthlyCounts(laws, beYear)
+  const totA=added.reduce((a,b)=>a+b,0), totR=repealed.reduce((a,b)=>a+b,0)
+  return (
+    <div className="panel">
+      <div className="panel-h">
+        <h3>กฎหมายมาใหม่ / ถูกยกเลิก รายเดือน · ปี {beYear}</h3>
+        <span className="sub" style={{marginLeft:'auto'}}>นับอัตโนมัติจากวันที่บันทึก/ยกเลิก · คัดลอกไปกรอก Masterlist ได้</span>
+      </div>
+      <div className="tablewrap">
+        <table className="masterlist-month">
+          <thead><tr>
+            <th style={{textAlign:'left'}}>รายการ</th>
+            {TH_MONTHS.map(m=><th key={m} style={{textAlign:'center',fontSize:11,minWidth:38}}>{m}</th>)}
+            <th style={{textAlign:'center'}}>รวม</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td style={{fontWeight:600,color:'var(--ok)'}}>มาใหม่</td>
+              {added.map((n,i)=><td key={i} className="num" style={{textAlign:'center',color:n?'var(--ok)':'var(--ink-faint)'}}>{n}</td>)}
+              <td className="num" style={{textAlign:'center',fontWeight:700,color:'var(--ok)'}}>{totA}</td>
+            </tr>
+            <tr>
+              <td style={{fontWeight:600,color:'var(--bad)'}}>ยกเลิก</td>
+              {repealed.map((n,i)=><td key={i} className="num" style={{textAlign:'center',color:n?'var(--bad)':'var(--ink-faint)'}}>{n}</td>)}
+              <td className="num" style={{textAlign:'center',fontWeight:700,color:'var(--bad)'}}>{totR}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,onGoView,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,monthRow,onMarkNoNewLaws,onMarkHasNewLaws,round={q:1,by:new Date().getFullYear()+543},setRound,roundYears}){
   // navigate to the merged registry view in a specific mode (register / compliance)
   const goRegistry = mode => { try{ localStorage.setItem('cr_registry_mode', JSON.stringify(mode)) }catch{} ; onGoView&&onGoView('registry') }
@@ -419,6 +454,11 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
     <div style={{marginTop:36}}>
       <div className="dash-sec-h">ภาพรวมรายไตรมาส</div>
       <QuarterlyAddRepealChart quarterStats={quarterStats} cats={cats} catMap={catMap}/>
+    </div>
+
+    <div style={{marginTop:36}}>
+      <div className="dash-sec-h">กฎหมายมาใหม่ / ยกเลิก รายเดือน (สำหรับกรอก Masterlist)</div>
+      <MonthlyAddRepealTable laws={laws} beYear={round.by}/>
     </div>
 
     <div style={{marginTop:36}}>

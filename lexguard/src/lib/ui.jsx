@@ -32,6 +32,17 @@ export const quarterOfDate = d => { const x = new Date(d); return isNaN(x) ? nul
 export const roundLabel = (q, beYear) => `รอบที่ ${q} (${QUARTER_LABEL[q - 1]}) ปี ${beYear}`
 // รอบประเมินปัจจุบันจากวันนี้ { q, by } (by = ปี พ.ศ.)
 export const currentRound = () => { const n = new Date(); return { q: Math.floor(n.getMonth() / 3) + 1, by: n.getFullYear() + 543 } }
+// นับกฎหมายมาใหม่/ยกเลิก รายเดือน (12 เดือน) ของปี พ.ศ. beYear — ตรงรูปแบบชีท Masterlist
+export function monthlyCounts(laws, beYear) {
+  const gYear = beYear - 543
+  const added = Array(12).fill(0), repealed = Array(12).fill(0)
+  for (const l of (laws || [])) {
+    if (l.created_at) { const x = new Date(l.created_at); if (!isNaN(x) && x.getFullYear() === gYear) added[x.getMonth()]++ }
+    if (l.status === 'repealed' && l.repeal_date) { const x = new Date(l.repeal_date); if (!isNaN(x) && x.getFullYear() === gYear) repealed[x.getMonth()]++ }
+  }
+  return { added, repealed }
+}
+
 // นับกฎหมายที่ "มาใหม่/ยกเลิก" ในรอบ (q, beYear) จาก created_at / repeal_date ของ laws
 export function roundCounts(laws, q, beYear) {
   const gYear = beYear - 543
