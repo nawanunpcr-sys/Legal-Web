@@ -28,7 +28,8 @@ import { toast } from './lib/toast.js'
 import { confirmDialog } from './lib/confirm.js'
 import { buildReport } from './components/PdfExport.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
-import { prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode } from './lib/ui.jsx'
+import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, currentRound } from './lib/ui.jsx'
+import RoundSelect from './components/RoundSelect.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import RegistryCompliance from './pages/Registry.jsx'
 import Analysis from './pages/Analysis.jsx'
@@ -109,6 +110,7 @@ export default function App(){
   const [exportOpen,setExportOpen] = useState(false)   // topbar/page export dropdown (UI only)
   const [avatarOpen,setAvatarOpen] = useState(false)   // avatar menu (UI only)
   const [monthYear,setMonthYear] = useState(new Date().getFullYear())
+  const [round,setRound]     = usePersist('cr_round', currentRound())   // รอบประเมิน F-259 { q, by(พ.ศ.) }
   const [months,setMonths]   = useState([])
   const [staging,setStaging] = useState([])
   const [updates,setUpdates] = useState([])
@@ -235,6 +237,14 @@ export default function App(){
     let req=0,met=0; inForceLaws.forEach(l=>l.reqs.forEach(r=>{req++;if(r.status==='met')met++}))
     return { total:inForceLaws.length, req, met, nc:req-met, pct:req?Math.round(met/req*100):100 }
   },[inForceLaws])
+
+  // ปี พ.ศ. ที่ให้เลือกในตัวเลือกรอบประเมิน (จาก quarterStats + วันที่สร้างกฎหมาย + ปีปัจจุบัน)
+  const roundYears = useMemo(()=>{
+    const ys=new Set(quarterStats.map(q=>q.year+543))
+    laws.forEach(l=>{ if(l.created_at){ const y=new Date(l.created_at).getFullYear(); if(!isNaN(y)) ys.add(y+543) } })
+    ys.add(new Date().getFullYear()+543)
+    return [...ys].sort((a,b)=>b-a)
+  },[quarterStats,laws])
 
   const reportAlerts = useMemo(()=>
     reports.filter(r=>{ if(!r.next_due_date) return false; const d=daysTo(r.next_due_date); return d<0||d<=(r.notify_days_before||30) }).length
@@ -539,11 +549,13 @@ export default function App(){
           </div>
           <div className="view-swap" key={view}>
           {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} onGoView={setView} processItems={allProcess} rawProcessItems={processItems} onGoProcess={()=>setView('process')} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}
+            round={round} setRound={setRound} roundYears={roundYears}
             monthRow={curMonthRows.find(m=>m.year===new Date().getFullYear()&&m.month===new Date().getMonth()+1)}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
           {view==='registry'      && <RegistryCompliance
             regLaws={activeLaws} compLaws={inForceLaws} cats={cats} catMap={catMap} stats={stats}
             search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} onToggle={toggleReq} allLaws={laws}
+            round={round} setRound={setRound} roundYears={roundYears}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}

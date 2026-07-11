@@ -51,7 +51,11 @@
       "Bash(git commit -m ' *)",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('scripts:',d.get\\('scripts'\\)\\); print\\('dev needs supabase env from .env'\\)\")",
       "Read(//Users/nawanunlakornrach/.claude/projects/-Users-nawanunlakornrach-Desktop-Web/memory/**)",
-      "Bash(ls MEMORY.md)"
+      "Bash(ls MEMORY.md)",
+      "Bash(git ls-files *)",
+      "Bash(git rm *)",
+      "Bash(git commit -q -m 'chore: remove one-off App.jsx refactor helper scripts *)",
+      "Bash(python3 -c \"import subprocess\")"
     ]
   }
 }

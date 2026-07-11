@@ -23,6 +23,25 @@ export const lawBEYear = s => {
 }
 
 export const TH_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+
+// ── รอบประเมิน (ไตรมาส) ตามหัวเอกสาร F-259 ──
+export const QUARTER_LABEL = ['ม.ค.-มี.ค.', 'เม.ย.-มิ.ย.', 'ก.ค.-ก.ย.', 'ต.ค.-ธ.ค.']
+// ไตรมาส 1-4 ของวันที่ (คืน null ถ้าแปลงวันที่ไม่ได้)
+export const quarterOfDate = d => { const x = new Date(d); return isNaN(x) ? null : Math.floor(x.getMonth() / 3) + 1 }
+// ป้ายรอบประเมินเต็ม เช่น "รอบที่ 1 (ม.ค.-มี.ค.) ปี 2569"
+export const roundLabel = (q, beYear) => `รอบที่ ${q} (${QUARTER_LABEL[q - 1]}) ปี ${beYear}`
+// รอบประเมินปัจจุบันจากวันนี้ { q, by } (by = ปี พ.ศ.)
+export const currentRound = () => { const n = new Date(); return { q: Math.floor(n.getMonth() / 3) + 1, by: n.getFullYear() + 543 } }
+// นับกฎหมายที่ "มาใหม่/ยกเลิก" ในรอบ (q, beYear) จาก created_at / repeal_date ของ laws
+export function roundCounts(laws, q, beYear) {
+  const gYear = beYear - 543
+  let added = 0, repealed = 0
+  for (const l of (laws || [])) {
+    if (l.created_at) { const x = new Date(l.created_at); if (!isNaN(x) && x.getFullYear() === gYear && Math.floor(x.getMonth() / 3) + 1 === q) added++ }
+    if (l.status === 'repealed' && l.repeal_date) { const x = new Date(l.repeal_date); if (!isNaN(x) && x.getFullYear() === gYear && Math.floor(x.getMonth() / 3) + 1 === q) repealed++ }
+  }
+  return { added, repealed }
+}
 export const thDate = s => { if (!s) return '—'; const d = new Date(s); return d.getDate() + ' ' + TH_MONTHS[d.getMonth()] + ' ' + (d.getFullYear() + 543) }
 export const daysTo = s => Math.ceil((new Date(s) - new Date()) / 86400000)
 export const beYearFromDate = d => { if (!d) return null; const x = new Date(d); return isNaN(x) ? null : x.getFullYear() + 543 }

@@ -4,7 +4,8 @@
 import { useState, useMemo } from 'react'
 import { StageBar } from '../components/ProcessTracker.jsx'
 import { CaseStepper, groupCases, effStatus } from '../components/LawTracker.jsx'
-import { Pill, Tag, ActiveBadge, thDate, daysTo, lawBEYear, beYearFromDate, TH_MONTHS } from '../lib/ui.jsx'
+import { Pill, Tag, ActiveBadge, thDate, daysTo, lawBEYear, beYearFromDate, TH_MONTHS, QUARTER_LABEL, roundCounts, roundLabel } from '../lib/ui.jsx'
+import RoundSelect from '../components/RoundSelect.jsx'
 
 /* ─────────────────────────── DASHBOARD ─────────────────────────── */
 function Ring({pct,met=0,nc=0}){
@@ -228,8 +229,6 @@ function ReportDeadlinesPanel({reports=[],onGoReports,danger=false}){
   )
 }
 
-const QUARTER_LABEL = ['ม.ค.-มี.ค.','เม.ย.-มิ.ย.','ก.ค.-ก.ย.','ต.ค.-ธ.ค.']
-
 function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
   const toBE = y => y + 543
   const yearOptions = useMemo(()=>{
@@ -335,7 +334,7 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
   )
 }
 
-export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,onGoView,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,monthRow,onMarkNoNewLaws,onMarkHasNewLaws}){
+export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,onGoView,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,monthRow,onMarkNoNewLaws,onMarkHasNewLaws,round={q:1,by:new Date().getFullYear()+543},setRound,roundYears}){
   // navigate to the merged registry view in a specific mode (register / compliance)
   const goRegistry = mode => { try{ localStorage.setItem('cr_registry_mode', JSON.stringify(mode)) }catch{} ; onGoView&&onGoView('registry') }
   const trk = useMemo(()=>{
@@ -373,7 +372,16 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
     {val:stats.pct.toFixed(1)+'%',            lab:'ความสอดคล้อง ('+stats.met+'/'+stats.req+')', accent:true},
   ]
 
+  const rc = roundCounts(laws, round.q, round.by)   // มาใหม่/ยกเลิก ในรอบที่เลือก
   return <div className="view">
+    <div className="round-bar" style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',marginBottom:14,padding:'10px 14px',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12}}>
+      {setRound && <RoundSelect round={round} onChange={setRound} years={roundYears}/>}
+      <span style={{fontSize:13,fontWeight:600,color:'var(--brand)'}}>{roundLabel(round.q, round.by)}</span>
+      <span style={{marginLeft:'auto',display:'flex',gap:8}}>
+        <span className="meta-chip" style={{color:'var(--ok)',borderColor:'var(--ok-bg)',background:'var(--ok-bg)'}}>มาใหม่รอบนี้ {rc.added}</span>
+        <span className="meta-chip" style={{color:'var(--bad)',borderColor:'var(--bad-bg)',background:'var(--bad-bg)'}}>ยกเลิกรอบนี้ {rc.repealed}</span>
+      </span>
+    </div>
     <div className="dash-strip">
       {strip.map((s,i)=>(<div className="dash-strip-cell" key={i}>
         <div className={'dash-strip-val'+(s.accent?' is-accent':'')}>{s.val}</div>

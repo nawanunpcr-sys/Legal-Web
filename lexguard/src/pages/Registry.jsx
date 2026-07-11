@@ -6,7 +6,8 @@ import { LAW_TYPES } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
-import { usePersist, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode } from '../lib/ui.jsx'
+import { usePersist, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, roundLabel, roundCounts, quarterOfDate, daysTo } from '../lib/ui.jsx'
+import RoundSelect from '../components/RoundSelect.jsx'
 
 /* ─────────────────────────── ADD LAW MODAL ───────────────────────── */
 function AddLawModal({ cats, allLaws, onSave, onClose }) {
@@ -84,7 +85,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 }
 
 /* ─────────── REGISTRY + COMPLIANCE (merged view) ─────────── */
-export default function RegistryCompliance({regLaws,compLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,onToggle,allLaws,months,monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws}){
+export default function RegistryCompliance({regLaws,compLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,onToggle,allLaws,months,monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws,round,setRound,roundYears}){
   const [mode,setMode]=usePersist('cr_registry_mode','register')
   const kpis=[
     {lab:'ข้อกำหนดทั้งหมด',   val:stats.req, accent:'#1C2431'},
@@ -108,13 +109,14 @@ export default function RegistryCompliance({regLaws,compLaws,cats,catMap,stats,s
 
     {mode==='register'
       ? <Register laws={regLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
+          round={round} setRound={setRound} roundYears={roundYears}
           months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={onToggleMonth} onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
       : <Compliance laws={compLaws} cats={cats} onOpen={onOpen} onToggle={onToggle}/>}
   </div>
 }
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
-function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months,monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws}){
+function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months,monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws,round={q:1,by:new Date().getFullYear()+543},setRound,roundYears}){
   const { can }=useAuth()
   const [cat,setCat]=usePersist('cr_reg_cat','all')
   const [act,setAct]=usePersist('cr_reg_act','all')
@@ -133,6 +135,10 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
   const activeCats=catsList.filter(c=>cat==='all'||c===cat)
   return <div className="view">
     {showAdd && <AddLawModal cats={cats} allLaws={allLaws} onSave={onCreate} onClose={()=>setShowAdd(false)}/>}
+    <div className="round-bar" style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',marginBottom:14,padding:'10px 14px',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12}}>
+      {setRound && <RoundSelect round={round} onChange={setRound} years={roundYears}/>}
+      <span style={{fontSize:13,fontWeight:600,color:'var(--brand)'}}>{roundLabel(round.q, round.by)}</span>
+    </div>
     <div style={{marginBottom:16}}>
       <MonthlyCheckPanel months={months} year={monthYear} setYear={setMonthYear} onToggle={onToggleMonth} onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
     </div>
