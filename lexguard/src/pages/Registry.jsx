@@ -145,10 +145,13 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
   }
   const countFor=key=>(key==='repealed'?(allLaws||laws):laws).filter(l=>(cat==='all'||l.cat===cat)&&passQuick(l,key)).length
   const base = quick==='repealed' ? (allLaws||laws) : laws
+  // ค้นหา (item 7): รหัส · ชื่อกฎหมาย · กระทรวง · สาระสำคัญของข้อกำหนด · ผู้รับผิดชอบ
+  const matchQ=l=>!q||l.code.toLowerCase().includes(q)||l.name.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)
+    ||(l.reqs||[]).some(r=>(r.text||'').toLowerCase().includes(q)||(r.responsible||'').toLowerCase().includes(q))
   const rows=base.filter(l=>(cat==='all'||l.cat===cat)
     &&(quick==='repealed'||act==='all'||(act==='active'?l.active!==false:l.active===false))
     &&passQuick(l,quick)
-    &&(!q||l.name.toLowerCase().includes(q)||l.code.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)))
+    &&matchQ(l))
   const grouped=useMemo(()=>{ const byCat={}; rows.forEach(l=>{ const c=l.cat; if(!byCat[c])byCat[c]={}; const t=l.hierarchy_level||5; if(!byCat[c][t])byCat[c][t]=[]; byCat[c][t].push(l) }); return byCat },[rows])
   const activeCats=catsList.filter(c=>cat==='all'||c===cat)
   return <div className="view">
