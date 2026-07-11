@@ -221,10 +221,10 @@ export default function App(){
   const searchResults = useMemo(()=>{
     const q=search.trim().toLowerCase(); if(q.length<2) return []
     const out=[]
-    activeLaws.forEach(l=>{ const min=(l.ministry||''); const byMin=min.toLowerCase().includes(q); if(l.code.toLowerCase().includes(q)||(l.name||'').toLowerCase().includes(q)||byMin) out.push({kind:'law',law:l,label:l.code,sub:(l.name||'').slice(0,50),ministry:min,byMin}) })
+    activeLaws.forEach(l=>{ const min=(l.ministry||''); const byMin=min.toLowerCase().includes(q); if(l.code.toLowerCase().includes(q)||(l.name||'').toLowerCase().includes(q)||byMin) out.push({kind:'law',law:l,label:l.code,sub:(l.name||'').slice(0,50),ministry:min,byMin,color:catMap[l.cat]?.color,catName:catMap[l.cat]?.name}) })
     reports.forEach(r=>{ if((r.title||'').toLowerCase().includes(q)) out.push({kind:'report',label:(r.title||'').slice(0,40),sub:'รายงานราชการ'}) })
     return out.slice(0,12)
-  },[search,activeLaws,reports])
+  },[search,activeLaws,reports,catMap])
 
   async function handleAddStaged(code, rows){
     try{
@@ -505,12 +505,12 @@ export default function App(){
             {searchFocus && searchResults.length>0 && (
               <div className="search-results">
                 {searchResults.map((r,i)=>(
-                  <div key={i} className="sr-item" onMouseDown={()=>{
+                  <div key={i} className={'sr-item'+(r.color?' sr-item--cat':'')} style={r.color?{'--sr-c':r.color}:undefined} onMouseDown={()=>{
                     if(r.kind==='law') setOpenLaw(r.law)
                     else if(r.kind==='report') setView('reports')
                     setSearch('')
                   }}>
-                    <span className="sr-tag">{r.kind==='law'?'กฎหมาย':'รายงาน'}</span>
+                    <span className="sr-tag" title={r.catName||''}>{r.kind==='law'?(r.law.cat||'กฎหมาย'):'รายงาน'}</span>
                     <span className="sr-label">{r.label}</span>
                     <span className="sr-sub">{r.sub}</span>
                     {r.ministry && <span className={'sr-min'+(r.byMin?' hit':'')}>{r.ministry.slice(0,26)}</span>}
