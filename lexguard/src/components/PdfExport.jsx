@@ -11,18 +11,21 @@ const FORM = { no: 'F-259', rev: 'Rev.1', effective: '10/01/66' }
 
 const MODE_LABEL = { all: 'ทั้งหมด', cats: 'เฉพาะหมวดที่เลือก', nc: 'เฉพาะรายการที่ยังไม่สอดคล้อง (NC)' }
 
-// column order per the task spec, wording per the real F-259 sheet
+// คอลัมน์ตรงตามฟอร์ม F-259 จริง (ชีท LA-…): รหัส/กระทรวง/ชื่อ/สาระสำคัญ/วันที่/
+// ผู้รับผิดชอบ/C-NC/ความถี่/การรายงานผล/เอกสาร/หมายเหตุ
 const COLS = [
-  ['ลำดับ', '4%'],
+  ['ลำดับ', '3%'],
   ['รหัสกฎหมาย', '6%'],
-  ['ชื่อกฎหมาย', '17%'],
-  ['หน่วยงานผู้ออก', '10%'],
-  ['วันที่ประกาศใช้', '8%'],
-  ['ข้อกำหนดที่เกี่ยวข้อง', '26%'],
-  ['สถานะ<br/>C / NC', '5%'],
-  ['ผู้รับผิดชอบ', '8%'],
-  ['หลักฐาน / เอกสารอ้างอิง', '8%'],
-  ['วันทบทวนถัดไป', '8%'],
+  ['กระทรวง', '9%'],
+  ['ชื่อกฎหมาย', '15%'],
+  ['สรุปสาระสำคัญ', '22%'],
+  ['วันที่ประกาศ/บังคับใช้', '7%'],
+  ['ผู้รับผิดชอบ', '7%'],
+  ['สถานะ<br/>C / NC', '4%'],
+  ['ความถี่การตรวจสอบ', '7%'],
+  ['การรายงานผล', '6%'],
+  ['เอกสารที่เกี่ยวข้อง', '8%'],
+  ['หมายเหตุ', '6%'],
 ]
 
 export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' }) {
@@ -45,21 +48,25 @@ export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' })
       const reqs = l.reqs.length ? l.reqs : [{}]
       const span = reqs.length
       return reqs.map((r, i) => {
-        const lawCells = i === 0 ? `
+        // เซลล์ระดับกฎหมาย (merge ด้วย rowspan): ลำดับ/รหัส/กระทรวง/ชื่อ อยู่ก่อน "สาระสำคัญ",
+        // ส่วน "วันที่" merge อยู่กลางตาราง (คั่นระหว่างสาระสำคัญกับผู้รับผิดชอบ) ตรงตามชีทจริง
+        const preCells = i === 0 ? `
           <td rowspan="${span}" class="ctr num">${n}</td>
           <td rowspan="${span}" class="num">${ESC(l.code)}</td>
-          <td rowspan="${span}" class="law">${ESC(l.name || '')}</td>
           <td rowspan="${span}">${ESC(l.ministry || '')}</td>
-          <td rowspan="${span}">${ESC(l.issue_date || l.effective_date || '—')}</td>` : ''
-        const reviewCell = i === 0 ? `<td rowspan="${span}" class="ctr">${thDate(l.review_date)}</td>` : ''
+          <td rowspan="${span}" class="law">${ESC(l.name || '')}</td>` : ''
+        const dateCell = i === 0 ? `<td rowspan="${span}" class="ctr">${ESC(l.issue_date || l.effective_date || '—')}</td>` : ''
         const met = r.status === 'met', nc = r.status === 'unmet'
         const evidence = [r.documents, r.evidence_label].filter(Boolean).join(' · ')
-        return `<tr>${lawCells}
+        return `<tr>${preCells}
           <td class="req">${ESC(r.text || '—')}</td>
-          <td class="ctr ${met ? 'ok' : nc ? 'bad' : ''}">${met ? 'C' : nc ? 'NC' : '—'}</td>
+          ${dateCell}
           <td>${ESC(r.responsible || '—')}</td>
+          <td class="ctr ${met ? 'ok' : nc ? 'bad' : ''}">${met ? 'C' : nc ? 'NC' : '—'}</td>
+          <td>${ESC(r.frequency || '—')}</td>
+          <td>${ESC(r.report || '—')}</td>
           <td>${ESC(evidence || '—')}</td>
-          ${reviewCell}
+          <td>${ESC(r.note || '—')}</td>
         </tr>`
       }).join('')
     }).join('')

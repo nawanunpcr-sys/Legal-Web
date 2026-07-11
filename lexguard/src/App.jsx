@@ -555,7 +555,7 @@ export default function App(){
           {view==='registry'      && <RegistryCompliance
             regLaws={activeLaws} compLaws={inForceLaws} cats={cats} catMap={catMap} stats={stats}
             search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} onToggle={toggleReq} allLaws={laws}
-            round={round} setRound={setRound} roundYears={roundYears}
+            round={round} setRound={setRound} roundYears={roundYears} onExportF259={()=>setShowPdf(true)}
             months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}

@@ -85,7 +85,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 }
 
 /* ─────────── REGISTRY + COMPLIANCE (merged view) ─────────── */
-export default function RegistryCompliance({regLaws,compLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,onToggle,allLaws,months,monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws,round,setRound,roundYears}){
+export default function RegistryCompliance({regLaws,compLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,onToggle,allLaws,months,monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws,round,setRound,roundYears,onExportF259}){
   const [mode,setMode]=usePersist('cr_registry_mode','register')
   const kpis=[
     {lab:'ข้อกำหนดทั้งหมด',   val:stats.req, accent:'#1C2431'},
@@ -109,14 +109,14 @@ export default function RegistryCompliance({regLaws,compLaws,cats,catMap,stats,s
 
     {mode==='register'
       ? <Register laws={regLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
-          round={round} setRound={setRound} roundYears={roundYears}
+          round={round} setRound={setRound} roundYears={roundYears} onExportF259={onExportF259}
           months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={onToggleMonth} onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
       : <Compliance laws={compLaws} cats={cats} onOpen={onOpen} onToggle={onToggle}/>}
   </div>
 }
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
-function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months,monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws,round={q:1,by:new Date().getFullYear()+543},setRound,roundYears}){
+function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months,monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws,round={q:1,by:new Date().getFullYear()+543},setRound,roundYears,onExportF259}){
   const { can }=useAuth()
   const [cat,setCat]=usePersist('cr_reg_cat','all')
   const [act,setAct]=usePersist('cr_reg_act','all')
@@ -162,6 +162,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
     </div>
     <div className="filterbar">
       <span className="right" style={{marginLeft:'auto'}}>พบ {rows.length} ฉบับ</span>
+      {onExportF259 && <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="พิมพ์/บันทึกเป็น PDF ตามฟอร์ม F-259 (สำหรับ audit ISO 45001)" onClick={onExportF259}><I n="download"/>ส่งออกแบบ F-259</button>}
       <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>ส่งออกที่กรอง</button>
       <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>setShowAdd(true)}><I n="plus"/>เพิ่มกฎหมาย</button>
     </div>
