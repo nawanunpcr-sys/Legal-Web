@@ -651,7 +651,7 @@ export default function App(){
               <div className="menu">
                 <div className="menu-user"><div className="mu-name">{session?.name||'ผู้ใช้งาน'}</div><div className="mu-role">{ROLE_LABELS[role]||role}</div></div>
                 <button className="menu-item" onClick={()=>{ setDark(d=>!d); setAvatarOpen(false) }}><I n={dark?'sun':'moon'}/>{dark?'โหมดสว่าง':'โหมดมืด'}</button>
-                <button className="menu-item" onClick={async()=>{ setAvatarOpen(false); await authSignOut(); setSession(null) }}><I n="logout"/>ออกจากระบบ</button>
+                <button className="menu-item" onClick={async()=>{ setAvatarOpen(false); await authSignOut(); setSession(await getAuthSession()) }}><I n="logout"/>ออกจากระบบ</button>
               </div>
             </>)}
           </div>

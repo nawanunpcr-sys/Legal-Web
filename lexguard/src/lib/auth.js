@@ -14,6 +14,13 @@ import { signIn as sbSignIn, signOut as sbSignOut, getSession as sbGetSession,
 
 export const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || 'demo'   // 'demo' | 'supabase'
 
+// ── โหมดทดลองใช้: ข้ามระบบล็อกอินชั่วคราว ──
+// true = เข้าแอปได้เลยไม่ต้องล็อกอิน (เข้าเป็นผู้ใช้ guest สิทธิ์ admin เพื่อทดสอบได้ครบ)
+// ตั้งเป็น false เพื่อเปิดหน้าล็อกอิน/Landing กลับมาเหมือนเดิม
+// (override ได้ด้วย env: VITE_SKIP_LOGIN=0)
+export const SKIP_LOGIN = import.meta.env.VITE_SKIP_LOGIN !== '0'
+export const GUEST_SESSION = { name: 'ผู้ทดลองใช้', role: 'admin', username: 'guest', mode: 'guest', ts: 0 }
+
 // Role assigned to anyone who signs in via Microsoft (real org staff = จป).
 // Change to 'viewer' if Microsoft sign-ins should be read-only by default.
 export const MICROSOFT_ROLE = 'admin'
@@ -112,12 +119,16 @@ export async function getSession() {
   if (hasSupabase) {
     try { const sb = await sbGetSession(); if (sb) return sessionFromSupabase(sb) } catch { /* ignore */ }
   }
-  return getStoredSession()
+  const stored = getStoredSession()
+  if (stored) return stored
+  // โหมดทดลอง: ไม่มี session → เข้าเป็น guest แทนการบังคับล็อกอิน
+  return SKIP_LOGIN ? GUEST_SESSION : null
 }
 // Subscribe to Microsoft sign-in/out events, normalised to the app's session shape.
 export function onAuthChange(cb) {
   if (!hasSupabase) return () => {}
-  return sbOnAuthChange(sb => cb(sb ? sessionFromSupabase(sb) : getStoredSession()))
+  // โหมดทดลอง: เมื่อไม่มี session จาก Microsoft/สโตร์ ให้ตกไปที่ guest (กันเด้งกลับหน้าล็อกอิน)
+  return sbOnAuthChange(sb => cb(sb ? sessionFromSupabase(sb) : (getStoredSession() || (SKIP_LOGIN ? GUEST_SESSION : null))))
 }
 
 // ---- React context so components can gate UI on the current role ----
