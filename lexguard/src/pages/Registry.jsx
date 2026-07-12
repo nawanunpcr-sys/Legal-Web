@@ -233,7 +233,6 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
 
 export function MonthlyCheckPanel({ months, year, setYear, onToggle, onMarkNoNewLaws, onMarkHasNewLaws }) {
   const { can }=useAuth()
-  const [pick,setPick]=useState(null)   // เดือนที่กำลังเลือกผลตรวจ (เฉพาะเดือนปัจจุบัน)
   const toBE = y => y + 543
   const getMonth = m => months.find(r=>r.year===year && r.month===m) || {checked:false}
   const reviewedCount = months.filter(m=>m.year===year && (m.status||m.checked)).length
@@ -261,39 +260,22 @@ export function MonthlyCheckPanel({ months, year, setYear, onToggle, onMarkNoNew
           const rec = getMonth(m)
           const isCurrent = year===curYear && m===curMonth
           const isPast = year<curYear || (year===curYear && m<curMonth)
-          const hasNew = rec.status==='has_new_laws'
-          const noNew  = rec.status==='no_new_laws' || (rec.checked && !rec.status)
-          const reviewed = hasNew || noNew
+          const reviewed = !!(rec.status || rec.checked)
           const pending = !reviewed && (isPast || isCurrent)
           const cls = 'month-cell'
             + (isCurrent?' month-current':'')
-            + (hasNew?' month-newlaw':'')
-            + (noNew?' month-checked':'')
+            + (reviewed?' month-checked':'')
             + (pending?' month-pending':'')
-          const statusText = hasNew ? '🔍 พบใหม่' : noNew ? '✓ ไม่มีใหม่' : pending ? 'ยังไม่ตรวจ' : '—'
-          const onClick = () => {
-            if(!can('edit')) return
-            if(isCurrent) setPick(p=>p===m?null:m)   // เดือนปัจจุบัน → เลือกผลตรวจ
-            else onToggle(year, m)                    // เดือนอื่น → สลับตรวจแล้ว/ยังไม่
-          }
+          const statusText = reviewed ? '✓ ตรวจแล้ว' : pending ? 'ยังไม่ตรวจ' : '—'
           return (
-            <button key={m} className={cls} disabled={!can('edit')} onClick={onClick}
-              title={rec.checked_at ? 'ตรวจโดย '+(rec.checked_by||'—')+' · '+thDate(rec.checked_at) : (can('edit')?'คลิกเพื่อบันทึกผลตรวจ':'อ่านอย่างเดียว')}>
+            <button key={m} className={cls} disabled={!can('edit')} onClick={()=>can('edit')&&onToggle(year, m)}
+              title={rec.checked_at ? 'ตรวจโดย '+(rec.checked_by||'—')+' · '+thDate(rec.checked_at) : (can('edit')?'คลิกเพื่อทำเครื่องหมายว่าตรวจแล้ว':'อ่านอย่างเดียว')}>
               <span className="month-name">{label}</span>
               <span className="month-status">{statusText}</span>
             </button>
           )
         })}
       </div>
-
-      {/* ตัวเลือกผลตรวจของเดือนปัจจุบัน (แทนแถบใหญ่เดิม) */}
-      {pick===curMonth && year===curYear && (
-        <div className="month-pick">
-          <span className="month-pick-lab">บันทึกผลตรวจเดือน{TH_MONTHS[curMonth-1]}:</span>
-          <button className="btn btn-primary" disabled={!can('edit')} onClick={()=>{ onMarkNoNewLaws&&onMarkNoNewLaws(); setPick(null) }}>✓ ไม่มีกฎหมายใหม่</button>
-          <button className="btn btn-ghost" disabled={!can('edit')} onClick={()=>{ onMarkHasNewLaws&&onMarkHasNewLaws(); setPick(null) }}>🔍 พบกฎหมายใหม่</button>
-        </div>
-      )}
     </div>
   )
 }

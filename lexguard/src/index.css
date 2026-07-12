@@ -2179,3 +2179,62 @@ tbody tr.row-danger td:first-child { box-shadow: inset 3px 0 0 var(--bad) }
 /* โหมดผู้เยี่ยมชม (auditor / viewer) — ซ่อนปุ่มแก้ไข/ลบทุกจุดที่สิทธิ์ไม่พอ
    ปุ่มที่ถูกกั้นสิทธิ์จะตั้ง title="สิทธิ์ไม่เพียงพอ" (NO_PERM) อยู่แล้ว จึงเจาะจงซ่อนได้แม่นยำ */
 .role-viewer [title="สิทธิ์ไม่เพียงพอ"] { display: none !important; }
+
+/* ─── Clawdmeter — floating Claude-usage gadget (มุมขวาล่าง) ───────────
+   หน้าตาเลียนแบบอุปกรณ์จริง: จอมนสีเข้มในกรอบขาว + แถบสีคอรัล */
+.clawd-wrap { position: fixed; right: 22px; bottom: 22px; z-index: 900; }
+.clawd-bezel {
+  background: #f4f1ec; border-radius: 26px; padding: 12px;
+  box-shadow: 0 18px 44px rgba(0,0,0,.32), 0 2px 0 rgba(255,255,255,.7) inset;
+  width: 246px;
+}
+.clawd-screen {
+  background: #201d1b; border-radius: 16px; padding: 14px 15px 12px;
+  color: #f6f2ee; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.5), 0 6px 16px rgba(0,0,0,.35) inset;
+}
+.clawd-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.clawd-title { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; letter-spacing: .2px; }
+.clawd-title svg { color: #d97757; }
+.clawd-x {
+  background: none; border: none; color: #8a827c; font-size: 18px; line-height: 1;
+  cursor: pointer; padding: 0 2px; border-radius: 6px;
+}
+.clawd-x:hover { color: #f6f2ee; background: rgba(255,255,255,.08); }
+
+.clawd-row { margin-bottom: 12px; }
+.clawd-row-top { display: flex; align-items: baseline; justify-content: space-between; }
+.clawd-pct { font-size: 24px; font-weight: 800; line-height: 1; }
+.clawd-reset { font-size: 10.5px; color: #a49b93; }
+.clawd-bar { height: 5px; border-radius: 4px; background: rgba(255,255,255,.1); margin: 6px 0 4px; overflow: hidden; }
+.clawd-bar > i {
+  display: block; height: 100%; border-radius: 4px;
+  background: linear-gradient(90deg, #d97757, #e8a06a);
+  transition: width .6s cubic-bezier(.2,.7,.2,1);
+}
+.clawd-row-bot { display: flex; align-items: baseline; justify-content: space-between; }
+.clawd-label { font-size: 11px; color: #c9bfb6; font-weight: 600; }
+.clawd-cost { font-size: 10.5px; color: #8a827c; }
+
+.clawd-foot {
+  display: flex; align-items: center; gap: 6px; margin-top: 2px; padding-top: 9px;
+  border-top: 1px solid rgba(255,255,255,.08); font-size: 11px; color: #c9bfb6;
+}
+.clawd-foot em { margin-left: auto; font-style: normal; color: #6f665f; font-size: 10px; }
+.clawd-dot { width: 7px; height: 7px; border-radius: 50%; background: #6cc07a; box-shadow: 0 0 6px #6cc07a; animation: clawd-pulse 1.8s ease-in-out infinite; }
+@keyframes clawd-pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+.clawd-loading { font-size: 11px; color: #8a827c; padding: 10px 0 6px; }
+
+/* ปุ่มลอยตอนย่อ */
+.clawd-fab {
+  position: fixed; right: 22px; bottom: 22px; z-index: 900;
+  display: inline-flex; align-items: center; gap: 7px;
+  background: #201d1b; color: #f6f2ee; border: none; cursor: pointer;
+  padding: 10px 14px; border-radius: 999px; font: 700 12px/1 ui-monospace, Menlo, monospace;
+  box-shadow: 0 10px 26px rgba(0,0,0,.34);
+}
+.clawd-fab svg { color: #d97757; }
+.clawd-fab:hover { transform: translateY(-1px); }
+.clawd-fab b { color: #e8a06a; }
+
+@media print { .clawd-wrap, .clawd-fab { display: none !important; } }
