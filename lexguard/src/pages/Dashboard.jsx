@@ -467,18 +467,6 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
         onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
     </div>
 
-    {/* กฎหมายใหม่ที่ AI พบ แยกรายเดือน */}
-    <div style={{marginTop:16}}>
-      <NewLawsByMonth updates={updates} onGoView={onGoView}/>
-    </div>
-
-    {/* สถานะงานในกระบวนการ (แบบเรียบง่าย) */}
-    <div style={{marginTop:16}}>
-      <StageBar items={processItems} onGo={onGoProcess}/>
-    </div>
-
-    <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports} danger/>
-
     <div style={{marginTop:36}}>
       <div className="dash-sec-h">ภาพรวมรายไตรมาส</div>
       <QuarterlyAddRepealChart quarterStats={quarterStats} cats={cats} catMap={catMap}/>
@@ -490,6 +478,18 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
         <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div>
       </div>
     </div>
+
+    {/* กฎหมายใหม่ที่ AI พบ แยกรายเดือน */}
+    <div style={{marginTop:16}}>
+      <NewLawsByMonth updates={updates} onGoView={onGoView}/>
+    </div>
+
+    {/* สถานะงานในกระบวนการ (แบบเรียบง่าย) */}
+    <div style={{marginTop:16}}>
+      <StageBar items={processItems} onGo={onGoProcess}/>
+    </div>
+
+    <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports} danger/>
 
     {/* งานค้างตามหน่วยงาน (item 5) — คลิกตัวเลขไปหน้าที่กรองไว้แล้ว */}
     {deptWorkload.length>0 && (
