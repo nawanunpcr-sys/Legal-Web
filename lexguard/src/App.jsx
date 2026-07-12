@@ -729,6 +729,7 @@ export default function App(){
       <div id="print-report"/>
       <Toaster/>
       <ConfirmHost/>
+      <Clawdmeter/>
     </div>
     </AuthContext.Provider>
   )
