@@ -368,7 +368,13 @@ function MonthlyAddRepealTable({laws,beYear}){
   )
 }
 
-export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,onGoView,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,monthRow,onMarkNoNewLaws,onMarkHasNewLaws,round={q:1,by:new Date().getFullYear()+543},setRound,roundYears}){
+// ตัวเลขงานค้างแบบคลิกได้ (0 = จาง ไม่คลิก)
+function WlNum({n,cls,onClick}){
+  if(!n) return <span style={{color:'var(--ink-faint)'}}>0</span>
+  return <span className={'pill '+cls} style={{cursor:'pointer',fontSize:12,padding:'2px 10px'}} onClick={onClick}>{n}</span>
+}
+
+export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,onGoView,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,deptWorkload=[],onGoDept,reviewPending=0,monthRow,onMarkNoNewLaws,onMarkHasNewLaws,round={q:1,by:new Date().getFullYear()+543},setRound,roundYears}){
   // navigate to the merged registry view in a specific mode (register / compliance)
   const goRegistry = mode => { try{ localStorage.setItem('cr_registry_mode', JSON.stringify(mode)) }catch{} ; onGoView&&onGoView('registry') }
   const trk = useMemo(()=>{
@@ -416,6 +422,18 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
         <span className="meta-chip" style={{color:'var(--bad)',borderColor:'var(--bad-bg)',background:'var(--bad-bg)'}}>ยกเลิกรอบนี้ {rc.repealed}</span>
       </span>
     </div>
+    {reviewPending>0 && (
+      <div className="panel" style={{marginBottom:14,padding:'12px 16px',display:'flex',alignItems:'center',gap:12,borderLeft:'3px solid #8e44ad',cursor:'pointer'}}
+        onClick={()=>onGoView&&onGoView('staging')}>
+        <span style={{fontSize:22}}>🔎</span>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:600,fontSize:14}}>รอตรวจทาน AI — {reviewPending} รายการ</div>
+          <div style={{fontSize:12,color:'var(--ink-faint)'}}>ผลสรุปจาก AI/agent รอ “ผู้ตรวจสอบ” ตรวจทานก่อนเข้าสายงานคัดกรอง</div>
+        </div>
+        <span className="pill p-warn" style={{fontSize:12}}>{reviewPending}</span>
+        <span style={{fontSize:12,color:'var(--brand)',fontWeight:500}}>ไปที่บอร์ด →</span>
+      </div>
+    )}
     <div className="dash-strip">
       {strip.map((s,i)=>(<div className="dash-strip-cell" key={i}>
         <div className={'dash-strip-val'+(s.accent?' is-accent':'')}>{s.val}</div>
@@ -466,6 +484,26 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
         <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div>
       </div>
     </div>
+
+    {/* งานค้างตามหน่วยงาน (item 5) — คลิกตัวเลขไปหน้าที่กรองไว้แล้ว */}
+    {deptWorkload.length>0 && (
+      <div className="panel" style={{marginTop:16}}>
+        <div className="panel-h"><h3>งานค้างตามหน่วยงาน</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกตัวเลขเพื่อไปยังงานที่กรองไว้</span></div>
+        <div className="tablewrap"><table>
+          <thead><tr><th>หน่วยงาน</th><th style={{textAlign:'center'}}>รอประเมิน</th><th style={{textAlign:'center'}}>NC ค้าง</th><th style={{textAlign:'center'}}>แผนเลยกำหนด</th></tr></thead>
+          <tbody>
+            {deptWorkload.map(d=>(
+              <tr key={d.deptId}>
+                <td style={{fontWeight:600,fontSize:13}}>{d.name}</td>
+                <td style={{textAlign:'center'}}><WlNum n={d.waiting} cls="p-warn" onClick={()=>onGoDept&&onGoDept('assessment',d.name)}/></td>
+                <td style={{textAlign:'center'}}><WlNum n={d.ncOpen} cls="p-bad" onClick={()=>onGoDept&&onGoDept('assessment',d.name)}/></td>
+                <td style={{textAlign:'center'}}><WlNum n={d.planOverdue} cls="p-bad" onClick={()=>onGoDept&&onGoDept('plans',d.name)}/></td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      </div>
+    )}
 
     {latestCases.length>0 && (
       <div className="panel" style={{marginTop:16}}>

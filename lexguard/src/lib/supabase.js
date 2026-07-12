@@ -432,6 +432,7 @@ export async function addStagedLaw(rows) {
       issue_date: first.announce_date || first.issue_date || null,
       effective_date: first.effective_date || null,
       doc_list: first.doc_list || null,
+      source_url: first.source_url || null,   // P8: ลิงก์ตัวบทจริงติดไปกับกฎหมายตอนเข้าทะเบียน
       status: 'bad', review_date: null,
     }).select('id').single()
     if (error) throw error
@@ -457,6 +458,47 @@ export async function dismissStaged(ids) {
 }
 export async function setUpdateStatus(id, status) {
   await supabase.from('lg_law_updates').update({ status }).eq('id', id)
+}
+
+// ---- P8: ตรวจทานผลสรุปของ AI (ผู้ตรวจสอบ) ----
+// เก็บผลตรวจทานที่ระดับ batch → update ทุกแถวตาม id (กัน key เปลี่ยนเมื่อแก้ cat/law_code)
+// TODO(auth): verify_by เก็บเป็น text — map เป็น auth.users id เมื่อทำบัญชีผู้ใช้รายคน
+export async function verifyStagingBatch(ids, { passed, correct, accurate, complete, note, by, law_code = '' }) {
+  if (!ids?.length) return
+  const patch = {
+    verify_status: passed ? 'passed' : 'failed',
+    verify_correct: !!correct, verify_accurate: !!accurate, verify_complete: !!complete,
+    verify_by: by || currentUserName(), verify_note: note || null, verified_at: new Date().toISOString(),
+  }
+  const { error } = await supabase.from('lg_import_staging').update(patch).in('id', ids)
+  if (error) throw error
+  await logActivity({ action: 'verify', law_code, law_name: '',
+    detail: passed ? 'ผ่านการตรวจทาน AI (ดึงถูกฉบับ/สรุปถูกต้อง/ครบถ้วน)' : ('ตีกลับผลสรุป AI — ' + (note || '')) })
+}
+
+// P8: บันทึกการแก้ไขผลสรุปของ AI ทับ staging + log ว่าแก้อะไร
+// lawFields = { law_name, cat, ministry, announce_date, effective_date, doc_list, source_url }
+// reqRows   = [{ id, section_ref, req_text, responsible, applicability, method, documents, frequency, other_terms }]
+export async function saveStagingEdits(ids, lawFields = {}, reqRows = []) {
+  const meta = {}
+  ;['law_name', 'cat', 'ministry', 'announce_date', 'effective_date', 'doc_list', 'source_url'].forEach(k => {
+    if (lawFields[k] !== undefined) meta[k] = lawFields[k] || null
+  })
+  if (Object.keys(meta).length && ids?.length) {
+    const { error } = await supabase.from('lg_import_staging').update(meta).in('id', ids)
+    if (error) throw error
+  }
+  for (const r of reqRows) {
+    if (!r.id) continue
+    const { error } = await supabase.from('lg_import_staging').update({
+      section_ref: r.section_ref || null, req_text: r.req_text || '', responsible: r.responsible || null,
+      applicability: r.applicability || null, method: r.method || null, documents: r.documents || null,
+      frequency: r.frequency || null, other_terms: r.other_terms || null,
+    }).eq('id', r.id)
+    if (error) throw error
+  }
+  await logActivity({ action: 'verify_edit', law_code: lawFields.law_code || '', law_name: lawFields.law_name || '',
+    detail: 'แก้ไขผลสรุป AI ก่อนตรวจทาน' })
 }
 
 // ---- Process Tracker (workflow stages) ----
@@ -668,4 +710,167 @@ export async function setMonthReviewStatus(year, month, status, checkedBy) {
     .from('lg_compliance_months')
     .upsert({ year, month, checked: true, checked_at: checkedAt, status, checked_by: checkedBy }, { onConflict: 'year,month' })
   if (error) throw error
+}
+
+// ============================================================================
+// สายงานประเมินกฎหมาย (migration 018) — คัดกรอง → มอบหมาย → ประเมิน C/NC → แผนปรับปรุง
+// ยังใช้ล็อกอินโหมด demo → เก็บ "ผู้ทำรายการ" เป็น text (screen_by/assigned_by/owner_name/…)
+// TODO(auth): เมื่อทำระบบบัญชีผู้ใช้รายคน ให้ map ฟิลด์ *_by / owner_name เป็น
+//             uuid references auth.users แทน free text ทุกจุดในบล็อกนี้
+// ============================================================================
+
+export const ASSESS_FLOW_STATUS = {
+  pending:     { label: 'รอประเมิน',  cls: 'p-bad'  },
+  in_progress: { label: 'กำลังประเมิน', cls: 'p-warn' },
+  done:        { label: 'ประเมินเสร็จ', cls: 'p-ok'   },
+}
+export const PLAN_STATUS = {
+  open:        { label: 'เปิด',        cls: 'p-bad'  },
+  in_progress: { label: 'กำลังปรับปรุง', cls: 'p-warn' },
+  done:        { label: 'ปิดแล้ว',      cls: 'p-ok'   },
+  overdue:     { label: 'เลยกำหนด',     cls: 'p-bad'  },
+}
+// สถานะแผนปรับปรุงที่ "แสดงผล" (คำนวณ overdue จาก due_date เมื่อยังไม่ปิด)
+export function planEffectiveStatus(p) {
+  if (p.status === 'done') return 'done'
+  if (p.due_date && new Date(p.due_date) < new Date(new Date().toDateString())) return 'overdue'
+  return p.status || 'open'
+}
+
+export async function fetchDepartments() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_departments').select('*').order('name')
+  return data || []
+}
+
+// สายงานประเมินทั้งหมด — ใช้สร้างบอร์ด 4 คอลัมน์ + หน้าประเมิน + การ์ด dashboard
+export async function fetchAssessmentFlow() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_assessment_flow').select('*').order('id')
+  return data || []
+}
+
+export async function fetchImprovementPlans() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_improvement_plans').select('*').order('created_at', { ascending: false })
+  return data || []
+}
+
+// ── ขั้น 1 · คัดกรอง batch นำเข้า (เกี่ยวข้อง / ไม่เกี่ยวข้อง) ──────────────────
+// batch = { cat, law_code, law_name }; ไม่เกี่ยวข้องต้องมี note (เหตุผล) → เก็บไว้ดูย้อนหลัง ไม่ลบ
+export async function screenBatch({ cat, law_code, law_name }, { relevant, note }) {
+  const by = currentUserName()
+  const patch = {
+    cat, law_code, law_name: law_name || law_code,
+    screen_status: relevant ? 'relevant' : 'not_relevant',
+    screen_by: by, screen_note: note || null, screened_at: new Date().toISOString(),
+  }
+  // แถว placeholder ระดับ batch (ยังไม่มอบหมาย → assigned_dept_id เป็น null)
+  const { data: existing } = await supabase.from('lg_assessment_flow')
+    .select('id').eq('cat', cat).eq('law_code', law_code).is('assigned_dept_id', null).maybeSingle()
+  if (existing) await supabase.from('lg_assessment_flow').update(patch).eq('id', existing.id)
+  else await supabase.from('lg_assessment_flow').insert({ ...patch, created_by: by })
+  await logActivity({ action: 'screen', law_code, law_name: law_name || law_code,
+    detail: relevant ? 'คัดกรอง: เกี่ยวข้องกับองค์กร' : ('คัดกรอง: ไม่เกี่ยวข้อง — ' + (note || '')) })
+}
+
+// ── ขั้น 2 · มอบหมายให้หน่วยงาน (ผู้ประเมิน) — แตกเป็นงานย่อยต่อหน่วยงาน ─────────
+// depts = [{ id, name }]; ขึ้นทะเบียนจริง (สร้าง law + requirements) เพื่อให้มีข้อกำหนดให้ประเมิน
+export async function assignBatch(batch, rows, depts, { dueDate, by: byArg } = {}) {
+  const by = byArg || currentUserName()   // TODO(auth): map เป็น auth.users id เมื่อทำบัญชีผู้ใช้รายคน
+  const law = await addStagedLaw(rows)   // สร้าง lg_laws + lg_requirements, set staging 'added', log 'import'
+  // ผลคัดกรองเดิม (placeholder dept null) เอาไว้ copy เข้าแถวรายหน่วยงาน
+  const { data: ph } = await supabase.from('lg_assessment_flow')
+    .select('*').eq('cat', batch.cat).eq('law_code', batch.law_code).is('assigned_dept_id', null).maybeSingle()
+  const now = new Date().toISOString()
+  const flowRows = depts.map(dep => ({
+    cat: batch.cat, law_code: batch.law_code, law_name: batch.law_name || law?.name || batch.law_code,
+    law_id: law.id,
+    screen_status: 'relevant', screen_by: ph?.screen_by || by, screen_note: ph?.screen_note || null, screened_at: ph?.screened_at || now,
+    assigned_dept_id: dep.id, assigned_by: by, assigned_at: now, assess_due_date: dueDate || null,
+    assess_status: 'pending', created_by: by,
+  }))
+  const { error } = await supabase.from('lg_assessment_flow').insert(flowRows)
+  if (error) throw error
+  if (ph) await supabase.from('lg_assessment_flow').delete().eq('id', ph.id)   // เก็บแถวรายหน่วยงานแทน placeholder
+  for (const dep of depts) {
+    await supabase.from('lg_notification_log').insert({
+      type: 'assign_new', ref_id: law.id, ref_type: 'assessment',
+      message: `มอบหมายประเมิน ${batch.law_code} ให้ ${dep.name}`, due_date: dueDate || null,
+    })
+  }
+  await logActivity({ action: 'assign', law_id: law.id, law_code: batch.law_code, law_name: batch.law_name || '',
+    detail: `ส่งประเมิน ${depts.length} หน่วยงาน: ${depts.map(d => d.name).join(', ')}` })
+  return law
+}
+
+// ── ขั้น 3 · ประเมินรายข้อกำหนด (C = met / NC = unmet) — บังคับชื่อผู้ประเมิน ──────
+export async function assessRequirement(req, law, status, assessorName) {
+  const { error } = await supabase.from('lg_requirements')
+    .update({ status, evaluated_at: new Date().toISOString(), evaluated_by: assessorName }).eq('id', req.id)
+  if (error) throw error
+  const { data: allReq } = await supabase.from('lg_requirements').select('status').eq('law_id', law.id)
+  await recomputeLawStatus(law.id, allReq || [])
+  await logActivity({ action: 'assess', law_id: law.id, law_code: law.code, law_name: law.name,
+    detail: `${assessorName} ประเมิน ${status === 'met' ? 'สอดคล้อง (C)' : 'ไม่สอดคล้อง (NC)'}: ${(req.text || '').slice(0, 80)}` })
+}
+// ทำงานประเมินของหน่วยงานหนึ่งให้เป็น "กำลังประเมิน" / "เสร็จ"
+export async function setFlowAssessStatus(flowId, status, assessorName) {
+  const patch = { assess_status: status, assessed_by: assessorName || null }
+  if (status === 'done') patch.assessed_at = new Date().toISOString()
+  const { error } = await supabase.from('lg_assessment_flow').update(patch).eq('id', flowId)
+  if (error) throw error
+}
+
+// ── ขั้น 4 · แผนปรับปรุง ────────────────────────────────────────────────────
+export async function createImprovementPlan({ requirement_id, law_id, plan_text, owner_dept_id, owner_name, due_date }) {
+  const by = currentUserName()
+  const { data, error } = await supabase.from('lg_improvement_plans').insert({
+    requirement_id: requirement_id || null, law_id: law_id || null, plan_text,
+    owner_dept_id: owner_dept_id || null, owner_name: owner_name || null,
+    due_date: due_date || null, status: 'open', created_by: by,
+  }).select().single()
+  if (error) throw error
+  await supabase.from('lg_notification_log').insert({
+    type: 'plan_due', ref_id: data.id, ref_type: 'plan',
+    message: `แผนปรับปรุงใหม่: ${(plan_text || '').slice(0, 60)}`, due_date: due_date || null,
+  })
+  await logActivity({ action: 'plan', law_id: law_id || null, detail: 'สร้างแผนปรับปรุง: ' + (plan_text || '').slice(0, 80) })
+  return data
+}
+export async function updateImprovementPlan(id, patch) {
+  const { error } = await supabase.from('lg_improvement_plans').update(patch).eq('id', id)
+  if (error) throw error
+}
+// ปิดแผน → บังคับมีหลักฐาน/สรุปผล แล้วพลิก requirement NC→C อัตโนมัติ + log
+export async function closeImprovementPlan(plan, { evidence }) {
+  const by = currentUserName()
+  const { error } = await supabase.from('lg_improvement_plans').update({
+    status: 'done', evidence: evidence || null, closed_at: new Date().toISOString(), closed_by: by,
+  }).eq('id', plan.id)
+  if (error) throw error
+  if (plan.requirement_id) {
+    await supabase.from('lg_requirements')
+      .update({ status: 'met', evaluated_at: new Date().toISOString(), evaluated_by: by }).eq('id', plan.requirement_id)
+    if (plan.law_id) {
+      const { data: allReq } = await supabase.from('lg_requirements').select('status').eq('law_id', plan.law_id)
+      await recomputeLawStatus(plan.law_id, allReq || [])
+    }
+  }
+  await supabase.from('lg_notification_log').insert({
+    type: 'plan_closed', ref_id: plan.id, ref_type: 'plan',
+    message: 'ปิดแผนปรับปรุงแล้ว — พลิกข้อกำหนดเป็นสอดคล้อง (C)', due_date: null,
+  })
+  await logActivity({ action: 'plan_close', law_id: plan.law_id || null,
+    detail: 'ปิดแผนปรับปรุง + พลิก NC→C: ' + (plan.plan_text || '').slice(0, 60) })
+}
+
+// ── ขั้นสุดท้าย · ยืนยันเข้าทะเบียนสมบูรณ์ (item 7) ──────────────────────────────
+export async function finalizeAssessment(lawId, lawCode) {
+  const by = currentUserName()
+  const { error } = await supabase.from('lg_assessment_flow')
+    .update({ finalized_at: new Date().toISOString(), finalized_by: by }).eq('law_id', lawId)
+  if (error) throw error
+  await logActivity({ action: 'finalize', law_id: lawId, law_code: lawCode || '',
+    detail: 'ยืนยันเข้าทะเบียนสมบูรณ์ — ผ่านการประเมินครบทุกหน่วยงาน' })
 }

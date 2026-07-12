@@ -61,7 +61,7 @@ export default async function handler(req,res){
   if(!SUPA_URL||!SUPA_KEY) return res.status(500).json({error:'ยังไม่ได้ตั้งค่า Supabase (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)'})
   if(!process.env.ANTHROPIC_API_KEY) return res.status(500).json({error:'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Vercel'})
   try{
-    const { source='', kind='auto' } = req.body||{}
+    const { source='', kind='auto', sourceUrl='' } = req.body||{}
     if(!source.trim()) return res.status(400).json({error:'กรุณาใส่ URL หรือวางตัวบทกฎหมาย'})
     let text = source, srcUrl = ''
     const isUrl = /^https?:\/\//i.test(source.trim())
@@ -94,7 +94,8 @@ export default async function handler(req,res){
       announce_date: law.announce_date||'', effective_date: law.effective_date||'', doc_list: law.documents||'',
       req_seq: i, section_ref: r.section_ref||'', req_text: r.req_text||'', responsible: r.responsible||'',
       applicability: r.applicability||'', method: r.method||'', documents: r.documents||'',
-      frequency: r.frequency||'', other_terms: r.other_terms||'', source_url: srcUrl, status:'proposed'
+      // กรณีวางตัวบทเป็นข้อความ (ไม่มี URL ที่ fetch) ให้ใช้ "ลิงก์ตัวบทจริง" ที่ผู้ใช้กรอกมา
+      frequency: r.frequency||'', other_terms: r.other_terms||'', source_url: srcUrl || (sourceUrl||'').trim(), status:'proposed'
     }))
     if(rows.length){
       const sr = await fetch(`${SUPA_URL}/rest/v1/lg_import_staging`,{method:'POST',

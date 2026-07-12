@@ -868,6 +868,8 @@ tbody tr:last-child td { border-bottom: none }
 .p-bad::before    { background: var(--bad) }
 .p-repealed { background: var(--surface-3); color: var(--ink-faint) }
 .p-repealed::before { background: var(--faint) }
+.p-warn     { background: var(--warn-bg);   color: var(--warn) }
+.p-warn::before   { background: var(--warn) }
 
 .tag {
   font-size: 11px;

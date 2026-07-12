@@ -165,6 +165,10 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
             <span>{law.reqs.length} ข้อกำหนด</span>
             {law.law_type && <span>{law.law_type}</span>}
           </div>
+          {law.source_url && (
+            <a className="btn btn-ghost" href={law.source_url} target="_blank" rel="noreferrer"
+              style={{marginTop:10,padding:'5px 12px',fontSize:12.5}} title={law.source_url}>📄 เปิดตัวบท (PDF)</a>
+          )}
         </div>
         <div className="dr-body">
           {isRepealed && (

@@ -58,6 +58,8 @@ export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' })
         const dateCell = i === 0 ? `<td rowspan="${span}" class="ctr">${ESC(l.issue_date || l.effective_date || '—')}</td>` : ''
         const met = r.status === 'met', nc = r.status === 'unmet'
         const evidence = [r.documents, r.evidence_label].filter(Boolean).join(' · ')
+        // ใส่ลิงก์ตัวบทจริง (source_url) ไว้ในคอลัมน์เอกสารที่เกี่ยวข้อง — แถวแรกของกฎหมาย
+        const srcLine = i === 0 && l.source_url ? `<div class="src">ตัวบท: <a href="${ESC(l.source_url)}">${ESC(l.source_url)}</a></div>` : ''
         return `<tr>${preCells}
           <td class="req">${ESC(r.text || '—')}</td>
           ${dateCell}
@@ -65,7 +67,7 @@ export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' })
           <td class="ctr ${met ? 'ok' : nc ? 'bad' : ''}">${met ? 'C' : nc ? 'NC' : '—'}</td>
           <td>${ESC(r.frequency || '—')}</td>
           <td>${ESC(r.report || '—')}</td>
-          <td>${ESC(evidence || '—')}</td>
+          <td>${ESC(evidence || '—')}${srcLine}</td>
           <td>${ESC(r.note || '—')}</td>
         </tr>`
       }).join('')
@@ -110,6 +112,7 @@ export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' })
     #print-report .reg .bad { color:#c4271d; font-weight:700 }
     #print-report .reg .law { font-weight:600 }
     #print-report .reg .req { white-space:pre-wrap }
+    #print-report .reg .src { font-size:9.5px; color:#0a58ca; word-break:break-all; margin-top:2px }
     #print-report .reg tr { page-break-inside: avoid }
     #print-report .sign { margin-top:22px; page-break-inside:avoid }
     #print-report .sign td { border:none; text-align:center; padding:26px 10px 4px; font-size:13px; width:33.33% }

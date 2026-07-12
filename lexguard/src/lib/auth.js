@@ -87,9 +87,10 @@ export function currentUserName() {
 // ---- Simple role permissions ----
 // actions: 'view' (ทุกคน) · 'edit' (admin+editor) · 'delete' (admin เท่านั้น)
 const PERMS = {
-  view:   ['admin', 'editor', 'viewer'],
-  edit:   ['admin', 'editor'],
-  delete: ['admin'],
+  view:    ['admin', 'editor', 'viewer'],
+  edit:    ['admin', 'editor'],
+  delete:  ['admin'],
+  approve: ['admin'],   // P8: อนุมัติเข้าทะเบียนได้เฉพาะ ADMIN (ห้ามเข้าทะเบียนอัตโนมัติ)
 }
 export function can(role, action) {
   return (PERMS[action] || []).includes(role)

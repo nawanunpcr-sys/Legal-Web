@@ -35,6 +35,7 @@ function ReqEditor({reqs,setReqs,suggest}){
 function AnalyzePanel({cats,allLaws,onCreateFull,suggest,goView,onAnalyzed}){
   const { can }=useAuth()
   const [src,setSrc]=useState('')
+  const [srcUrl,setSrcUrl]=useState('')  // P8: ลิงก์ตัวบทจริง (กรณีวางเป็นข้อความ ไม่มี URL)
   const [busy,setBusy]=useState(false)
   const [err,setErr]=useState('')
   const [res,setRes]=useState(null)      // {law, reqs:[{...,_add:true}]}
@@ -45,7 +46,7 @@ function AnalyzePanel({cats,allLaws,onCreateFull,suggest,goView,onAnalyzed}){
     if(!src.trim()) return
     setBusy(true); setErr(''); setRes(null); setDone(null)
     try{
-      const r=await fetch('/api/law-analyze',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source:src})})
+      const r=await fetch('/api/law-analyze',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source:src,sourceUrl:srcUrl.trim()})})
       const d=await r.json()
       if(!r.ok){ setErr(d.error||'วิเคราะห์ไม่สำเร็จ') }
       else{
@@ -72,7 +73,8 @@ function AnalyzePanel({cats,allLaws,onCreateFull,suggest,goView,onAnalyzed}){
     try{
       const nl=await onCreateFull(
         {code,cat,name:(law.name||'').trim(),hierarchy_level:'4',ministry:law.ministry||'',
-         announce_date:law.announce_date||'',effective_date:law.effective_date||'',doc_list:law.documents||'',source_url:''},
+         announce_date:law.announce_date||'',effective_date:law.effective_date||'',doc_list:law.documents||'',
+         source_url: srcUrl.trim() || (/^https?:\/\//i.test(src.trim())?src.trim():'')},
         chosen)
       setDone(`เพิ่ม ${nl.code} เข้าหมวด ${cat} แล้ว (${chosen.length} ข้อย่อย)`)
       setRes(null); setSrc('')
@@ -88,6 +90,9 @@ function AnalyzePanel({cats,allLaws,onCreateFull,suggest,goView,onAnalyzed}){
       <div className="panel-b">
         <p style={{fontSize:12.5,color:'var(--ink-faint)',marginBottom:10,lineHeight:1.6}}>วาง URL ราชกิจจาฯ / กฤษฎีกา / ShawPat หรือวางตัวบทกฎหมาย → ระบบสรุปเป็นข้อย่อย แล้ว “เลือกเพิ่มทีละข้อ” เข้าหมวดที่ต้องการได้เลย</p>
         <textarea className="form-input" rows={4} placeholder="วาง URL หรือตัวบทกฎหมายที่นี่…" value={src} onChange={e=>setSrc(e.target.value)} style={{marginTop:0}}/>
+        <label className="form-label" style={{marginTop:10}}>ลิงก์ตัวบทจริง (แนะนำ) — วาง URL ราชกิจจาฯ/PDF เพื่อให้ผู้ตรวจสอบกดเทียบต้นฉบับได้</label>
+        <input className="form-input" style={{marginTop:0}} value={srcUrl} onChange={e=>setSrcUrl(e.target.value)}
+          placeholder="เช่น https://ratchakitcha.soc.go.th/documents/xxxx.pdf (ไม่บังคับ แต่แนะนำให้ใส่ทุกครั้ง)"/>
         <div style={{display:'flex',gap:8,alignItems:'center',marginTop:12}}>
           <button className="btn btn-primary" disabled={busy||!src.trim()||!can('edit')} title={can('edit')?'':NO_PERM} onClick={analyze}>{busy?'กำลังวิเคราะห์…':'วิเคราะห์'}</button>
           <button className="btn btn-ghost" onClick={()=>goView&&goView('staging')}>ดูหน้านำเข้า / รออนุมัติ →</button>
