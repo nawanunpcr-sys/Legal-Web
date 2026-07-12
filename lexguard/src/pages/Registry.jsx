@@ -6,8 +6,7 @@ import { LAW_TYPES } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
-import { usePersist, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, roundLabel, roundCounts, quarterOfDate, daysTo, effectiveInfo } from '../lib/ui.jsx'
-import RoundSelect from '../components/RoundSelect.jsx'
+import { usePersist, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, quarterOfDate, daysTo, effectiveInfo } from '../lib/ui.jsx'
 
 /* ─────────────────────────── ADD LAW MODAL ───────────────────────── */
 function AddLawModal({ cats, allLaws, onSave, onClose }) {
@@ -85,12 +84,12 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 }
 
 /* ─────────── REGISTRY + COMPLIANCE (merged view) ─────────── */
-export default function RegistryCompliance({regLaws,compLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,onToggle,allLaws,months,monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws,round,setRound,roundYears,onExportF259}){
-  const [mode,setMode]=usePersist('cr_registry_mode','register')
+export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,allLaws,round,onExportF259}){
   const kpis=[
     {lab:'ข้อกำหนดทั้งหมด',   val:stats.req, accent:'#1C2431'},
     {lab:'ผ่านการประเมิน (C)', val:stats.met, accent:'#5F7A61'},
     {lab:'ยังไม่สอดคล้อง (NC)', val:stats.nc, accent:'#B4553F'},
+    {lab:'ความสอดคล้อง', val:stats.pct.toFixed(1)+'%', accent:'#3A6A97'},
   ]
   return <div className="view">
     <div className="rc-stats">
@@ -102,21 +101,15 @@ export default function RegistryCompliance({regLaws,compLaws,cats,catMap,stats,s
       ))}
     </div>
 
-    <div className="seg" role="tablist" aria-label="สลับมุมมองทะเบียน / ความสอดคล้อง">
-      <button role="tab" aria-selected={mode==='register'} className={'seg-btn'+(mode==='register'?' active':'')} onClick={()=>setMode('register')}>ทะเบียนกฎหมาย</button>
-      <button role="tab" aria-selected={mode==='compliance'} className={'seg-btn'+(mode==='compliance'?' active':'')} onClick={()=>setMode('compliance')}>ติดตามความสอดคล้อง</button>
-    </div>
-
-    {mode==='register'
-      ? <Register laws={regLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
-          round={round} setRound={setRound} roundYears={roundYears} onExportF259={onExportF259}
-          months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={onToggleMonth} onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
-      : <Compliance laws={compLaws} cats={cats} onOpen={onOpen} onToggle={onToggle}/>}
+    <Register laws={regLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
+      round={round} onExportF259={onExportF259}/>
   </div>
 }
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
-function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months,monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws,round={q:1,by:new Date().getFullYear()+543},setRound,roundYears,onExportF259}){
+// จัดลำดับหมวด: LA→LG ก่อน แล้ว CCS (CC) ท้ายสุด
+const catOrder=(a,b)=>((a==='CC')-(b==='CC'))||a.localeCompare(b)
+function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259}){
   const { can }=useAuth()
   const [cat,setCat]=usePersist('cr_reg_cat','all')
   const [act,setAct]=usePersist('cr_reg_act','all')
@@ -127,7 +120,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
   const clearSel=()=>setSel(new Set())
   async function bulk(met){ await onBulk([...sel],met); clearSel() }
   function exportSel(){ const m=Object.fromEntries(cats.map(c=>[c.code,c])); exportLawsToExcel(laws.filter(l=>sel.has(l.id)),m); }
-  const catsList=[...new Set(laws.map(l=>l.cat))].sort()
+  const catsList=[...new Set(laws.map(l=>l.cat))].sort(catOrder)
   const q=search.toLowerCase()
   // ── ตัวกรองด่วน (item 6) ──
   const gYear=round.by-543
@@ -156,13 +149,6 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
   const activeCats=catsList.filter(c=>cat==='all'||c===cat)
   return <div className="view">
     {showAdd && <AddLawModal cats={cats} allLaws={allLaws} onSave={onCreate} onClose={()=>setShowAdd(false)}/>}
-    <div className="round-bar" style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',marginBottom:14,padding:'10px 14px',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12}}>
-      {setRound && <RoundSelect round={round} onChange={setRound} years={roundYears}/>}
-      <span style={{fontSize:13,fontWeight:600,color:'var(--brand)'}}>{roundLabel(round.q, round.by)}</span>
-    </div>
-    <div style={{marginBottom:16}}>
-      <MonthlyCheckPanel months={months} year={monthYear} setYear={setMonthYear} onToggle={onToggleMonth} onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
-    </div>
     <div className="filterbar">
       <span style={{fontSize:12,color:'var(--ink-faint)',fontWeight:600,marginRight:2}}>ตัวกรองด่วน:</span>
       {QUICK.map(([key,lab])=>(
@@ -208,9 +194,14 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
         <div className="hier-cat-header" style={{borderLeftColor:catMap[c]?.color||'var(--brand)'}}>
           <span style={{color:catMap[c]?.color,fontWeight:700}}>{c}</span>
           <span style={{marginLeft:8,color:'var(--ink-soft)'}}>{catMap[c]?.name}</span>
-          {(()=>{ const ls=rows.filter(l=>l.cat===c); let r=0,m=0; ls.forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++})); const pc=r?Math.round(m/r*100):100;
-            return <><span style={{marginLeft:'auto',fontSize:12.5,fontWeight:700,color:pc===100?'var(--ok)':pc>=70?'var(--review)':'var(--bad)'}}>สอดคล้อง {pc}%</span>
-            <span style={{marginLeft:14,fontSize:12,color:'var(--ink-faint)'}}>{ls.length} ฉบับ</span></> })()}
+          {(()=>{ const ls=rows.filter(l=>l.cat===c); let r=0,m=0; ls.forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++})); const pc=r?Math.round(m/r*100):100; const left=r-m;
+            const col=pc===100?'var(--ok)':pc>=70?'var(--review)':'var(--bad)';
+            return <span style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+              <span className="pill" style={{fontSize:11.5,fontWeight:700,background:'color-mix(in srgb,'+col+' 12%,transparent)',color:col}}>สอดคล้อง {pc}%</span>
+              <span style={{fontSize:12,color:'var(--ok)'}}>C {m}/{r} ข้อ</span>
+              {left>0 && <span style={{fontSize:12,color:'var(--bad)'}}>เหลือ {left} ข้อ</span>}
+              <span style={{fontSize:12,color:'var(--ink-faint)'}}>{ls.length} ฉบับ</span>
+            </span> })()}
         </div>
         {LAW_TYPES.filter(t=>grouped[c]?.[t.level]?.length).map(t=>(
           <div key={t.level} style={{marginBottom:8}}>
@@ -240,66 +231,69 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,months
 
 /* ─────────────────────────── COMPLIANCE ─────────────────────────── */
 
-function MonthlyCheckPanel({ months, year, setYear, onToggle, onMarkNoNewLaws, onMarkHasNewLaws }) {
+export function MonthlyCheckPanel({ months, year, setYear, onToggle, onMarkNoNewLaws, onMarkHasNewLaws }) {
   const { can }=useAuth()
+  const [pick,setPick]=useState(null)   // เดือนที่กำลังเลือกผลตรวจ (เฉพาะเดือนปัจจุบัน)
   const toBE = y => y + 543
   const getMonth = m => months.find(r=>r.year===year && r.month===m) || {checked:false}
-  const checkedCount = months.filter(m=>m.year===year && m.checked).length
+  const reviewedCount = months.filter(m=>m.year===year && (m.status||m.checked)).length
   const now = new Date()
   const curMonth = now.getMonth()+1
-  const isViewingCurrentYear = year===now.getFullYear()
-  const curRec = isViewingCurrentYear ? getMonth(curMonth) : null
-  const curReviewed = !!(curRec && (curRec.status || curRec.checked))
+  const curYear = now.getFullYear()
 
   return (
     <div className="panel month-panel">
       <div className="panel-h">
         <h3>การตรวจสอบรายเดือน</h3>
-        <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
-          <button className="month-yr-btn" onClick={()=>setYear(y=>y-1)}>‹</button>
-          <span style={{fontSize:13,fontWeight:600,minWidth:60,textAlign:'center'}}>ปี {toBE(year)}</span>
-          <button className="month-yr-btn" onClick={()=>setYear(y=>y+1)}>›</button>
-        </div>
-        <span className="sub">{checkedCount}/12 เดือน</span>
-      </div>
-
-      {isViewingCurrentYear && (
-        <div className={'month-action-bar'+(curReviewed?(curRec.status==='has_new_laws'?' month-action-bar--active':' month-action-bar--ok'):'')}>
-          {!curReviewed ? (<>
-            <span className="month-action-lab">⏳ เดือน{TH_MONTHS[curMonth-1]}นี้ยังไม่ได้ตรวจสอบกฎหมายใหม่</span>
-            <div className="month-action-btns">
-              <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={onMarkHasNewLaws}>🔍 พบกฎหมายใหม่ — เริ่มกระบวนการ</button>
-              <button className="btn btn-primary" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={onMarkNoNewLaws}>✓ ตรวจแล้ว ไม่มีกฎหมายใหม่เดือนนี้</button>
+        {setYear
+          ? <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
+              <button className="month-yr-btn" onClick={()=>setYear(y=>y-1)}>‹</button>
+              <span style={{fontSize:13,fontWeight:600,minWidth:60,textAlign:'center'}}>ปี {toBE(year)}</span>
+              <button className="month-yr-btn" onClick={()=>setYear(y=>y+1)}>›</button>
             </div>
-          </>) : curRec.status==='no_new_laws' ? (
-            <span className="month-action-badge month-action-badge--ok">ไม่มีกฎหมายใหม่ ✓ (ตรวจโดย {curRec.checked_by||'—'}{curRec.checked_at?' '+thDate(curRec.checked_at):''})</span>
-          ) : curRec.status==='has_new_laws' ? (
-            <span className="month-action-badge month-action-badge--active">🔍 พบกฎหมายใหม่ — อยู่ระหว่างดำเนินการ (ตรวจโดย {curRec.checked_by||'—'}{curRec.checked_at?' '+thDate(curRec.checked_at):''})</span>
-          ) : (
-            <span className="month-action-badge month-action-badge--ok">✓ ตรวจสอบแล้ว{curRec.checked_at?' — '+thDate(curRec.checked_at):''}</span>
-          )}
-        </div>
-      )}
+          : <span style={{fontSize:13,fontWeight:600,marginLeft:'auto'}}>ปี {toBE(year)}</span>}
+        <span className="sub">ตรวจแล้ว {reviewedCount}/12 เดือน</span>
+      </div>
 
       <div className="month-grid">
         {TH_MONTHS.map((label, i) => {
           const m = i + 1
           const rec = getMonth(m)
-          const isCurrentMonth = year===new Date().getFullYear() && m===new Date().getMonth()+1
+          const isCurrent = year===curYear && m===curMonth
+          const isPast = year<curYear || (year===curYear && m<curMonth)
+          const hasNew = rec.status==='has_new_laws'
+          const noNew  = rec.status==='no_new_laws' || (rec.checked && !rec.status)
+          const reviewed = hasNew || noNew
+          const pending = !reviewed && (isPast || isCurrent)
+          const cls = 'month-cell'
+            + (isCurrent?' month-current':'')
+            + (hasNew?' month-newlaw':'')
+            + (noNew?' month-checked':'')
+            + (pending?' month-pending':'')
+          const statusText = hasNew ? '🔍 พบใหม่' : noNew ? '✓ ไม่มีใหม่' : pending ? 'ยังไม่ตรวจ' : '—'
+          const onClick = () => {
+            if(!can('edit')) return
+            if(isCurrent) setPick(p=>p===m?null:m)   // เดือนปัจจุบัน → เลือกผลตรวจ
+            else onToggle(year, m)                    // เดือนอื่น → สลับตรวจแล้ว/ยังไม่
+          }
           return (
-            <button
-              key={m}
-              className={'month-cell'+(rec.checked?' month-checked':'')+(isCurrentMonth?' month-current':'')}
-              disabled={!can('edit')}
-              onClick={()=>onToggle(year, m)}
-              title={rec.checked && rec.checked_at ? 'ตรวจสอบแล้ว: '+new Date(rec.checked_at).toLocaleDateString('th-TH') : (can('edit')?'คลิกเพื่อทำเครื่องหมาย':'อ่านอย่างเดียว')}
-            >
+            <button key={m} className={cls} disabled={!can('edit')} onClick={onClick}
+              title={rec.checked_at ? 'ตรวจโดย '+(rec.checked_by||'—')+' · '+thDate(rec.checked_at) : (can('edit')?'คลิกเพื่อบันทึกผลตรวจ':'อ่านอย่างเดียว')}>
               <span className="month-name">{label}</span>
-              <span className="month-tick">{rec.checked ? '✓' : ''}</span>
+              <span className="month-status">{statusText}</span>
             </button>
           )
         })}
       </div>
+
+      {/* ตัวเลือกผลตรวจของเดือนปัจจุบัน (แทนแถบใหญ่เดิม) */}
+      {pick===curMonth && year===curYear && (
+        <div className="month-pick">
+          <span className="month-pick-lab">บันทึกผลตรวจเดือน{TH_MONTHS[curMonth-1]}:</span>
+          <button className="btn btn-primary" disabled={!can('edit')} onClick={()=>{ onMarkNoNewLaws&&onMarkNoNewLaws(); setPick(null) }}>✓ ไม่มีกฎหมายใหม่</button>
+          <button className="btn btn-ghost" disabled={!can('edit')} onClick={()=>{ onMarkHasNewLaws&&onMarkHasNewLaws(); setPick(null) }}>🔍 พบกฎหมายใหม่</button>
+        </div>
+      )}
     </div>
   )
 }

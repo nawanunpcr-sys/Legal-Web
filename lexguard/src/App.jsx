@@ -57,19 +57,15 @@ const NAV_GROUPS = [
     { id:'process',       label:'ติดตามกระบวนการ',       icon:'inbox'   },
     { id:'tracker',       label:'ติดตามสถานะกฎหมาย',     icon:'update'  },
   ]},
-  { label: '① ค้นพบกฎหมายใหม่', items: [
-    { id:'updates',       label:'อัปเดตกฎหมาย',          icon:'update'  },
-    { id:'analysis',      label:'วิเคราะห์ & AI',          icon:'spark'   },
-  ]},
-  { label: '② คัดกรอง & มอบหมาย', items: [
+  { label: '① คัดกรอง & มอบหมาย', items: [
     { id:'staging',       label:'บอร์ดคัดกรอง/ประเมิน',  icon:'inbox'   },
   ]},
-  { label: '③ ประเมิน & แก้ไข', items: [
+  { label: '② ประเมิน & แก้ไข', items: [
     { id:'assessment',    label:'ประเมินความสอดคล้อง',   icon:'inbox'   },
     { id:'plans',         label:'แผนปรับปรุง',            icon:'spark'   },
     { id:'comm',          label:'การสื่อสาร (ISD-86)',   icon:'chat'    },
   ]},
-  { label: '④ ตรวจสอบ & ติดตาม', items: [
+  { label: '③ ตรวจสอบ & ติดตาม', items: [
     { id:'reports',       label:'การส่งรายงานราชการ',    icon:'inbox'   },
   ]},
   { label: 'อ้างอิง & ระบบ', items: [
@@ -521,6 +517,15 @@ export default function App(){
     if(hasSupabase){ try{ await toggleMonthCheck(year,month,nowChecked) }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) } }
   }
 
+  // toggle เดือนของ "ปีปัจจุบัน" จากการ์ดบน Dashboard (อัปเดต curMonthRows)
+  async function handleToggleMonthCur(month){
+    const y=new Date().getFullYear()
+    const rec=curMonthRows.find(m=>m.year===y && m.month===month)
+    const next = rec ? !rec.checked : true
+    try{ await toggleMonthCheck(y, month, next); await loadCurMonth() }
+    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
+  }
+
   // The two "current month" review actions — always act on the real current
   // year/month (not whatever year is being browsed in the Register panel).
   async function syncCurrentMonthEverywhere(year){
@@ -680,15 +685,13 @@ export default function App(){
           {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} onGoView={setView} processItems={allProcess} rawProcessItems={processItems} onGoProcess={()=>setView('process')} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}
             deptWorkload={deptWorkload} onGoDept={(v,dept)=>{ setPresetDept(dept||null); setView(v) }}
             reviewPending={reviewPending.length}
-            round={round} setRound={setRound} roundYears={roundYears}
+            monthsData={curMonthRows} onToggleMonthCur={handleToggleMonthCur}
             monthRow={curMonthRows.find(m=>m.year===new Date().getFullYear()&&m.month===new Date().getMonth()+1)}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
           {view==='registry'      && <RegistryCompliance
-            regLaws={activeLaws} compLaws={inForceLaws} cats={cats} catMap={catMap} stats={stats}
-            search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} onToggle={toggleReq} allLaws={laws}
-            round={round} setRound={setRound} roundYears={roundYears} onExportF259={()=>setShowPdf(true)}
-            months={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
-            onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
+            regLaws={activeLaws} cats={cats} catMap={catMap} stats={stats}
+            search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
+            round={round} onExportF259={()=>setShowPdf(true)}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={searchDebounced} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}

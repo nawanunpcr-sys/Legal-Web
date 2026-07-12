@@ -12,54 +12,36 @@ const nextKey = k => { const i = PROCESS_STAGES.findIndex(s => s.key === k); ret
 // shipment-style tracker (used on the dashboard) — leads with the *current
 // month's* new-law-scan status, and only falls back to the 5-stage tracker
 // once that scan has turned up new laws still being worked through.
-export function StageBar({ items, onGo, monthRow, hasActiveWork, monthLabel, onMarkNoNewLaws, onMarkHasNewLaws }) {
-  const { can } = useAuth()
+// ติดตามสถานะงานแบบ "ระบบขนส่ง/พัสดุ" — เส้นความคืบหน้าเชื่อมแต่ละขั้น
+// จุดที่ผ่านแล้ว = เติมสี ✓ · จุดปัจจุบัน = ไฮไลต์ · แสดงจำนวนงานที่ค้างในแต่ละขั้น
+export function StageBar({ items, onGo }) {
   const counts = useMemo(() => {
     const c = Object.fromEntries(PROCESS_STAGES.map(s => [s.key, 0]))
     items.forEach(i => { if (c[i.stage] != null) c[i.stage]++ })
     return c
   }, [items])
+  const pending = PROCESS_STAGES.filter(s => s.key !== 'done').reduce((a, s) => a + counts[s.key], 0)
+  // ขั้นปัจจุบัน = ขั้นที่ยังไม่เสร็จ ที่ก้าวหน้าที่สุดและมีงานอยู่
   const activeIdx = PROCESS_STAGES.reduce((acc, s, i) => (s.key !== 'done' && counts[s.key] > 0 ? i : acc), 0)
 
-  const reviewed = !!(monthRow && (monthRow.status || monthRow.checked))
-
-  const monthPanel = !reviewed ? (
-    <div className="panel month-action-panel" style={{ marginBottom: 16 }}>
-      <div className="panel-b month-action-bar">
-        <span className="month-action-lab"><span className="month-dot month-dot--wait" />รอการตรวจสอบประจำเดือน{monthLabel}</span>
-        <div className="month-action-btns">
-          <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={onMarkHasNewLaws}>พบกฎหมายใหม่ — เริ่มกระบวนการ</button>
-          <button className="btn btn-primary" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={onMarkNoNewLaws}>ตรวจแล้ว ไม่มีกฎหมายใหม่เดือนนี้</button>
-        </div>
-      </div>
-    </div>
-  ) : monthRow.status === 'no_new_laws' ? (
-    <div className="panel month-action-panel" style={{ marginBottom: 16 }}>
-      <div className="panel-b month-action-bar month-action-bar--ok">
-        <span className="month-action-badge month-action-badge--ok"><span className="month-dot month-dot--ok" />เดือนนี้ตรวจแล้ว ไม่มีกฎหมายใหม่</span>
-      </div>
-    </div>
-  ) : null
-
-  // Process tracker — always shown on the dashboard so the workflow is visible at a glance
-  const trackPanel = (
+  return (
     <div className="panel" style={{ marginBottom: 16 }}>
-      <div className="panel-h"><h3>ติดตามกระบวนการ (Process Tracker)</h3>
-        {onGo && <span className="sub" style={{ marginLeft: 'auto', color: 'var(--brand)', cursor: 'pointer' }} onClick={onGo}>เปิดกระดาน →</span>}</div>
+      <div className="panel-h"><h3>ติดตามสถานะงาน</h3>
+        <span className="sub" style={{ marginLeft: 'auto' }}>{pending ? `กำลังดำเนินการ ${pending} รายการ` : 'ไม่มีงานค้าง'}</span>
+        {onGo && <span className="sub" style={{ marginLeft: 12, color: 'var(--brand)', cursor: 'pointer' }} onClick={onGo}>เปิดกระดาน →</span>}
+      </div>
       <div className="panel-b">
-        <div className="ptrack">
+        <div className="ship-track">
           {PROCESS_STAGES.map((s, i) => {
-            const active = counts[s.key] > 0
-            const on = active || i < activeIdx
-            const isNow = i === activeIdx && hasActiveWork
+            const reached = i <= activeIdx
+            const current = i === activeIdx && pending > 0
+            const isDone = s.key === 'done'
             return (
-              <div key={s.key} className={'track-step' + (on ? ' on' : '') + (isNow ? ' now' : '')} onClick={onGo}>
-                {i > 0 && <div className="track-line" style={on ? { background: 'var(--brand)' } : null} />}
-                <div className="track-node" style={on ? { background: 'var(--brand)', borderColor: 'var(--brand)', color: '#fff' } : null}>
-                  {s.key === 'done' ? '✓' : counts[s.key]}
-                </div>
-                <div className="track-lab">{s.label}</div>
-                {s.role && <div className="track-role">{s.role}</div>}
+              <div key={s.key} className={'ship-step' + (reached ? ' reached' : '') + (current ? ' current' : '')} onClick={onGo} title={s.label}>
+                {i > 0 && <span className={'ship-line' + (reached ? ' fill' : '')} />}
+                {current && <span className="ship-here">กำลังทำ</span>}
+                <span className="ship-node">{isDone ? '✓' : counts[s.key]}</span>
+                <span className="ship-lab">{s.label}</span>
               </div>
             )
           })}
@@ -67,8 +49,6 @@ export function StageBar({ items, onGo, monthRow, hasActiveWork, monthLabel, onM
       </div>
     </div>
   )
-
-  return (<>{monthPanel}{trackPanel}</>)
 }
 
 export default function ProcessTracker({ items, onReload, updates = [], onGoView }) {

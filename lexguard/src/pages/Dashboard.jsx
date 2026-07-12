@@ -4,8 +4,8 @@
 import { useState, useMemo } from 'react'
 import { StageBar } from '../components/ProcessTracker.jsx'
 import { CaseStepper, groupCases, effStatus } from '../components/LawTracker.jsx'
-import { Pill, Tag, ActiveBadge, thDate, daysTo, lawBEYear, beYearFromDate, TH_MONTHS, QUARTER_LABEL, roundCounts, roundLabel, monthlyCounts } from '../lib/ui.jsx'
-import RoundSelect from '../components/RoundSelect.jsx'
+import { Pill, Tag, ActiveBadge, thDate, daysTo, lawBEYear, beYearFromDate, TH_MONTHS, QUARTER_LABEL } from '../lib/ui.jsx'
+import { MonthlyCheckPanel } from './Registry.jsx'
 
 /* ─────────────────────────── DASHBOARD ─────────────────────────── */
 function Ring({pct,met=0,nc=0}){
@@ -333,36 +333,43 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
   )
 }
 
-// ตารางกฎหมายมาใหม่/ยกเลิก รายเดือน 12 เดือน (ปี พ.ศ. beYear) — รูปแบบชีท Masterlist ให้คัดลอกตัวเลขไปกรอกได้
-function MonthlyAddRepealTable({laws,beYear}){
-  const { added, repealed } = monthlyCounts(laws, beYear)
-  const totA=added.reduce((a,b)=>a+b,0), totR=repealed.reduce((a,b)=>a+b,0)
+// กฎหมายใหม่ที่ AI/agent พบ — จัดกลุ่มรายเดือน (จาก lg_law_updates ที่ยัง 'new')
+function NewLawsByMonth({updates=[],onGoView}){
+  const news=updates.filter(u=>u.status==='new')
+  const groups=useMemo(()=>{
+    const g={}
+    news.forEach(u=>{
+      const d=new Date(u.published_date||u.detected_at||Date.now())
+      const key=isNaN(d)?'ไม่ระบุเดือน':(TH_MONTHS[d.getMonth()]+' '+(d.getFullYear()+543))
+      const sort=isNaN(d)?0:d.getTime()
+      ;(g[key]=g[key]||{items:[],sort}).items.push(u)
+    })
+    return Object.entries(g).sort((a,b)=>b[1].sort-a[1].sort)
+  },[news])
+  if(news.length===0) return null
   return (
-    <div className="panel">
+    <div className="panel" style={{borderLeft:'3px solid #0071e3'}}>
       <div className="panel-h">
-        <h3>กฎหมายมาใหม่ / ถูกยกเลิก รายเดือน · ปี {beYear}</h3>
-        <span className="sub" style={{marginLeft:'auto'}}>นับอัตโนมัติจากวันที่บันทึก/ยกเลิก · คัดลอกไปกรอก Masterlist ได้</span>
+        <h3>🆕 กฎหมายใหม่ที่พบ (จากการค้นหาอัตโนมัติ)</h3>
+        <span className="sub" style={{marginLeft:'auto',color:'var(--brand)',cursor:'pointer'}} onClick={()=>onGoView&&onGoView('staging')}>ไปที่บอร์ด →</span>
       </div>
-      <div className="tablewrap">
-        <table className="masterlist-month">
-          <thead><tr>
-            <th style={{textAlign:'left'}}>รายการ</th>
-            {TH_MONTHS.map(m=><th key={m} style={{textAlign:'center',fontSize:11,minWidth:38}}>{m}</th>)}
-            <th style={{textAlign:'center'}}>รวม</th>
-          </tr></thead>
-          <tbody>
-            <tr>
-              <td style={{fontWeight:600,color:'var(--ok)'}}>มาใหม่</td>
-              {added.map((n,i)=><td key={i} className="num" style={{textAlign:'center',color:n?'var(--ok)':'var(--ink-faint)'}}>{n}</td>)}
-              <td className="num" style={{textAlign:'center',fontWeight:700,color:'var(--ok)'}}>{totA}</td>
-            </tr>
-            <tr>
-              <td style={{fontWeight:600,color:'var(--bad)'}}>ยกเลิก</td>
-              {repealed.map((n,i)=><td key={i} className="num" style={{textAlign:'center',color:n?'var(--bad)':'var(--ink-faint)'}}>{n}</td>)}
-              <td className="num" style={{textAlign:'center',fontWeight:700,color:'var(--bad)'}}>{totR}</td>
-            </tr>
-          </tbody>
-        </table>
+      <div className="panel-b">
+        {groups.map(([month,{items}])=>(
+          <div key={month} style={{marginBottom:12}}>
+            <div style={{fontSize:12.5,fontWeight:700,color:'var(--brand)',marginBottom:6}}>{month} · {items.length} ฉบับ</div>
+            {items.slice(0,8).map(u=>(
+              <div key={u.id} style={{display:'flex',gap:8,alignItems:'flex-start',padding:'5px 0',borderBottom:'1px solid var(--line-soft)'}}>
+                <span style={{color:'var(--ok)',fontSize:12,marginTop:2}}>●</span>
+                <div style={{flex:1,fontSize:12.5,lineHeight:1.5}}>{(u.title||'').slice(0,110)}
+                  {u.category_guess && <span className="meta-chip" style={{marginLeft:6}}>{u.category_guess}</span>}
+                  {u.source && <span className="sub" style={{marginLeft:6}}>· {u.source}</span>}
+                </div>
+                {u.source_url && <a href={u.source_url} target="_blank" rel="noreferrer" style={{fontSize:13,textDecoration:'none'}}>📄</a>}
+              </div>
+            ))}
+            {items.length>8 && <div className="sub" style={{marginTop:4}}>และอีก {items.length-8} ฉบับ…</div>}
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -374,7 +381,7 @@ function WlNum({n,cls,onClick}){
   return <span className={'pill '+cls} style={{cursor:'pointer',fontSize:12,padding:'2px 10px'}} onClick={onClick}>{n}</span>
 }
 
-export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,onGoView,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,deptWorkload=[],onGoDept,reviewPending=0,monthRow,onMarkNoNewLaws,onMarkHasNewLaws,round={q:1,by:new Date().getFullYear()+543},setRound,roundYears}){
+export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,onGoView,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,deptWorkload=[],onGoDept,reviewPending=0,monthsData=[],onToggleMonthCur,monthRow,onMarkNoNewLaws,onMarkHasNewLaws}){
   // navigate to the merged registry view in a specific mode (register / compliance)
   const goRegistry = mode => { try{ localStorage.setItem('cr_registry_mode', JSON.stringify(mode)) }catch{} ; onGoView&&onGoView('registry') }
   const trk = useMemo(()=>{
@@ -412,16 +419,7 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
     {val:stats.pct.toFixed(1)+'%',            lab:'ความสอดคล้อง ('+stats.met+'/'+stats.req+')', accent:true},
   ]
 
-  const rc = roundCounts(laws, round.q, round.by)   // มาใหม่/ยกเลิก ในรอบที่เลือก
   return <div className="view">
-    <div className="round-bar" style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',marginBottom:14,padding:'10px 14px',background:'var(--surface)',border:'1px solid var(--line)',borderRadius:12}}>
-      {setRound && <RoundSelect round={round} onChange={setRound} years={roundYears}/>}
-      <span style={{fontSize:13,fontWeight:600,color:'var(--brand)'}}>{roundLabel(round.q, round.by)}</span>
-      <span style={{marginLeft:'auto',display:'flex',gap:8}}>
-        <span className="meta-chip" style={{color:'var(--ok)',borderColor:'var(--ok-bg)',background:'var(--ok-bg)'}}>มาใหม่รอบนี้ {rc.added}</span>
-        <span className="meta-chip" style={{color:'var(--bad)',borderColor:'var(--bad-bg)',background:'var(--bad-bg)'}}>ยกเลิกรอบนี้ {rc.repealed}</span>
-      </span>
-    </div>
     {reviewPending>0 && (
       <div className="panel" style={{marginBottom:14,padding:'12px 16px',display:'flex',alignItems:'center',gap:12,borderLeft:'3px solid #8e44ad',cursor:'pointer'}}
         onClick={()=>onGoView&&onGoView('staging')}>
@@ -440,10 +438,6 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
         <div className="dash-strip-lab">{s.lab}</div>
       </div>))}
     </div>
-
-    <StageBar items={processItems} onGo={onGoProcess} monthRow={monthRow} hasActiveWork={rawProcessItems.some(p=>p.stage!=='done')}
-      monthLabel={TH_MONTHS[new Date().getMonth()]}
-      onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
 
     <div className="dash-hero" style={{marginTop:16}}>
       <div className="hero-ring">
@@ -466,16 +460,28 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
       </div>
     </div>
 
+    {/* ตรวจสอบรายเดือน (ย้ายมาจากหน้าทะเบียน) — รู้ว่าเดือนไหนตรวจแล้ว */}
+    <div style={{marginTop:16}}>
+      <MonthlyCheckPanel months={monthsData} year={new Date().getFullYear()}
+        onToggle={(y,m)=>onToggleMonthCur&&onToggleMonthCur(m)}
+        onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
+    </div>
+
+    {/* กฎหมายใหม่ที่ AI พบ แยกรายเดือน */}
+    <div style={{marginTop:16}}>
+      <NewLawsByMonth updates={updates} onGoView={onGoView}/>
+    </div>
+
+    {/* สถานะงานในกระบวนการ (แบบเรียบง่าย) */}
+    <div style={{marginTop:16}}>
+      <StageBar items={processItems} onGo={onGoProcess}/>
+    </div>
+
     <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports} danger/>
 
     <div style={{marginTop:36}}>
       <div className="dash-sec-h">ภาพรวมรายไตรมาส</div>
       <QuarterlyAddRepealChart quarterStats={quarterStats} cats={cats} catMap={catMap}/>
-    </div>
-
-    <div style={{marginTop:36}}>
-      <div className="dash-sec-h">กฎหมายมาใหม่ / ยกเลิก รายเดือน (สำหรับกรอก Masterlist)</div>
-      <MonthlyAddRepealTable laws={laws} beYear={round.by}/>
     </div>
 
     <div style={{marginTop:36}}>
