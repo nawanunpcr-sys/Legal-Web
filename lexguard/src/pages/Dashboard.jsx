@@ -381,7 +381,7 @@ function WlNum({n,cls,onClick}){
   return <span className={'pill '+cls} style={{cursor:'pointer',fontSize:12,padding:'2px 10px'}} onClick={onClick}>{n}</span>
 }
 
-export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,onGoView,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,deptWorkload=[],onGoDept,reviewPending=0,monthsData=[],onToggleMonthCur,monthRow,onMarkNoNewLaws,onMarkHasNewLaws}){
+export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,onGoView,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,deptWorkload=[],onGoDept,reviewPending=0,monthsData=[],monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws}){
   // navigate to the merged registry view in a specific mode (register / compliance)
   const goRegistry = mode => { try{ localStorage.setItem('cr_registry_mode', JSON.stringify(mode)) }catch{} ; onGoView&&onGoView('registry') }
   const trk = useMemo(()=>{
@@ -462,8 +462,8 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
 
     {/* ตรวจสอบรายเดือน (ย้ายมาจากหน้าทะเบียน) — รู้ว่าเดือนไหนตรวจแล้ว */}
     <div style={{marginTop:16}}>
-      <MonthlyCheckPanel months={monthsData} year={new Date().getFullYear()}
-        onToggle={(y,m)=>onToggleMonthCur&&onToggleMonthCur(m)}
+      <MonthlyCheckPanel months={monthsData} year={monthYear||new Date().getFullYear()} setYear={setMonthYear}
+        onToggle={onToggleMonth}
         onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
     </div>
 
