@@ -259,19 +259,15 @@ export function MonthlyCheckPanel({ months, year, setYear, onToggle, onMarkNoNew
           const m = i + 1
           const rec = getMonth(m)
           const isCurrent = year===curYear && m===curMonth
-          const isPast = year<curYear || (year===curYear && m<curMonth)
           const reviewed = !!(rec.status || rec.checked)
-          const pending = !reviewed && (isPast || isCurrent)
           const cls = 'month-cell'
             + (isCurrent?' month-current':'')
             + (reviewed?' month-checked':'')
-            + (pending?' month-pending':'')
-          const statusText = reviewed ? '✓ ตรวจแล้ว' : pending ? 'ยังไม่ตรวจ' : '—'
           return (
             <button key={m} className={cls} disabled={!can('edit')} onClick={()=>can('edit')&&onToggle(year, m)}
               title={rec.checked_at ? 'ตรวจโดย '+(rec.checked_by||'—')+' · '+thDate(rec.checked_at) : (can('edit')?'คลิกเพื่อทำเครื่องหมายว่าตรวจแล้ว':'อ่านอย่างเดียว')}>
               <span className="month-name">{label}</span>
-              <span className="month-status">{statusText}</span>
+              <span className="month-tick">{reviewed ? '✓' : ''}</span>
             </button>
           )
         })}
