@@ -55,16 +55,9 @@ const NAV_GROUPS = [
     { id:'registry',      label:'ทะเบียน & ความสอดคล้อง', icon:'book'    },
     { id:'tracker',       label:'Process Tracker',        icon:'update'  },
   ]},
-  { label: '① คัดกรอง & มอบหมาย', items: [
-    { id:'staging',       label:'บอร์ดคัดกรอง/ประเมิน',  icon:'inbox'   },
-  ]},
-  { label: '② ประเมิน & แก้ไข', items: [
-    { id:'assessment',    label:'ประเมินความสอดคล้อง',   icon:'inbox'   },
+  { label: 'ประเมิน & สื่อสาร', items: [
     { id:'plans',         label:'แผนปรับปรุง',            icon:'spark'   },
-    { id:'comm',          label:'การสื่อสาร (ISD-86)',   icon:'chat'    },
-  ]},
-  { label: '③ ตรวจสอบ & ติดตาม', items: [
-    { id:'reports',       label:'การส่งรายงานราชการ',    icon:'inbox'   },
+    { id:'comm',          label:'สื่อสาร & ส่งรายงาน',    icon:'chat'    },
   ]},
   { label: 'อ้างอิง & ระบบ', items: [
     { id:'repealed',      label:'กฎหมายที่ถูกยกเลิก',   icon:'ban'     },
@@ -80,12 +73,9 @@ const TITLES = {
   compliance:    ['ติดตามความสอดคล้อง',    'สถานะรายข้อกำหนดแยกตามหมวดและลำดับชั้น'],
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
   repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
-  comm:          ['ตารางการสื่อสาร',        'การสื่อสารภายในและภายนอกองค์กร (ISD-86)'],
-  reports:       ['การส่งรายงานราชการ',     'ติดตามและแจ้งเตือนกำหนดส่งรายงานต่อหน่วยงานรัฐ'],
-  tracker:       ['Process Tracker',        'ติดตามวงจรชีวิตกฎหมายครบ 5 ขั้นในหน้าเดียว'],
+  comm:          ['สื่อสาร & ส่งรายงาน',   'ตารางการสื่อสาร (ISD-86) และการส่งรายงานราชการในหน้าเดียว'],
+  tracker:       ['Process Tracker',        'ค้นหา → คัดกรอง → ประเมิน → อนุมัติ → ติดตาม ครบในหน้าเดียว'],
   analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
-  staging:       ['บอร์ดคัดกรอง → ประเมิน','คัดกรอง → มอบหมายหน่วยงาน → ประเมิน → เข้าทะเบียน'],
-  assessment:    ['ประเมินความสอดคล้อง',   'มุมมองหน่วยงาน: ประเมินรายข้อกำหนด C / NC'],
   plans:         ['แผนปรับปรุง',            'ติดตามแผนปรับปรุงข้อ NC จนปิด (พลิกเป็น C)'],
   updates:       ['อัปเดตกฎหมาย · ShawPat','เฝ้าระวังกฎหมายใหม่จาก ShawPat'],
   notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
@@ -100,6 +90,8 @@ export default function App(){
     // backward-compat: the old split 'register'/'compliance' views are now one 'registry' view
     if(v==='register'||v==='compliance'){ try{ localStorage.setItem('cr_registry_mode', JSON.stringify(v==='compliance'?'compliance':'register')) }catch{} return 'registry' }
     if(v==='process') return 'tracker'   // P9: merged 'ติดตามกระบวนการ' into Process Tracker
+    if(v==='staging'||v==='assessment') return 'tracker'  // P10: merged into Process Tracker hub
+    if(v==='reports') return 'comm'       // P10: merged into สื่อสาร & ส่งรายงาน hub
     return v }catch{ return 'dashboard' } })
   const [dark,setDark]     = useState(()=>{ try{ const v=localStorage.getItem('cr_dark'); return v==null?false:v==='1' }catch{ return false } })
   const [cats,setCats]     = useState([])
@@ -131,6 +123,8 @@ export default function App(){
   const [flow,setFlow]       = useState([])            // lg_assessment_flow (คัดกรอง/มอบหมาย/ประเมิน)
   const [plans,setPlans]     = useState([])            // lg_improvement_plans
   const [showNotify,setShowNotify] = useState(false)
+  const [trackerTab,setTrackerTab] = usePersist('cr_tracker_tab','track')   // track | screen | assess (Process Tracker hub)
+  const [commTab,setCommTab]       = usePersist('cr_comm_tab','comm')       // comm | reports (สื่อสาร & ส่งรายงาน hub)
   const [presetDept,setPresetDept] = useState(null)   // ตั้งกรองหน่วยงานเมื่อคลิกจากการ์ด dashboard
   const [curMonthRows,setCurMonthRows] = useState([])   // compliance_months rows for the *real* current year — drives the live Dashboard monthly stage bar regardless of whatever year is browsed in the Register monthly panel
 
@@ -163,6 +157,15 @@ export default function App(){
   async function loadReports(){ try{ setReports(await fetchReports()) }catch(e){ console.warn('reports reload',e) } }
   async function loadWorkflow(){ try{ const [f,p]=await Promise.all([fetchAssessmentFlow(),fetchImprovementPlans()]); setFlow(f); setPlans(p) }catch(e){ console.warn('workflow reload',e) } }
   async function loadCurMonth(){ try{ setCurMonthRows(await fetchComplianceMonths(new Date().getFullYear())) }catch(e){ console.warn('cur month reload',e) } }
+  // P10: staging/assessment merged into Process Tracker, reports merged into สื่อสาร&รายงาน.
+  // goView() remaps legacy view ids to the new hub view + sub-tab so every old
+  // navigation call (deep links, notifications, dashboard cards) still lands right.
+  function goView(v){
+    if(v==='staging'){ setTrackerTab('screen'); setView('tracker'); return }
+    if(v==='assessment'){ setTrackerTab('assess'); setView('tracker'); return }
+    if(v==='reports'){ setCommTab('reports'); setView('comm'); return }
+    setView(v)
+  }
 
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
@@ -332,8 +335,12 @@ export default function App(){
   const bellNotifications = useMemo(()=>{
     const out=[]
     activeLaws.forEach(l=>{ if(l.status==='bad') out.push({type:'bad',law:l,text:l.code+' ยังไม่สอดคล้อง',sub:l.name.slice(0,60)}) })
-    comms.forEach(c=>{ if(c.next_scheduled_date){ const d=daysTo(c.next_scheduled_date); const nb=c.notify_days_before||7; if(d>=0&&d<=nb) out.push({type:'comm',comm:c,days:d,text:'การสื่อสาร: '+c.topic.slice(0,50),sub:'ครบกำหนดใน '+d+' วัน — '+thDate(c.next_scheduled_date)}) }})
-    reports.forEach(r=>{ if(r.next_due_date){ const d=daysTo(r.next_due_date); if(d<0) out.push({type:'bad',goView:'reports',text:'รายงานเกินกำหนดส่ง: '+r.title.slice(0,50),sub:'เกิน '+Math.abs(d)+' วัน — '+thDate(r.next_due_date)}) }})
+    comms.forEach(c=>{ if(c.next_scheduled_date){ const d=daysTo(c.next_scheduled_date); const nb=c.notify_days_before||7
+      if(d<0) out.push({type:'bad',comm:c,goView:'comm',text:'การสื่อสารเกินกำหนด: '+c.topic.slice(0,50),sub:'เกิน '+Math.abs(d)+' วัน — '+thDate(c.next_scheduled_date)})
+      else if(d<=nb) out.push({type:'comm',comm:c,days:d,text:'การสื่อสาร: '+c.topic.slice(0,50),sub:'ครบกำหนดใน '+d+' วัน — '+thDate(c.next_scheduled_date)}) }})
+    reports.forEach(r=>{ if(r.next_due_date){ const d=daysTo(r.next_due_date); const nb=r.notify_days_before||30
+      if(d<0) out.push({type:'bad',goView:'reports',text:'รายงานเกินกำหนดส่ง: '+r.title.slice(0,50),sub:'เกิน '+Math.abs(d)+' วัน — '+thDate(r.next_due_date)})
+      else if(d<=nb) out.push({type:'report_due',goView:'reports',days:d,text:'ใกล้กำหนดส่งรายงาน: '+r.title.slice(0,50),sub:'อีก '+d+' วัน — '+thDate(r.next_due_date)}) }})
     newUpdates.slice(0,15).forEach(u=>out.push({type:'law_update',goView:'updates',text:'กฎหมายใหม่: '+u.title.slice(0,55),sub:'จาก ShawPat'+(u.published_date?' · '+u.published_date:'')}))
     // จป.ว: เตือนล่วงหน้า 14 วันก่อนเส้นตายรายงาน 2 ครั้ง/ปี (กฎกระทรวง 2565 ข้อ 47)
     jorporReportDeadlines().forEach(d=>{ if(d.days>=0 && d.days<=14) out.push({type:'report_jorpor',goView:'reports',days:d.days,text:d.label,sub:'ครบกำหนดใน '+d.days+' วัน — '+thDate(d.due.toISOString())}) })
@@ -574,9 +581,8 @@ export default function App(){
                 n.id==='registry'      ? activeLaws.length        :
                 n.id==='improvements'  ? (stats.nc||null)         :
                 n.id==='repealed'      ? (repealedLaws.length||null) :
-                n.id==='reports'       ? (reportAlerts||null)     :
-                n.id==='staging'       ? ((stagingBatches.length+assignedFlow.length)||null) :
-                n.id==='assessment'    ? (pendingAssess.length||null) :
+                n.id==='tracker'       ? ((stagingBatches.length+pendingAssess.length)||null) :
+                n.id==='comm'          ? (reportAlerts||null)     :
                 n.id==='plans'         ? (openPlans.length||null)     :
                 n.id==='updates'       ? (newUpdates.length||null)   :
                 n.id==='notifications' ? (bellNotifications.length||null) : null
@@ -660,8 +666,8 @@ export default function App(){
             </div>
           </div>
           <div className="view-swap" key={view}>
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} onGoView={setView} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}
-            deptWorkload={deptWorkload} onGoDept={(v,dept)=>{ setPresetDept(dept||null); setView(v) }}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>goView('reports')} onGoView={goView} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}
+            deptWorkload={deptWorkload} onGoDept={(v,dept)=>{ setPresetDept(dept||null); goView(v) }}
             reviewPending={reviewPending.length}
             monthsData={months}/>}
           {view==='registry'      && <RegistryCompliance
@@ -672,19 +678,32 @@ export default function App(){
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={searchDebounced} onOpen={setOpenLaw} onRestore={handleRestore}/>}
-          {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
-          {view==='reports'       && <Reports       reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
-          {view==='tracker'       && <UnifiedTracker rows={trackerRows} subs={trackerSubs} laws={activeLaws} suggest={suggest} catMap={catMap} onReload={loadTracker}/>}
-          {view==='analysis'      && <Analysis      laws={inForceLaws} cats={cats} catMap={catMap} allLaws={laws} onAnalyzed={reloadSkills} goView={setView} onCreateFull={handleCreateFull} suggest={suggest}/>}
-          {view==='staging'       && <Staging       batches={stagingBatches} flow={flow} laws={laws} plans={plans} departments={departments} cats={cats} catMap={catMap} deptMap={deptMap}
-            onScreen={handleScreen} onAssign={handleAssign} onFinalize={handleFinalize} onDrop={handleDropStaged} onGoAssess={()=>setView('assessment')}
-            onVerify={handleVerify} onSaveEdits={handleSaveStagingEdits}/>}
-          {view==='assessment'    && <Assessment    flow={assignedFlow} laws={laws} departments={departments} catMap={catMap} deptMap={deptMap} plans={plans}
-            presetDept={presetDept} onAssess={handleAssess} onFlowStatus={handleFlowStatus} onCreatePlan={handleCreatePlan} onOpen={setOpenLaw}/>}
+          {view==='comm'          && (<div className="view">
+            <div className="seg" style={{marginBottom:14}}>
+              <button className={'seg-btn'+(commTab==='comm'?' active':'')} onClick={()=>setCommTab('comm')}>ตารางการสื่อสาร</button>
+              <button className={'seg-btn'+(commTab==='reports'?' active':'')} onClick={()=>setCommTab('reports')}>ส่งรายงานราชการ</button>
+            </div>
+            {commTab==='comm'    && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
+            {commTab==='reports' && <Reports reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
+          </div>)}
+          {view==='tracker'       && (<div className="view">
+            <div className="seg" style={{marginBottom:14}}>
+              <button className={'seg-btn'+(trackerTab==='track'?' active':'')} onClick={()=>setTrackerTab('track')}>ติดตาม (5 ขั้น)</button>
+              <button className={'seg-btn'+(trackerTab==='screen'?' active':'')} onClick={()=>setTrackerTab('screen')}>คัดกรอง & อนุมัติ</button>
+              <button className={'seg-btn'+(trackerTab==='assess'?' active':'')} onClick={()=>setTrackerTab('assess')}>ประเมินความสอดคล้อง</button>
+            </div>
+            {trackerTab==='track'  && <UnifiedTracker rows={trackerRows} subs={trackerSubs} laws={activeLaws} suggest={suggest} catMap={catMap} onReload={loadTracker}/>}
+            {trackerTab==='screen' && <Staging batches={stagingBatches} flow={flow} laws={laws} plans={plans} departments={departments} cats={cats} catMap={catMap} deptMap={deptMap}
+              onScreen={handleScreen} onAssign={handleAssign} onFinalize={handleFinalize} onDrop={handleDropStaged} onGoAssess={()=>setTrackerTab('assess')}
+              onVerify={handleVerify} onSaveEdits={handleSaveStagingEdits}/>}
+            {trackerTab==='assess' && <Assessment flow={assignedFlow} laws={laws} departments={departments} catMap={catMap} deptMap={deptMap} plans={plans}
+              presetDept={presetDept} onAssess={handleAssess} onFlowStatus={handleFlowStatus} onCreatePlan={handleCreatePlan} onOpen={setOpenLaw}/>}
+          </div>)}
+          {view==='analysis'      && <Analysis      laws={inForceLaws} cats={cats} catMap={catMap} allLaws={laws} onAnalyzed={reloadSkills} goView={goView} onCreateFull={handleCreateFull} suggest={suggest}/>}
           {view==='plans'         && <Plans         plans={plans} departments={departments} deptMap={deptMap} laws={laws} lawMap={lawMap}
             presetDept={presetDept} onUpdatePlan={handleUpdatePlan} onClosePlan={handleClosePlan} onCreatePlan={handleCreatePlan} onOpen={setOpenLaw}/>}
           {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}
-          {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={setView}/>}
+          {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={goView}/>}
           {view==='settings'      && (can(role,'delete')
             ? <SettingsPage settings={settings} onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }} training={training} setTraining={setTraining}/>
             : <div className="view"><div className="panel" style={{padding:'50px 20px',textAlign:'center',color:'var(--ink-faint)'}}>เฉพาะผู้ดูแลระบบ (admin) เท่านั้นที่เข้าถึงหน้าตั้งค่าได้ — {NO_PERM}</div></div>)}
@@ -700,7 +719,7 @@ export default function App(){
       {showPdf && <ExportPdfModal cats={cats} onClose={()=>setShowPdf(false)} onExport={handleExportPdf}/>}
       {showNotify && (
         <NotifyPopup notifs={bellNotifications} onClose={()=>setShowNotify(false)}
-          onOpenLaw={setOpenLaw} onGoToView={setView}/>
+          onOpenLaw={setOpenLaw} onGoToView={goView}/>
       )}
       <div id="print-report"/>
       <Toaster/>

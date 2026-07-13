@@ -399,6 +399,7 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
   const tlFromBE = curBE-2   // ไทม์ไลน์: 3 ปีย้อนหลัง
 
   const active = useMemo(()=>laws.filter(l=>l.status!=='repealed' && l.active!==false),[laws])
+  const inactive = useMemo(()=>laws.filter(l=>l.status!=='repealed' && l.active===false),[laws])
   const fLaws  = active   // ใช้อยู่เท่านั้น (ไม่นับ Inactive)
 
   const stats = useMemo(()=>{
@@ -410,7 +411,9 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
   const newUpdates=updates.filter(u=>u.status==='new')
   const winLabel = 'ทั้งหมด'
   const strip=[
-    {val:stats.total.toLocaleString('en-US'), lab:'กฎหมายในทะเบียน (ฉบับ)'},
+    {val:(active.length+inactive.length).toLocaleString('en-US'), lab:'กฎหมายในทะเบียน (ฉบับ)'},
+    {val:active.length.toLocaleString('en-US'),   lab:'ใช้อยู่ · Active (ฉบับ)',   go:()=>goRegistry('register')},
+    {val:inactive.length.toLocaleString('en-US'), lab:'ไม่ใช้แล้ว · Inactive (ฉบับ)', go:()=>goRegistry('register')},
     {val:String(cats.length),                 lab:'หมวด (LA–LG)'},
     {val:stats.req.toLocaleString('en-US'),   lab:'ข้อกำหนดรายข้อ'},
     {val:stats.nc.toLocaleString('en-US'),    lab:'ยังไม่สอดคล้อง (ข้อ)', bad:true, go:()=>goRegistry('compliance')},

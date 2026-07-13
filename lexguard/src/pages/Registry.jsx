@@ -90,7 +90,6 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
     {lab:'ข้อกำหนดทั้งหมด',   val:stats.req, accent:'#1C2431'},
     {lab:'ผ่านการประเมิน (C)', val:stats.met, accent:'#5F7A61'},
     {lab:'ยังไม่สอดคล้อง (NC)', val:stats.nc, accent:'#B4553F'},
-    {lab:'ความสอดคล้อง', val:stats.pct.toFixed(1)+'%', accent:'#3A6A97'},
   ]
   return <div className="view">
     <div className="rc-stats">
