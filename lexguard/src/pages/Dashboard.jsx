@@ -2,10 +2,8 @@
 // Includes Ring, CatBars, Timeline, ActivityTimeline, ReportDeadlinesPanel, QuarterlyAddRepealChart.
 // Moved verbatim from App.jsx (pure refactor).
 import { useState, useMemo } from 'react'
-import { StageBar } from '../components/ProcessTracker.jsx'
-import { CaseStepper, groupCases, effStatus } from '../components/LawTracker.jsx'
+import { CaseStepper, groupCases, effStatus, TrackerStageBar } from '../components/UnifiedTracker.jsx'
 import { Pill, Tag, ActiveBadge, thDate, daysTo, lawBEYear, beYearFromDate, TH_MONTHS, QUARTER_LABEL } from '../lib/ui.jsx'
-import { MonthlyCheckPanel } from './Registry.jsx'
 
 /* ─────────────────────────── DASHBOARD ─────────────────────────── */
 function Ring({pct,met=0,nc=0}){
@@ -381,7 +379,7 @@ function WlNum({n,cls,onClick}){
   return <span className={'pill '+cls} style={{cursor:'pointer',fontSize:12,padding:'2px 10px'}} onClick={onClick}>{n}</span>
 }
 
-export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,onGoView,processItems=[],rawProcessItems=[],onGoProcess,trackerRows=[],trackerSubs={},onGoTracker,deptWorkload=[],onGoDept,reviewPending=0,monthsData=[],monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws}){
+export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[],activity=[],quarterStats=[],reports=[],onGoReports,onGoView,trackerRows=[],trackerSubs={},onGoTracker,deptWorkload=[],onGoDept,reviewPending=0,monthsData=[]}){
   // navigate to the merged registry view in a specific mode (register / compliance)
   const goRegistry = mode => { try{ localStorage.setItem('cr_registry_mode', JSON.stringify(mode)) }catch{} ; onGoView&&onGoView('registry') }
   const trk = useMemo(()=>{
@@ -391,6 +389,12 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
   },[trackerRows])
   const latestCases = useMemo(()=>groupCases(trackerRows).slice(0,3),[trackerRows])
   const subLabel = (stage,code)=>(trackerSubs[stage]||[]).find(x=>x.code===code)?.label||code
+  // วันที่ตรวจสอบรายเดือนล่าสุด (เชื่อมกับการเช็คในหน้าทะเบียน & ความสอดคล้อง)
+  const lastCheck = useMemo(()=>{
+    const done=(monthsData||[]).filter(m=>m.checked_at && (m.status||m.checked))
+    if(!done.length) return null
+    return done.sort((a,b)=>new Date(b.checked_at)-new Date(a.checked_at))[0]
+  },[monthsData])
   const curBE = new Date().getFullYear()+543
   const tlFromBE = curBE-2   // ไทม์ไลน์: 3 ปีย้อนหลัง
 
@@ -460,18 +464,31 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
       </div>
     </div>
 
-    {/* ตรวจสอบรายเดือน (ย้ายมาจากหน้าทะเบียน) — รู้ว่าเดือนไหนตรวจแล้ว */}
-    <div style={{marginTop:16}}>
-      <MonthlyCheckPanel months={monthsData} year={monthYear||new Date().getFullYear()} setYear={setMonthYear}
-        onToggle={onToggleMonth}
-        onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
+    {/* ตรวจสอบ ณ วันที่ ... — เชื่อมกับการเช็ครายเดือนในหน้าทะเบียน & ความสอดคล้อง */}
+    <div className="panel" style={{marginTop:12,padding:'10px 16px',display:'flex',alignItems:'center',gap:10,cursor:'pointer'}}
+      onClick={()=>onGoView&&onGoView('registry')} role="button" tabIndex={0}
+      onKeyDown={e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); onGoView&&onGoView('registry') } }}>
+      <span style={{fontSize:16}}>🗓️</span>
+      <span style={{fontSize:13}}>ตรวจสอบรายเดือนล่าสุด ณ วันที่ <b>{lastCheck?thDate(lastCheck.checked_at):'—ยังไม่ได้ตรวจสอบ'}</b>
+        {lastCheck?.checked_by && <span style={{color:'var(--ink-faint)'}}> · โดย {lastCheck.checked_by}</span>}</span>
+      <span style={{marginLeft:'auto',color:'var(--brand)',fontSize:12.5,fontWeight:500}}>ไปตรวจสอบรายเดือน →</span>
     </div>
 
-    <div style={{marginTop:36}}>
-      <div className="dash-sec-h">ภาพรวมรายไตรมาส</div>
-      <QuarterlyAddRepealChart quarterStats={quarterStats} cats={cats} catMap={catMap}/>
+    {/* รายการที่ยังไม่สอดคล้อง — ยกขึ้นมาไว้ด้านบนเพื่อให้เห็นงานเร่งด่วนก่อน */}
+    <div className="panel" style={{marginTop:16}}>
+      <div className="panel-h"><h3>รายการที่ยังไม่สอดคล้อง — ต้องติดตาม</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกเพื่อดูรายละเอียด</span></div>
+      <div className="tablewrap"><table><thead><tr><th>รหัส / ชื่อกฎหมาย</th><th>หมวด</th><th>กระทรวง</th><th>สถานะ</th></tr></thead><tbody>
+        {bad.length===0 && <tr><td colSpan="4" style={{textAlign:'center',color:'var(--ok)',fontWeight:600,padding:30}}>ทุกข้อกำหนดสอดคล้องครบถ้วน ✓</td></tr>}
+        {bad.map(l=>(<tr key={l.id} onClick={()=>onOpen(l)}>
+          <td><div className="law-code" style={{display:'flex',alignItems:'center',gap:8}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/></div><div className="law-title" style={{fontSize:13}}>{l.name.slice(0,70)}{l.name.length>70?'…':''}</div></td>
+          <td><Tag c={l.cat} color={catMap[l.cat]?.color}/></td>
+          <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
+          <td><Pill s={l.status}/></td>
+        </tr>))}
+      </tbody></table></div>
     </div>
 
+    {/* ความสอดคล้องตามหมวดกฎหมาย — ยกขึ้นมาไว้ด้านบน */}
     <div style={{marginTop:36}}>
       <div className="dash-sec-h">ความสอดคล้องตามหมวดกฎหมาย</div>
       <div className="panel">
@@ -479,14 +496,19 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
       </div>
     </div>
 
+    <div style={{marginTop:36}}>
+      <div className="dash-sec-h">ภาพรวมรายไตรมาส</div>
+      <QuarterlyAddRepealChart quarterStats={quarterStats} cats={cats} catMap={catMap}/>
+    </div>
+
     {/* กฎหมายใหม่ที่ AI พบ แยกรายเดือน */}
     <div style={{marginTop:16}}>
       <NewLawsByMonth updates={updates} onGoView={onGoView}/>
     </div>
 
-    {/* สถานะงานในกระบวนการ (แบบเรียบง่าย) */}
+    {/* สถานะงานในกระบวนการ (Process Tracker · 5 ขั้น) */}
     <div style={{marginTop:16}}>
-      <StageBar items={processItems} onGo={onGoProcess}/>
+      <TrackerStageBar rows={trackerRows} onGo={onGoTracker}/>
     </div>
 
     <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports} danger/>
@@ -528,19 +550,6 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
     )}
 
     <Timeline laws={laws} catMap={catMap} onOpen={onOpen} curBE={curBE} fromBE={tlFromBE}/>
-
-    <div className="panel" style={{marginTop:16}}>
-      <div className="panel-h"><h3>รายการที่ยังไม่สอดคล้อง — ต้องติดตาม</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกเพื่อดูรายละเอียด</span></div>
-      <div className="tablewrap"><table><thead><tr><th>รหัส / ชื่อกฎหมาย</th><th>หมวด</th><th>กระทรวง</th><th>สถานะ</th></tr></thead><tbody>
-        {bad.length===0 && <tr><td colSpan="4" style={{textAlign:'center',color:'var(--ok)',fontWeight:600,padding:30}}>ทุกข้อกำหนดสอดคล้องครบถ้วน ✓</td></tr>}
-        {bad.map(l=>(<tr key={l.id} onClick={()=>onOpen(l)}>
-          <td><div className="law-code" style={{display:'flex',alignItems:'center',gap:8}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/></div><div className="law-title" style={{fontSize:13}}>{l.name.slice(0,70)}{l.name.length>70?'…':''}</div></td>
-          <td><Tag c={l.cat} color={catMap[l.cat]?.color}/></td>
-          <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
-          <td><Pill s={l.status}/></td>
-        </tr>))}
-      </tbody></table></div>
-    </div>
   </div>
 }
 

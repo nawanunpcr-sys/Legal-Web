@@ -9,7 +9,6 @@ import { supabase, hasSupabase, fetchAll,
          verifyStagingBatch, saveStagingEdits,
          logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
-         fetchProcessItems, createProcessItem, subscribeProcessItems,
          fetchTracker, fetchTrackerSubstatuses, subscribeTracker, createTrackerCase,
          fetchDepartments, fetchAssessmentFlow, fetchImprovementPlans,
          screenBatch, assignBatch, assessRequirement, setFlowAssessStatus,
@@ -20,8 +19,7 @@ import { AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
          getSession as getAuthSession, signOut as authSignOut, onAuthChange } from './lib/auth.js'
 import LawDrawer from './components/LawDrawer.jsx'
 import Reports from './components/Reports.jsx'
-import ProcessTracker from './components/ProcessTracker.jsx'
-import LawTracker from './components/LawTracker.jsx'
+import UnifiedTracker from './components/UnifiedTracker.jsx'
 import { I } from './components/icons.jsx'
 import Login from './components/Login.jsx'
 import Landing from './components/Landing.jsx'
@@ -55,8 +53,7 @@ const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
     { id:'registry',      label:'ทะเบียน & ความสอดคล้อง', icon:'book'    },
-    { id:'process',       label:'ติดตามกระบวนการ',       icon:'inbox'   },
-    { id:'tracker',       label:'ติดตามสถานะกฎหมาย',     icon:'update'  },
+    { id:'tracker',       label:'Process Tracker',        icon:'update'  },
   ]},
   { label: '① คัดกรอง & มอบหมาย', items: [
     { id:'staging',       label:'บอร์ดคัดกรอง/ประเมิน',  icon:'inbox'   },
@@ -85,8 +82,7 @@ const TITLES = {
   repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
   comm:          ['ตารางการสื่อสาร',        'การสื่อสารภายในและภายนอกองค์กร (ISD-86)'],
   reports:       ['การส่งรายงานราชการ',     'ติดตามและแจ้งเตือนกำหนดส่งรายงานต่อหน่วยงานรัฐ'],
-  process:       ['ติดตามกระบวนการ',        'ค้นพบ → ตรวจเนื้อหา → ส่งต่อ → ตรวจสอบ/ติดตาม'],
-  tracker:       ['ติดตามสถานะกฎหมาย',      'ติดตาม 3 ขั้น: ค้นหา/วิเคราะห์ → หน่วยงานดำเนินการ → ทวนสอบ'],
+  tracker:       ['Process Tracker',        'ติดตามวงจรชีวิตกฎหมายครบ 5 ขั้นในหน้าเดียว'],
   analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
   staging:       ['บอร์ดคัดกรอง → ประเมิน','คัดกรอง → มอบหมายหน่วยงาน → ประเมิน → เข้าทะเบียน'],
   assessment:    ['ประเมินความสอดคล้อง',   'มุมมองหน่วยงาน: ประเมินรายข้อกำหนด C / NC'],
@@ -103,6 +99,7 @@ export default function App(){
   const [view,setView]     = useState(()=>{ try{ const v=localStorage.getItem('cr_view')||'dashboard';
     // backward-compat: the old split 'register'/'compliance' views are now one 'registry' view
     if(v==='register'||v==='compliance'){ try{ localStorage.setItem('cr_registry_mode', JSON.stringify(v==='compliance'?'compliance':'register')) }catch{} return 'registry' }
+    if(v==='process') return 'tracker'   // P9: merged 'ติดตามกระบวนการ' into Process Tracker
     return v }catch{ return 'dashboard' } })
   const [dark,setDark]     = useState(()=>{ try{ const v=localStorage.getItem('cr_dark'); return v==null?false:v==='1' }catch{ return false } })
   const [cats,setCats]     = useState([])
@@ -127,7 +124,6 @@ export default function App(){
   const [activity,setActivity] = useState([])
   const [quarterStats,setQuarterStats] = useState([])
   const [settings,setSettings] = useState(DEFAULT_SETTINGS)
-  const [processItems,setProcessItems] = useState([])
   const [trackerRows,setTrackerRows] = useState([])
   const [trackerSubs,setTrackerSubs] = useState({})
   const [reports,setReports] = useState([])
@@ -163,7 +159,6 @@ export default function App(){
     try{ const [s,u,a] = await Promise.all([fetchStaging(), fetchUpdates(), fetchActivity()]); setStaging(s); setUpdates(u); setActivity(a) }
     catch(e){ console.warn('skills reload error',e) }
   }
-  async function loadProcess(){ try{ setProcessItems(await fetchProcessItems()) }catch(e){ console.warn('process reload',e) } }
   async function loadTracker(){ try{ const [r,s]=await Promise.all([fetchTracker(),fetchTrackerSubstatuses()]); setTrackerRows(r); setTrackerSubs(s) }catch(e){ console.warn('tracker reload',e) } }
   async function loadReports(){ try{ setReports(await fetchReports()) }catch(e){ console.warn('reports reload',e) } }
   async function loadWorkflow(){ try{ const [f,p]=await Promise.all([fetchAssessmentFlow(),fetchImprovementPlans()]); setFlow(f); setPlans(p) }catch(e){ console.warn('workflow reload',e) } }
@@ -172,9 +167,9 @@ export default function App(){
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, s, u, a, qs, rp, st, pi, dep, fl, pl] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings(), fetchProcessItems(), fetchDepartments(), fetchAssessmentFlow(), fetchImprovementPlans()])
+      const [d, mData, s, u, a, qs, rp, st, dep, fl, pl] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings(), fetchDepartments(), fetchAssessmentFlow(), fetchImprovementPlans()])
       setCats(withCatColors(d.cats)); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setCurMonthRows(mData); setStaging(s); setUpdates(u); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st); setProcessItems(pi)
+      setMonths(mData); setCurMonthRows(mData); setStaging(s); setUpdates(u); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st)
       setDepartments(dep); setFlow(fl); setPlans(pl)
       loadTracker()
     }
@@ -187,16 +182,6 @@ export default function App(){
     let t=null
     const unsub = subscribeTracker(()=>{ clearTimeout(t); t=setTimeout(loadTracker, 250) })
     return ()=>{ clearTimeout(t); unsub() }
-  },[authed])
-
-  // Live process tracker: realtime subscription + a 60s visible-tab poll as a
-  // fallback in case the `lg_process_items` table hasn't been added to the
-  // Supabase realtime publication (see migration notes).
-  useEffect(()=>{ if(!authed || !hasSupabase) return
-    let t=null
-    const unsub = subscribeProcessItems(()=>{ clearTimeout(t); t=setTimeout(loadProcess, 250) })
-    const iv = setInterval(()=>{ if(document.visibilityState==='visible') loadProcess() }, 60000)
-    return ()=>{ clearTimeout(t); clearInterval(iv); unsub() }
   },[authed])
 
   useEffect(()=>{ (async()=>{
@@ -233,13 +218,6 @@ export default function App(){
     return Object.values(m).sort((a,b)=>(b.waiting+b.ncOpen+b.planOverdue)-(a.waiting+a.ncOpen+a.planOverdue))
   },[pendingAssess,assignedFlow,overduePlans,lawMap,deptMap])
   const suggest     = useMemo(()=>suggestionLists(laws),[laws])
-  const allProcess  = useMemo(()=>{
-    const out = processItems.map(p=>({...p,auto:false}))
-    updates.filter(u=>u.status==='new').forEach(u=>out.push({id:'u'+u.id,auto:true,stage:'discovery',title:u.title,note:'กฎหมายใหม่จาก '+(u.source||'ShawPat'),goView:'updates'}))
-    stagingBatches.forEach(([key,rows])=>out.push({id:'s'+key,auto:true,stage:'review',title:rows[0]?.law_name||rows[0]?.law_code||key,note:rows.length+' ข้อกำหนด รออนุมัติ',goView:'staging'}))
-    activeLaws.filter(l=>l.status==='bad').forEach(l=>out.push({id:'law'+l.id,auto:true,stage:'verify',title:l.code+' — '+(l.name||'').slice(0,50),note:'ยังไม่สอดคล้อง · '+l.reqs.filter(r=>r.status!=='met').length+' ข้อ',goView:'registry'}))
-    return out
-  },[processItems,updates,stagingBatches,activeLaws])
   const searchResults = useMemo(()=>{
     const q=search.trim().toLowerCase(); if(q.length<2) return []
     const out=[]
@@ -252,9 +230,9 @@ export default function App(){
     try{
       const law = await addStagedLaw(rows)
       const d=await fetchAll(); setLaws(d.laws); await reloadSkills(); fetchQuarterStats().then(setQuarterStats)
-      // อนุมัติเข้าทะเบียนแล้ว → เริ่มติดตามที่ขั้น 2 (หน่วยงานดำเนินการ) ข้ามถ้ามี case อยู่แล้ว
+      // อนุมัติเข้าทะเบียนแล้ว → เริ่มติดตามที่ขั้น 3 (ประเมินความสอดคล้อง) ข้ามถ้ามี case อยู่แล้ว
       if(law?.id && !trackerRows.some(r=>r.law_id===law.id)){
-        try{ await createTrackerCase({ law_id: law.id, startStage: 2, startSubstatus: 'pending_assign' }); await loadTracker() }
+        try{ await createTrackerCase({ law_id: law.id, startStage: 3, startSubstatus: 'pending_assign' }); await loadTracker() }
         catch(e2){ console.warn('createTrackerCase after staging failed', e2) }
       }
     }
@@ -294,7 +272,7 @@ export default function App(){
       const law = await assignBatch(batch, rows, depts, {dueDate, by})
       const d=await fetchAll(); setLaws(d.laws); await reloadSkills(); await loadWorkflow(); fetchQuarterStats().then(setQuarterStats)
       if(law?.id && !trackerRows.some(r=>r.law_id===law.id)){
-        try{ await createTrackerCase({ law_id: law.id, startStage: 2, startSubstatus: 'pending_assign' }); await loadTracker() }catch{}
+        try{ await createTrackerCase({ law_id: law.id, startStage: 3, startSubstatus: 'pending_assign' }); await loadTracker() }catch{}
       }
       toast(`ส่งประเมินให้ ${depts.length} หน่วยงานแล้ว`,'success')
     }catch(e){ toast('ส่งประเมินไม่สำเร็จ: '+e.message) }
@@ -545,12 +523,11 @@ export default function App(){
     const now=new Date(), year=now.getFullYear(), month=now.getMonth()+1
     try{
       await setMonthReviewStatus(year, month, 'has_new_laws', currentUserName())
-      const monthLabel = TH_MONTHS[month-1]+' '+(year+543)
-      const item = await createProcessItem({ title:`ตรวจสอบกฎหมายใหม่ประจำเดือน ${monthLabel}`, ref_type:'monthly_review', stage:'discovery', note:'สร้างอัตโนมัติจากการตรวจสอบรายเดือน' })
-      setProcessItems(prev=>[item, ...prev])
       await syncCurrentMonthEverywhere(year)
-      setView('process')
-      toast('เริ่มกระบวนการตรวจสอบกฎหมายใหม่แล้ว','success')
+      // P9: new-law discovery now flows through the AI/updates → staging pipeline,
+      // which auto-creates a Process Tracker case (stage 1) once a law is identified.
+      setView('updates')
+      toast('บันทึกแล้ว: เดือนนี้มีกฎหมายใหม่ — ไปเฝ้าระวัง/ค้นหากฎหมายใหม่','success')
     }catch(e){ toast('ดำเนินการไม่สำเร็จ: '+e.message) }
   }
 
@@ -683,21 +660,21 @@ export default function App(){
             </div>
           </div>
           <div className="view-swap" key={view}>
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} onGoView={setView} processItems={allProcess} rawProcessItems={processItems} onGoProcess={()=>setView('process')} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>setView('reports')} onGoView={setView} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}
             deptWorkload={deptWorkload} onGoDept={(v,dept)=>{ setPresetDept(dept||null); setView(v) }}
             reviewPending={reviewPending.length}
-            monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
-            onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
+            monthsData={months}/>}
           {view==='registry'      && <RegistryCompliance
             regLaws={activeLaws} cats={cats} catMap={catMap} stats={stats}
             search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
-            round={round} onExportF259={()=>setShowPdf(true)}/>}
+            round={round} onExportF259={()=>setShowPdf(true)}
+            monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
+            onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={searchDebounced} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
           {view==='reports'       && <Reports       reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
-          {view==='process'       && <ProcessTracker items={allProcess} onReload={loadProcess} updates={updates} onGoView={setView}/>}
-          {view==='tracker'       && <LawTracker    rows={trackerRows} subs={trackerSubs} laws={activeLaws} suggest={suggest} onReload={loadTracker}/>}
+          {view==='tracker'       && <UnifiedTracker rows={trackerRows} subs={trackerSubs} laws={activeLaws} suggest={suggest} catMap={catMap} onReload={loadTracker}/>}
           {view==='analysis'      && <Analysis      laws={inForceLaws} cats={cats} catMap={catMap} allLaws={laws} onAnalyzed={reloadSkills} goView={setView} onCreateFull={handleCreateFull} suggest={suggest}/>}
           {view==='staging'       && <Staging       batches={stagingBatches} flow={flow} laws={laws} plans={plans} departments={departments} cats={cats} catMap={catMap} deptMap={deptMap}
             onScreen={handleScreen} onAssign={handleAssign} onFinalize={handleFinalize} onDrop={handleDropStaged} onGoAssess={()=>setView('assessment')}

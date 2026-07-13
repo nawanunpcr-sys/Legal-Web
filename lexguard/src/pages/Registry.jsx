@@ -6,7 +6,7 @@ import { LAW_TYPES } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
-import { usePersist, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, quarterOfDate, daysTo, effectiveInfo } from '../lib/ui.jsx'
+import { usePersist, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, effectiveInfo } from '../lib/ui.jsx'
 
 /* ─────────────────────────── ADD LAW MODAL ───────────────────────── */
 function AddLawModal({ cats, allLaws, onSave, onClose }) {
@@ -84,7 +84,8 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 }
 
 /* ─────────── REGISTRY + COMPLIANCE (merged view) ─────────── */
-export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,allLaws,round,onExportF259}){
+export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,allLaws,round,onExportF259,
+    monthsData=[],monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws}){
   const kpis=[
     {lab:'ข้อกำหนดทั้งหมด',   val:stats.req, accent:'#1C2431'},
     {lab:'ผ่านการประเมิน (C)', val:stats.met, accent:'#5F7A61'},
@@ -101,6 +102,12 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
       ))}
     </div>
 
+    {/* การตรวจสอบรายเดือน (ย้ายมาจาก Dashboard) */}
+    {onToggleMonth && <div style={{marginBottom:16}}>
+      <MonthlyCheckPanel months={monthsData} year={monthYear||new Date().getFullYear()} setYear={setMonthYear}
+        onToggle={onToggleMonth} onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
+    </div>}
+
     <Register laws={regLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
       round={round} onExportF259={onExportF259}/>
   </div>
@@ -113,7 +120,6 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   const { can }=useAuth()
   const [cat,setCat]=usePersist('cr_reg_cat','all')
   const [act,setAct]=usePersist('cr_reg_act','all')
-  const [quick,setQuick]=usePersist('cr_reg_quick',null)   // ตัวกรองด่วน: new|repealed|nc|review|cc
   const [showAdd,setShowAdd]=useState(false)
   const [sel,setSel]=useState(new Set())
   const toggleSel=id=>setSel(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n })
@@ -122,40 +128,16 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   function exportSel(){ const m=Object.fromEntries(cats.map(c=>[c.code,c])); exportLawsToExcel(laws.filter(l=>sel.has(l.id)),m); }
   const catsList=[...new Set(laws.map(l=>l.cat))].sort(catOrder)
   const q=search.toLowerCase()
-  // ── ตัวกรองด่วน (item 6) ──
-  const gYear=round.by-543
-  const inRound=s=>{ const x=new Date(s); return !isNaN(x)&&x.getFullYear()===gYear&&quarterOfDate(s)===round.q }
-  const QUICK=[['new','มาใหม่รอบนี้'],['repealed','ยกเลิกรอบนี้'],['nc','NC'],['review','ใกล้ครบกำหนดทบทวน'],['cc','รหัสระบบสร้าง (CC-)']]
-  const passQuick=(l,key)=>{
-    switch(key){
-      case 'new':      return !!(l.created_at&&inRound(l.created_at))
-      case 'repealed': return l.status==='repealed'&&!!(l.repeal_date&&inRound(l.repeal_date))
-      case 'nc':       return l.status==='bad'
-      case 'review':   return !!(l.review_date&&daysTo(l.review_date)<=60)
-      case 'cc':       return /^CC-/i.test(l.code||'')
-      default:         return true
-    }
-  }
-  const countFor=key=>(key==='repealed'?(allLaws||laws):laws).filter(l=>(cat==='all'||l.cat===cat)&&passQuick(l,key)).length
-  const base = quick==='repealed' ? (allLaws||laws) : laws
   // ค้นหา (item 7): รหัส · ชื่อกฎหมาย · กระทรวง · สาระสำคัญของข้อกำหนด · ผู้รับผิดชอบ
   const matchQ=l=>!q||l.code.toLowerCase().includes(q)||l.name.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)
     ||(l.reqs||[]).some(r=>(r.text||'').toLowerCase().includes(q)||(r.responsible||'').toLowerCase().includes(q))
-  const rows=base.filter(l=>(cat==='all'||l.cat===cat)
-    &&(quick==='repealed'||act==='all'||(act==='active'?l.active!==false:l.active===false))
-    &&passQuick(l,quick)
+  const rows=laws.filter(l=>(cat==='all'||l.cat===cat)
+    &&(act==='all'||(act==='active'?l.active!==false:l.active===false))
     &&matchQ(l))
   const grouped=useMemo(()=>{ const byCat={}; rows.forEach(l=>{ const c=l.cat; if(!byCat[c])byCat[c]={}; const t=l.hierarchy_level||5; if(!byCat[c][t])byCat[c][t]=[]; byCat[c][t].push(l) }); return byCat },[rows])
   const activeCats=catsList.filter(c=>cat==='all'||c===cat)
   return <div className="view">
     {showAdd && <AddLawModal cats={cats} allLaws={allLaws} onSave={onCreate} onClose={()=>setShowAdd(false)}/>}
-    <div className="filterbar">
-      <span style={{fontSize:12,color:'var(--ink-faint)',fontWeight:600,marginRight:2}}>ตัวกรองด่วน:</span>
-      {QUICK.map(([key,lab])=>(
-        <span key={key} className={'chip'+(quick===key?' active':'')} onClick={()=>setQuick(quick===key?null:key)}>{lab} ({countFor(key)})</span>
-      ))}
-      {quick && <span className="chip" style={{color:'var(--bad)'}} onClick={()=>setQuick(null)}>ล้าง ✕</span>}
-    </div>
     <div className="filterbar">
       <span className={'chip'+(act==='all'?' active':'')} onClick={()=>setAct('all')}>ทั้งหมด</span>
       <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({laws.filter(l=>l.active!==false).length})</span>
