@@ -1981,7 +1981,7 @@ tbody tr.row-danger td:first-child { box-shadow: inset 3px 0 0 var(--bad) }
 
 /* ─── Dashboard glass stat strip (quick glance, Apple soft-modern) ─── */
 .dash-strip {
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: rgba(255,255,255,.72); backdrop-filter: blur(20px);
   border: 1px solid var(--line); border-radius: var(--radius-card);
   box-shadow: var(--shadow-soft); overflow: hidden; margin-bottom: 16px;

@@ -409,17 +409,11 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
   const bad=fLaws.filter(l=>l.status==='bad')
   const newUpdates=updates.filter(u=>u.status==='new')
   const winLabel = 'ทั้งหมด'
-  const cards=[
-    {cls:'s-total', lab:'กฎหมายทั้งหมด',   val:stats.total, unit:'ฉบับ', delta:cats.length+' หมวด · ดูทะเบียน →', go:()=>goRegistry('register')},
-    {cls:'s-bad',   lab:'ยังไม่สอดคล้อง',   val:stats.nc, unit:'ข้อ', delta:'จาก '+stats.req+' ข้อกำหนด →', go:()=>goRegistry('compliance')},
-    {cls:'s-bad',   lab:'เกินกำหนด',       val:trk.overdue, unit:'ขั้น', delta:'ต้องเร่งจัดการ →', go:onGoTracker},
-    {cls:'s-ok',    lab:'สอดคล้อง',        val:stats.pct.toFixed(1)+'%', unit:'', delta:stats.met+' / '+stats.req+' ข้อ →', go:()=>goRegistry('compliance')},
-  ]
-
   const strip=[
     {val:stats.total.toLocaleString('en-US'), lab:'กฎหมายในทะเบียน (ฉบับ)'},
     {val:String(cats.length),                 lab:'หมวด (LA–LG)'},
     {val:stats.req.toLocaleString('en-US'),   lab:'ข้อกำหนดรายข้อ'},
+    {val:stats.nc.toLocaleString('en-US'),    lab:'ยังไม่สอดคล้อง (ข้อ)', bad:true, go:()=>goRegistry('compliance')},
     {val:stats.pct.toFixed(1)+'%',            lab:'ความสอดคล้อง ('+stats.met+'/'+stats.req+')', accent:true},
   ]
 
@@ -437,30 +431,20 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
       </div>
     )}
     <div className="dash-strip">
-      {strip.map((s,i)=>(<div className="dash-strip-cell" key={i}>
-        <div className={'dash-strip-val'+(s.accent?' is-accent':'')}>{s.val}</div>
+      {strip.map((s,i)=>(<div className={'dash-strip-cell'+(s.go?' stat-link':'')} key={i}
+        role={s.go?'button':undefined} tabIndex={s.go?0:undefined} onClick={s.go||undefined}
+        onKeyDown={s.go?(e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); s.go() } }):undefined}
+        style={s.go?{cursor:'pointer'}:undefined}>
+        <div className={'dash-strip-val'+(s.accent?' is-accent':'')} style={s.bad?{color:'var(--bad)'}:undefined}>{s.val}</div>
         <div className="dash-strip-lab">{s.lab}</div>
       </div>))}
     </div>
 
-    <div className="dash-hero" style={{marginTop:16}}>
-      <div className="hero-ring">
-        <div className="dash-sec-h">อัตราความสอดคล้อง</div>
-        <div className="ring-wrap"><Ring pct={stats.pct} met={stats.met} nc={stats.nc}/></div>
-        <div className="hero-legend">
-          <span><i style={{background:'var(--ok)'}}/>สอดคล้อง <b>{stats.met}</b></span>
-          <span><i style={{background:'var(--bad)'}}/>ยังไม่สอดคล้อง <b>{stats.nc}</b></span>
-        </div>
-      </div>
-      <div className="hero-kpis">
-        {cards.map((c,i)=>(<div className={'stat '+c.cls+(c.go?' stat-link':'')} key={i}
-          role={c.go?'button':undefined} tabIndex={c.go?0:undefined}
-          onClick={c.go||undefined}
-          onKeyDown={c.go?(e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); c.go() } }):undefined}>
-          <div className="lab">{c.lab}</div>
-          <div className="val num">{c.val} <small>{c.unit}</small></div>
-          <div className="delta">{c.delta}</div>
-        </div>))}
+    {/* ความสอดคล้องตามหมวดกฎหมาย — ยกขึ้นมาไว้ด้านบนสุดแทนการ์ด KPI เดิม */}
+    <div style={{marginTop:16}}>
+      <div className="dash-sec-h">ความสอดคล้องตามหมวดกฎหมาย</div>
+      <div className="panel">
+        <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div>
       </div>
     </div>
 
@@ -486,14 +470,6 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
           <td><Pill s={l.status}/></td>
         </tr>))}
       </tbody></table></div>
-    </div>
-
-    {/* ความสอดคล้องตามหมวดกฎหมาย — ยกขึ้นมาไว้ด้านบน */}
-    <div style={{marginTop:36}}>
-      <div className="dash-sec-h">ความสอดคล้องตามหมวดกฎหมาย</div>
-      <div className="panel">
-        <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div>
-      </div>
     </div>
 
     <div style={{marginTop:36}}>
