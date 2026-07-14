@@ -1557,7 +1557,18 @@ select.form-input { cursor: pointer }
   padding: 30px 30px 24px;
   text-align: center;
 }
-.login-form { display: flex; flex-direction: column; gap: 10px }
+.login-form { display: flex; flex-direction: column; gap: 14px }
+.login-field { display: flex; flex-direction: column; gap: 6px; text-align: left }
+.login-lbl { font-size: 12px; font-weight: 600; color: var(--ink-soft, var(--ink-faint)) }
+.login-pw { position: relative; display: flex; align-items: center }
+.login-pw .login-input { padding-right: 58px }
+.login-pw-toggle {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  border: none; background: transparent; cursor: pointer;
+  font-size: 12.5px; font-weight: 600; color: var(--accent);
+  padding: 4px 8px; border-radius: 8px; font-family: var(--sans);
+}
+.login-pw-toggle:hover { background: var(--accent-tint) }
 .login-input {
   width: 100%;
   border: 1px solid var(--surface-3);

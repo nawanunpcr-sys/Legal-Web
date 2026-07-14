@@ -1,22 +1,19 @@
 import { useState } from 'react'
-import { signInWithOAuth } from '../lib/supabase.js'
-import { demoLoginAs } from '../lib/auth.js'
+import { appSignIn } from '../lib/auth.js'
 
 export default function Login({ onAuthed }) {
-  const [oauthBusy, setOauthBusy] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [logoOk, setLogoOk] = useState(true)
 
-  function loginAs(username) {
-    setErr('')
-    try { onAuthed(demoLoginAs(username)) }
-    catch (e) { setErr(e.message || 'เข้าสู่ระบบไม่สำเร็จ') }
-  }
-
-  async function handleOAuth(provider) {
-    setErr(''); setOauthBusy(provider)
-    try { await signInWithOAuth(provider) }
-    catch (e) { setErr(e.message || 'เข้าสู่ระบบผ่าน Microsoft ไม่สำเร็จ'); setOauthBusy('') }
+  function handleSubmit(e) {
+    e.preventDefault()
+    setErr(''); setBusy(true)
+    try { onAuthed(appSignIn(username, password)) }
+    catch (e2) { setErr(e2.message || 'เข้าสู่ระบบไม่สำเร็จ'); setBusy(false) }
   }
 
   return (
@@ -36,33 +33,43 @@ export default function Login({ onAuthed }) {
         </div>
 
         <div className="login-card">
-          {/* Microsoft SSO — name is pulled from the Microsoft profile after sign-in */}
-          <button className="oauth-btn oauth-microsoft" disabled={!!oauthBusy} onClick={() => handleOAuth('azure')}>
-            <svg width="18" height="18" viewBox="0 0 23 23" aria-hidden>
-              <rect x="1" y="1" width="10" height="10" fill="#F35325" />
-              <rect x="12" y="1" width="10" height="10" fill="#81BC06" />
-              <rect x="1" y="12" width="10" height="10" fill="#05A6F0" />
-              <rect x="12" y="12" width="10" height="10" fill="#FFBA08" />
-            </svg>
-            {oauthBusy === 'azure' ? 'กำลังเข้าสู่ระบบ…' : 'เข้าสู่ระบบด้วย Microsoft'}
-          </button>
+          <form className="login-form" onSubmit={handleSubmit}>
+            <label className="login-field">
+              <span className="login-lbl">ชื่อผู้ใช้ · Username</span>
+              <input
+                className="login-input"
+                type="text"
+                autoComplete="username"
+                autoFocus
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="ชื่อผู้ใช้"
+              />
+            </label>
 
-          <div className="login-divider"><span>หรือเข้าใช้งานภายใน</span></div>
+            <label className="login-field">
+              <span className="login-lbl">รหัสผ่าน · Password</span>
+              <div className="login-pw">
+                <input
+                  className="login-input"
+                  type={showPw ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="รหัสผ่าน"
+                />
+                <button type="button" className="login-pw-toggle" onClick={() => setShowPw(s => !s)} tabIndex={-1}>
+                  {showPw ? 'ซ่อน' : 'แสดง'}
+                </button>
+              </div>
+            </label>
 
-          <div className="role-row">
-            <button type="button" className="role-btn role-btn--admin" disabled={!!oauthBusy} onClick={() => loginAs('jorpor')}>
-              <span className="role-btn-name">จป. วิชาชีพ</span>
-              <span className="role-btn-role">ผู้ดูแลระบบ</span>
-              <span className="role-btn-cta">เข้าใช้งาน →</span>
+            {err && <div className="login-err">{err}</div>}
+
+            <button type="submit" className="login-btn" disabled={busy}>
+              {busy ? 'กำลังเข้าสู่ระบบ…' : 'เข้าสู่ระบบ'}
             </button>
-            <button type="button" className="role-btn role-btn--viewer" disabled={!!oauthBusy} onClick={() => loginAs('viewer')}>
-              <span className="role-btn-name">ผู้เยี่ยมชม</span>
-              <span className="role-btn-role">Viewer</span>
-              <span className="role-btn-cta">เข้าใช้งาน →</span>
-            </button>
-          </div>
-
-          {err && <div className="login-err">{err}</div>}
+          </form>
 
           <a className="login-site" href="https://www.jastel.co.th/" target="_blank" rel="noreferrer">www.jastel.co.th</a>
         </div>

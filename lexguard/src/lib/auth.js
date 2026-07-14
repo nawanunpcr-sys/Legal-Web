@@ -18,7 +18,7 @@ export const AUTH_MODE = import.meta.env.VITE_AUTH_MODE || 'demo'   // 'demo' | 
 // true = เข้าแอปได้เลยไม่ต้องล็อกอิน (เข้าเป็นผู้ใช้ guest สิทธิ์ admin เพื่อทดสอบได้ครบ)
 // ตั้งเป็น false เพื่อเปิดหน้าล็อกอิน/Landing กลับมาเหมือนเดิม
 // (override ได้ด้วย env: VITE_SKIP_LOGIN=0)
-export const SKIP_LOGIN = import.meta.env.VITE_SKIP_LOGIN !== '0'
+export const SKIP_LOGIN = import.meta.env.VITE_SKIP_LOGIN === '1'
 export const GUEST_SESSION = { name: 'ผู้ทดลองใช้', role: 'admin', username: 'guest', mode: 'guest', ts: 0 }
 
 // Role assigned to anyone who signs in via Microsoft (real org staff = จป).
@@ -46,6 +46,21 @@ export const ROLE_LABELS = { admin: 'ผู้ดูแลระบบ', editor:
 export const NO_PERM = 'สิทธิ์ไม่เพียงพอ'
 
 const SESSION_KEY = 'lg_session'
+
+// ── บัญชีหลักของทีม QA&SHE — ล็อกอินด้วย username/password ──
+// ใช้งานได้โดยไม่ต้องพึ่ง VITE_DEMO_PASSWORD (คนละชุดกับบัญชี demo ด้านล่าง)
+const APP_ACCOUNTS = [
+  { username: 'QA&SHE', password: 'qaandshejastel', name: 'QA & SHE', role: 'admin' },
+]
+
+// ล็อกอินด้วยชื่อผู้ใช้/รหัสผ่าน (ตรวจสอบแบบไม่สนตัวพิมพ์เล็ก-ใหญ่ที่ชื่อผู้ใช้)
+export function appSignIn(username, password) {
+  const u = APP_ACCOUNTS.find(x => x.username.toLowerCase() === String(username || '').trim().toLowerCase())
+  if (!u || password !== u.password) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง')
+  const session = { name: u.name, role: u.role, username: u.username, mode: 'app', ts: Date.now() }
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)) } catch { /* ignore */ }
+  return session
+}
 
 // ---- Demo session helpers ----
 export function demoSignIn(username, password) {
