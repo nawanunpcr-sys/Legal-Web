@@ -412,8 +412,6 @@ export default function Dashboard({laws,cats,catMap,onOpen,updates=[],staging=[]
   const winLabel = 'ทั้งหมด'
   const strip=[
     {val:(active.length+inactive.length).toLocaleString('en-US'), lab:'กฎหมายในทะเบียน (ฉบับ)'},
-    {val:active.length.toLocaleString('en-US'),   lab:'ใช้อยู่ · Active (ฉบับ)',   go:()=>goRegistry('register')},
-    {val:inactive.length.toLocaleString('en-US'), lab:'ไม่ใช้แล้ว · Inactive (ฉบับ)', go:()=>goRegistry('register')},
     {val:String(cats.length),                 lab:'หมวด (LA–LG)'},
     {val:stats.req.toLocaleString('en-US'),   lab:'ข้อกำหนดรายข้อ'},
     {val:stats.nc.toLocaleString('en-US'),    lab:'ยังไม่สอดคล้อง (ข้อ)', bad:true, go:()=>goRegistry('compliance')},
