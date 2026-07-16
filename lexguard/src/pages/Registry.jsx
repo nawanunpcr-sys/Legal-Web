@@ -84,7 +84,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 }
 
 /* ─────────── REGISTRY + COMPLIANCE (merged view) ─────────── */
-export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,allLaws,round,onExportF259,
+export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,allLaws,round,onExportF259,onAddLaw,
     monthsData=[],monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws}){
   const kpis=[
     {lab:'ข้อกำหนดทั้งหมด',   val:stats.req, accent:'#1C2431'},
@@ -108,14 +108,14 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
     </div>}
 
     <Register laws={regLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
-      round={round} onExportF259={onExportF259}/>
+      round={round} onExportF259={onExportF259} onAddLaw={onAddLaw}/>
   </div>
 }
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
 // จัดลำดับหมวด: LA→LG ก่อน แล้ว CCS (CC) ท้ายสุด
 const catOrder=(a,b)=>((a==='CC')-(b==='CC'))||a.localeCompare(b)
-function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259}){
+function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259,onAddLaw}){
   const { can }=useAuth()
   const [cat,setCat]=usePersist('cr_reg_cat','all')
   const [act,setAct]=usePersist('cr_reg_act','all')
@@ -159,7 +159,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
       <span className="right" style={{marginLeft:'auto'}}>พบ {rows.length} ฉบับ</span>
       {onExportF259 && <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="พิมพ์/บันทึกเป็น PDF ตามฟอร์ม F-259 (สำหรับ audit ISO 45001)" onClick={onExportF259}><I n="download"/>ส่งออกแบบ F-259</button>}
       <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>ส่งออกที่กรอง</button>
-      <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>setShowAdd(true)}><I n="plus"/>เพิ่มกฎหมาย</button>
+      <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onAddLaw?onAddLaw():setShowAdd(true)}><I n="plus"/>เพิ่มกฎหมาย</button>
     </div>
     {sel.size>0 && (
       <div className="bulkbar">

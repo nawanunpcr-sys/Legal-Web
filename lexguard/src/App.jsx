@@ -6,6 +6,8 @@ import { supabase, hasSupabase, fetchAll,
          fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
          logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
+         fetchWorkflow, subscribeWorkflow, createAddWorkflow, createMonitorWorkflow,
+         submitWorkflowAssessment, closeWorkflowPlan,
          fetchSettings, saveSettings, DEFAULT_SETTINGS } from './lib/supabase.js'
 import { AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
          getSession as getAuthSession, signOut as authSignOut, onAuthChange } from './lib/auth.js'
@@ -26,6 +28,8 @@ import { exportLawsToExcel } from './lib/integrations.js'
 import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, currentRound,
          jorporReportDeadlines, effectiveInfo, trainingStatus } from './lib/ui.jsx'
 import Dashboard from './pages/Dashboard.jsx'
+import ProcessTracker from './pages/ProcessTracker.jsx'
+import AddLawFlow from './components/AddLawFlow.jsx'
 import RegistryCompliance from './pages/Registry.jsx'
 import Analysis from './pages/Analysis.jsx'
 import Communication from './pages/Communications.jsx'
@@ -39,6 +43,7 @@ const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
     { id:'registry',      label:'ทะเบียน & ความสอดคล้อง', icon:'book'    },
+    { id:'tracker',       label:'Process Tracker',        icon:'update'  },
   ]},
   { label: 'ประเมิน & สื่อสาร', items: [
     { id:'comm',          label:'สื่อสาร & ส่งรายงาน',    icon:'chat'    },
@@ -58,6 +63,7 @@ const TITLES = {
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
   repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
   comm:          ['สื่อสาร & ส่งรายงาน',   'ตารางการสื่อสาร (ISD-86) และการส่งรายงานราชการในหน้าเดียว'],
+  tracker:       ['Process Tracker',        'ติดตามการเพิ่มกฎหมายใหม่ และการทวนสอบกฎหมายเดิม รายฉบับ'],
   analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
   notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
   settings:      ['ตั้งค่า',                'ข้อมูลองค์กรและการแสดงผลของระบบ'],
@@ -70,8 +76,9 @@ export default function App(){
   const [view,setView]     = useState(()=>{ try{ const v=localStorage.getItem('cr_view')||'dashboard';
     // backward-compat: the old split 'register'/'compliance' views are now one 'registry' view
     if(v==='register'||v==='compliance'){ try{ localStorage.setItem('cr_registry_mode', JSON.stringify(v==='compliance'?'compliance':'register')) }catch{} return 'registry' }
-    // P10: the old Process Tracker + staging/assessment/plans/updates views were removed
-    if(v==='process'||v==='tracker'||v==='staging'||v==='assessment'||v==='plans'||v==='updates') return 'registry'
+    // P10: the old free-form process/staging/assessment/plans/updates views were removed
+    // (note: 'tracker' is now the NEW per-law Process Tracker — keep it)
+    if(v==='process'||v==='staging'||v==='assessment'||v==='plans'||v==='updates') return 'tracker'
     if(v==='reports') return 'comm'       // P10: merged into สื่อสาร & ส่งรายงาน hub
     return v }catch{ return 'dashboard' } })
   const [dark,setDark]     = useState(()=>{ try{ const v=localStorage.getItem('cr_dark'); return v==null?false:v==='1' }catch{ return false } })
@@ -96,6 +103,9 @@ export default function App(){
   const [quarterStats,setQuarterStats] = useState([])
   const [settings,setSettings] = useState(DEFAULT_SETTINGS)
   const [reports,setReports] = useState([])
+  const [workflowRows,setWorkflowRows] = useState([])   // lg_law_workflow — Process Tracker รายกฎหมาย (P10)
+  const [showAddLaw,setShowAddLaw] = useState(false)     // Workflow A · Process 1 wizard
+  const [flowPopup,setFlowPopup]   = useState(null)      // { title, msg } — popup กึ่งกลางจอ (ยืนยันเพิ่ม/ประเมินเสร็จ)
   const [showNotify,setShowNotify] = useState(false)
   const [commTab,setCommTab]       = usePersist('cr_comm_tab','comm')       // comm | reports (สื่อสาร & ส่งรายงาน hub)
   const [curMonthRows,setCurMonthRows] = useState([])   // compliance_months rows for the *real* current year — drives the live Dashboard monthly stage bar regardless of whatever year is browsed in the Register monthly panel
@@ -122,6 +132,7 @@ export default function App(){
   useEffect(()=>{ const h=()=>{ if(window.innerWidth<1024) setNavOpen(false) }; h(); window.addEventListener('resize',h); return ()=>window.removeEventListener('resize',h) },[])
 
   async function loadReports(){ try{ setReports(await fetchReports()) }catch(e){ console.warn('reports reload',e) } }
+  async function loadWorkflow(){ try{ setWorkflowRows(await fetchWorkflow()) }catch(e){ console.warn('workflow reload',e) } }
   async function loadCurMonth(){ try{ setCurMonthRows(await fetchComplianceMonths(new Date().getFullYear())) }catch(e){ console.warn('cur month reload',e) } }
   // P10: staging/assessment/tracker/plans/reports views were removed. goView()
   // remaps the one surviving legacy id (reports → comm hub) so old deep links /
@@ -134,13 +145,20 @@ export default function App(){
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, a, qs, rp, st] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings()])
+      const [d, mData, a, qs, rp, st, wf] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings(), fetchWorkflow()])
       setCats(withCatColors(d.cats)); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setCurMonthRows(mData); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st)
+      setMonths(mData); setCurMonthRows(mData); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st); setWorkflowRows(wf)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
   })() },[authed])
+
+  // Realtime: keep Process Tracker cases live across tabs/users
+  useEffect(()=>{ if(!authed || !hasSupabase) return
+    let t=null
+    const unsub = subscribeWorkflow(()=>{ clearTimeout(t); t=setTimeout(loadWorkflow, 250) })
+    return ()=>{ clearTimeout(t); unsub() }
+  },[authed])
 
   useEffect(()=>{ (async()=>{
     if(!hasSupabase) return
@@ -288,6 +306,40 @@ export default function App(){
     await logActivity({ action:'create', law_id:newLaw.id, law_code:newLaw.code, law_name:newLaw.name, detail:'เพิ่มกฎหมายเข้าทะเบียน ('+(reqs?.length||0)+' ข้อ)' })
     fetchActivity().then(setActivity); fetchQuarterStats().then(setQuarterStats)
     return newLaw
+  }
+
+  // ── P10 · Process Tracker workflows ─────────────────────────────────────────
+  // Workflow A · Process 1 — เพิ่มกฎหมายเข้าทะเบียน (จาก AddLawFlow)
+  async function handleCreateAddWorkflow(payload){
+    const { law, workflow } = await createAddWorkflow(payload)
+    setLaws(prev=>[...prev,law]); setWorkflowRows(prev=>[workflow,...prev])
+    fetchActivity().then(setActivity); fetchQuarterStats().then(setQuarterStats)
+    return { law, workflow }
+  }
+  // Workflow B · Process 1 — เปิดรายการติดตาม/ทวนสอบกฎหมายเดิม
+  async function handleStartMonitor({ law, ownerName, followIssue }){
+    try{ const wf = await createMonitorWorkflow({ law, ownerName, followIssue }); setWorkflowRows(prev=>[wf,...prev])
+      fetchActivity().then(setActivity)
+      toast('เปิดรายการทวนสอบแล้ว — รอประเมิน','success')
+    }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
+  }
+  // Process 2 · ผู้ประเมิน (ใช้ร่วมทั้ง A และ B)
+  async function handleWorkflowAssess(wf, law, payload){
+    try{
+      await submitWorkflowAssessment(wf, law, payload)
+      const d=await fetchAll(); setLaws(d.laws); await loadWorkflow(); fetchActivity().then(setActivity)
+      setFlowPopup({ title:'ประเมินเสร็จสิ้น', msg: payload.result==='สอดคล้อง'
+        ? `${law?.code||''} ประเมินแล้ว: สอดคล้อง — ปิดรายการ`
+        : `${law?.code||''} ประเมินแล้ว: ไม่สอดคล้อง — มีแผนปรับปรุงรอปิด` })
+    }catch(e){ toast('บันทึกผลประเมินไม่สำเร็จ: '+e.message) }
+  }
+  // Process 3 · ปิดแผนปรับปรุง
+  async function handleClosePlan(wf, law){
+    try{
+      await closeWorkflowPlan(wf, law, {})
+      const d=await fetchAll(); setLaws(d.laws); await loadWorkflow(); fetchActivity().then(setActivity)
+      setFlowPopup({ title:'ปิดแผนแล้ว', msg:`${law?.code||''} ปิดแผนปรับปรุง — พลิกเป็นสอดคล้อง` })
+    }catch(e){ toast('ปิดแผนไม่สำเร็จ: '+e.message) }
   }
 
   async function handleMarkSent(commId, fileRef){
@@ -477,9 +529,11 @@ export default function App(){
           {view==='registry'      && <RegistryCompliance
             regLaws={activeLaws} cats={cats} catMap={catMap} stats={stats}
             search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
-            round={round} onExportF259={()=>setShowPdf(true)}
+            round={round} onExportF259={()=>setShowPdf(true)} onAddLaw={()=>setShowAddLaw(true)}
             monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
+          {view==='tracker'       && <ProcessTracker rows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest}
+            onStartMonitor={handleStartMonitor} onAssess={handleWorkflowAssess} onClosePlan={handleClosePlan} onOpenLaw={setOpenLaw}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={searchDebounced} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && (<div className="view">
@@ -503,6 +557,19 @@ export default function App(){
         <LawDrawer law={openLaw} catMap={catMap} onClose={()=>setOpenLaw(null)}
           onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive}
           prog={prog} thDate={thDate}/>
+      )}
+      {showAddLaw && <AddLawFlow cats={cats} allLaws={laws} suggest={suggest}
+        onCreate={handleCreateAddWorkflow} onClose={()=>setShowAddLaw(false)}
+        onDone={()=>setFlowPopup({ title:'เพิ่มเข้าทะเบียนแล้ว', msg:'กฎหมายถูกเพิ่มเข้าทะเบียนแล้ว (สถานะ: รอประเมิน) — ดูได้ที่ Process Tracker' })}/>}
+      {flowPopup && (
+        <div className="flow-popup-overlay" style={{position:'fixed',inset:0,display:'grid',placeItems:'center',zIndex:400,background:'rgba(20,24,33,.45)'}} onClick={()=>setFlowPopup(null)}>
+          <div className="panel" style={{maxWidth:380,padding:'22px 24px',textAlign:'center'}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:34,marginBottom:8}}>✅</div>
+            <h3 style={{margin:'0 0 6px',fontSize:17}}>{flowPopup.title}</h3>
+            <p style={{fontSize:13,color:'var(--ink-soft)',margin:'0 0 16px'}}>{flowPopup.msg}</p>
+            <button className="btn btn-primary" onClick={()=>setFlowPopup(null)}>ตกลง</button>
+          </div>
+        </div>
       )}
       {showPdf && <ExportPdfModal cats={cats} onClose={()=>setShowPdf(false)} onExport={handleExportPdf}/>}
       {showNotify && (

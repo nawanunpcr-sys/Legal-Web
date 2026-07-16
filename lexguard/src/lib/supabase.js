@@ -940,3 +940,138 @@ export async function finalizeAssessment(lawId, lawCode) {
   await logActivity({ action: 'finalize', law_id: lawId, law_code: lawCode || '',
     detail: 'ยืนยันเข้าทะเบียนสมบูรณ์ — ผ่านการประเมินครบทุกหน่วยงาน' })
 }
+
+// ============================================================================
+// P10 · Process Tracker รายกฎหมาย (lg_law_workflow) — 2 workflow, 3 process
+//   1 ผู้ตรวจสอบ (Owner) → 2 ผู้ประเมิน → 3 เสร็จสิ้น
+//   status: รอประเมิน · สอดคล้อง · ไม่สอดคล้อง · เสร็จสิ้น
+// Workflow A = เพิ่มกฎหมายใหม่เข้าทะเบียน (จากหน้าค้นหา AI)
+// Workflow B = ติดตาม/ทวนสอบกฎหมายเดิม (reuse Process 2 form)
+// ============================================================================
+
+export const WF_STAGES = [
+  { n: 1, key: 'owner',  title: 'ผู้ตรวจสอบ', role: 'Owner' },
+  { n: 2, key: 'assess', title: 'ผู้ประเมิน', role: 'ผู้ประเมิน' },
+  { n: 3, key: 'done',   title: 'เสร็จสิ้น',   role: '' },
+]
+export const WF_STATUS = {
+  'รอประเมิน':   { cls: 'p-warn' },
+  'สอดคล้อง':    { cls: 'p-ok'   },
+  'ไม่สอดคล้อง': { cls: 'p-bad'  },
+  'เสร็จสิ้น':   { cls: 'p-ok'   },
+}
+
+// ---- AI-discovered laws (source for Workflow A · Process 1) ----
+export async function fetchDiscoveredLaws() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_ai_discovered_laws')
+    .select('*').neq('status', 'deleted').order('created_at', { ascending: false })
+  return data || []
+}
+export async function saveDiscoveredLaw(row) {
+  const payload = {
+    law_name: row.law_name, source: row.source || 'manual', summary: row.summary || null,
+    announced_date: row.announced_date || null, effective_date: row.effective_date || null,
+    ministry: row.ministry || null, related_docs: row.related_docs || null,
+    status: row.status || 'imported', searched_at: row.searched_at || new Date().toISOString(),
+  }
+  if (row.id) {
+    const { error } = await supabase.from('lg_ai_discovered_laws').update(payload).eq('id', row.id)
+    if (error) throw error
+    return row.id
+  }
+  const { data, error } = await supabase.from('lg_ai_discovered_laws').insert(payload).select('id').single()
+  if (error) throw error
+  return data.id
+}
+export async function deleteDiscoveredLaw(id) {
+  // soft delete so the FK from lg_law_workflow.discovered_law_id never dangles
+  const { error } = await supabase.from('lg_ai_discovered_laws').update({ status: 'deleted' }).eq('id', id)
+  if (error) throw error
+}
+
+// ---- Tracker cases ----
+export async function fetchWorkflow() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_law_workflow').select('*').order('created_at', { ascending: false })
+  return data || []
+}
+export function subscribeWorkflow(onChange) {
+  if (!hasSupabase) return () => {}
+  const ch = supabase.channel('rt-law-workflow')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'lg_law_workflow' }, onChange)
+    .subscribe()
+  return () => { try { supabase.removeChannel(ch) } catch { /* noop */ } }
+}
+
+// ── Workflow A · Process 1 — เพิ่มกฎหมายใหม่เข้าทะเบียน (ผู้ตรวจสอบ) ────────────
+// สร้าง lg_laws (+requirements) แล้วเปิด tracker case ที่ stage 2 (รอประเมิน).
+// discovered = แถวจาก lg_ai_discovered_laws (ถ้าเลือกมา) → mark 'registered'.
+export async function createAddWorkflow({ lawFields, reqs = [], ownerName, discovered = null }) {
+  const law = await createLawFull(lawFields, reqs)
+  const now = new Date().toISOString()
+  const { data: wf, error } = await supabase.from('lg_law_workflow').insert({
+    law_id: law.id, discovered_law_id: discovered?.id || null,
+    workflow_type: 'add', stage: 2, status: 'รอประเมิน',
+    owner_name: ownerName || currentUserName(), owner_at: now,
+  }).select().single()
+  if (error) throw error
+  if (discovered?.id) {
+    await supabase.from('lg_ai_discovered_laws')
+      .update({ status: 'registered', registered_law_id: law.id }).eq('id', discovered.id)
+  }
+  await logActivity({ action: 'register', law_id: law.id, law_code: law.code, law_name: law.name,
+    detail: `เพิ่มเข้าทะเบียน (ผู้ตรวจสอบ: ${ownerName || currentUserName()})` })
+  return { law, workflow: wf }
+}
+
+// ── Workflow B · Process 1 — ติดตาม/ทวนสอบกฎหมายเดิม (ผู้ตรวจสอบ) ───────────────
+export async function createMonitorWorkflow({ law, ownerName, followIssue }) {
+  const now = new Date().toISOString()
+  const { data: wf, error } = await supabase.from('lg_law_workflow').insert({
+    law_id: law.id, workflow_type: 'monitor', stage: 2, status: 'รอประเมิน',
+    owner_name: ownerName || currentUserName(), owner_at: now, follow_issue: followIssue || null,
+  }).select().single()
+  if (error) throw error
+  await logActivity({ action: 'monitor', law_id: law.id, law_code: law.code, law_name: law.name,
+    detail: `เปิดรายการทวนสอบ — ${(followIssue || '').slice(0, 80)}` })
+  return wf
+}
+
+// ── Process 2 · ผู้ประเมิน (ใช้ร่วมทั้ง Workflow A และ B) ──────────────────────
+// result = 'สอดคล้อง' | 'ไม่สอดคล้อง'. ถ้าไม่สอดคล้อง ต้องมี plan/measure/reverifyDate.
+// อัปเดตความสอดคล้องของกฎหมายให้ตรงกับผล (พลิกทั้งฉบับ) เพื่อให้ทะเบียน sync.
+export async function submitWorkflowAssessment(wf, law, { assessorName, result, plan, measure, reverifyDate }) {
+  const compliant = result === 'สอดคล้อง'
+  const now = new Date().toISOString()
+  const { error } = await supabase.from('lg_law_workflow').update({
+    assessor_name: assessorName || currentUserName(), assessed_at: now, assess_result: result,
+    improvement_plan: compliant ? null : (plan || null),
+    measure: compliant ? null : (measure || null),
+    reverify_date: compliant ? null : (reverifyDate || null),
+    stage: 3, status: compliant ? 'เสร็จสิ้น' : 'ไม่สอดคล้อง',
+    completed_at: compliant ? now : null, updated_at: now,
+  }).eq('id', wf.id)
+  if (error) throw error
+  if (law?.id) await bulkSetCompliance([law.id], compliant)
+  await logActivity({ action: 'assess', law_id: law?.id || null, law_code: law?.code || '', law_name: law?.name || '',
+    detail: `${assessorName || currentUserName()} ประเมิน: ${result}${compliant ? '' : ' — ' + (plan || '').slice(0, 60)}` })
+}
+
+// ── Process 3 · ปิดแผนปรับปรุง (Workflow B; ใช้กับ A ได้เมื่อมีแผนค้าง) ──────────
+export async function closeWorkflowPlan(wf, law, { closedBy } = {}) {
+  const by = closedBy || currentUserName()
+  const now = new Date().toISOString()
+  const { error } = await supabase.from('lg_law_workflow').update({
+    status: 'เสร็จสิ้น', plan_closed_at: now, plan_closed_by: by, completed_at: now, updated_at: now,
+  }).eq('id', wf.id)
+  if (error) throw error
+  if (law?.id) await bulkSetCompliance([law.id], true)   // ปิดแผน → พลิกเป็นสอดคล้อง
+  await logActivity({ action: 'plan_close', law_id: law?.id || null, law_code: law?.code || '', law_name: law?.name || '',
+    detail: 'ปิดแผนปรับปรุง — พลิกเป็นสอดคล้อง' })
+}
+
+export async function deleteWorkflowCase(id) {
+  const { error } = await supabase.from('lg_law_workflow').delete().eq('id', id)
+  if (error) throw error
+}
