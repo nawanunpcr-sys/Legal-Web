@@ -7,7 +7,7 @@ import { supabase, hasSupabase, fetchAll,
          logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
          fetchWorkflow, subscribeWorkflow, createAddWorkflow, createMonitorWorkflow,
-         submitWorkflowAssessment, closeWorkflowPlan,
+         submitWorkflowAssessment, closeWorkflowPlan, fetchDiscoveredLaws,
          fetchSettings, saveSettings, DEFAULT_SETTINGS } from './lib/supabase.js'
 import { AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
          getSession as getAuthSession, signOut as authSignOut, onAuthChange } from './lib/auth.js'
@@ -29,6 +29,7 @@ import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, c
          jorporReportDeadlines, effectiveInfo, trainingStatus } from './lib/ui.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import ProcessTracker from './pages/ProcessTracker.jsx'
+import Discovery from './pages/Discovery.jsx'
 import AddLawFlow from './components/AddLawFlow.jsx'
 import RegistryCompliance from './pages/Registry.jsx'
 import Analysis from './pages/Analysis.jsx'
@@ -43,6 +44,7 @@ const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
     { id:'registry',      label:'ทะเบียน & ความสอดคล้อง', icon:'book'    },
+    { id:'discovery',     label:'ค้นหากฎหมาย',            icon:'search'  },
     { id:'tracker',       label:'Process Tracker',        icon:'update'  },
   ]},
   { label: 'ประเมิน & สื่อสาร', items: [
@@ -63,6 +65,7 @@ const TITLES = {
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
   repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
   comm:          ['สื่อสาร & ส่งรายงาน',   'ตารางการสื่อสาร (ISD-86) และการส่งรายงานราชการในหน้าเดียว'],
+  discovery:     ['ค้นหากฎหมาย',           'ค้นหาและสรุปกฎหมายใหม่ด้วย AI (ราชกิจจาฯ · Shawpat)'],
   tracker:       ['Process Tracker',        'ติดตามการเพิ่มกฎหมายใหม่ และการทวนสอบกฎหมายเดิม รายฉบับ'],
   analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
   notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
@@ -104,6 +107,7 @@ export default function App(){
   const [settings,setSettings] = useState(DEFAULT_SETTINGS)
   const [reports,setReports] = useState([])
   const [workflowRows,setWorkflowRows] = useState([])   // lg_law_workflow — Process Tracker รายกฎหมาย (P10)
+  const [discovered,setDiscovered] = useState([])        // lg_ai_discovered_laws (หน้าค้นหากฎหมาย AI)
   const [showAddLaw,setShowAddLaw] = useState(false)     // Workflow A · Process 1 wizard
   const [flowPopup,setFlowPopup]   = useState(null)      // { title, msg } — popup กึ่งกลางจอ (ยืนยันเพิ่ม/ประเมินเสร็จ)
   const [showNotify,setShowNotify] = useState(false)
@@ -133,6 +137,7 @@ export default function App(){
 
   async function loadReports(){ try{ setReports(await fetchReports()) }catch(e){ console.warn('reports reload',e) } }
   async function loadWorkflow(){ try{ setWorkflowRows(await fetchWorkflow()) }catch(e){ console.warn('workflow reload',e) } }
+  async function loadDiscovered(){ try{ setDiscovered(await fetchDiscoveredLaws()) }catch(e){ console.warn('discovered reload',e) } }
   async function loadCurMonth(){ try{ setCurMonthRows(await fetchComplianceMonths(new Date().getFullYear())) }catch(e){ console.warn('cur month reload',e) } }
   // P10: staging/assessment/tracker/plans/reports views were removed. goView()
   // remaps the one surviving legacy id (reports → comm hub) so old deep links /
@@ -145,9 +150,9 @@ export default function App(){
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, a, qs, rp, st, wf] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings(), fetchWorkflow()])
+      const [d, mData, a, qs, rp, st, wf, disc] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings(), fetchWorkflow(), fetchDiscoveredLaws()])
       setCats(withCatColors(d.cats)); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setCurMonthRows(mData); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st); setWorkflowRows(wf)
+      setMonths(mData); setCurMonthRows(mData); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st); setWorkflowRows(wf); setDiscovered(disc)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -313,7 +318,7 @@ export default function App(){
   async function handleCreateAddWorkflow(payload){
     const { law, workflow } = await createAddWorkflow(payload)
     setLaws(prev=>[...prev,law]); setWorkflowRows(prev=>[workflow,...prev])
-    fetchActivity().then(setActivity); fetchQuarterStats().then(setQuarterStats)
+    fetchActivity().then(setActivity); fetchQuarterStats().then(setQuarterStats); loadDiscovered()
     return { law, workflow }
   }
   // Workflow B · Process 1 — เปิดรายการติดตาม/ทวนสอบกฎหมายเดิม
@@ -532,6 +537,7 @@ export default function App(){
             round={round} onExportF259={()=>setShowPdf(true)} onAddLaw={()=>setShowAddLaw(true)}
             monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
+          {view==='discovery'     && <Discovery discovered={discovered} onReload={loadDiscovered}/>}
           {view==='tracker'       && <ProcessTracker rows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest}
             onStartMonitor={handleStartMonitor} onAssess={handleWorkflowAssess} onClosePlan={handleClosePlan} onOpenLaw={setOpenLaw}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
