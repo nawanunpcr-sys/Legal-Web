@@ -30,6 +30,7 @@ import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, c
 import Dashboard from './pages/Dashboard.jsx'
 import ProcessTracker from './pages/ProcessTracker.jsx'
 import Discovery from './pages/Discovery.jsx'
+import History from './pages/History.jsx'
 import AddLawFlow from './components/AddLawFlow.jsx'
 import RegistryCompliance from './pages/Registry.jsx'
 import Analysis from './pages/Analysis.jsx'
@@ -51,6 +52,7 @@ const NAV_GROUPS = [
     { id:'comm',          label:'สื่อสาร & ส่งรายงาน',    icon:'chat'    },
   ]},
   { label: 'อ้างอิง & ระบบ', items: [
+    { id:'history',       label:'ประวัติการทำรายการ',     icon:'clock'   },
     { id:'repealed',      label:'กฎหมายที่ถูกยกเลิก',   icon:'ban'     },
     { id:'notifications', label:'การแจ้งเตือน',           icon:'bell'    },
     { id:'settings',      label:'ตั้งค่า',                icon:'gear'    },
@@ -67,6 +69,7 @@ const TITLES = {
   comm:          ['สื่อสาร & ส่งรายงาน',   'ตารางการสื่อสาร (ISD-86) และการส่งรายงานราชการในหน้าเดียว'],
   discovery:     ['ค้นหากฎหมาย',           'ค้นหาและสรุปกฎหมายใหม่ด้วย AI (ราชกิจจาฯ · Shawpat)'],
   tracker:       ['Process Tracker',        'ติดตามการเพิ่มกฎหมายใหม่ และการทวนสอบกฎหมายเดิม รายฉบับ'],
+  history:       ['ประวัติการทำรายการ',     'ไทม์ไลน์การกระทำต่อกฎหมายแต่ละฉบับ แยกตามหมวด LA–LG'],
   analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
   notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
   settings:      ['ตั้งค่า',                'ข้อมูลองค์กรและการแสดงผลของระบบ'],
@@ -538,6 +541,7 @@ export default function App(){
             monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
           {view==='discovery'     && <Discovery discovered={discovered} onReload={loadDiscovered}/>}
+          {view==='history'       && <History activity={activity} laws={laws} catMap={catMap}/>}
           {view==='tracker'       && <ProcessTracker rows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest}
             onStartMonitor={handleStartMonitor} onAssess={handleWorkflowAssess} onClosePlan={handleClosePlan} onOpenLaw={setOpenLaw}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}

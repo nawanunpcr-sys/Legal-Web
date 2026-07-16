@@ -389,10 +389,10 @@ export async function dismissNotification(id) {
 }
 
 // ---- Activity log (real dated timeline) ----
-export async function logActivity({ action, law_id = null, law_code = '', law_name = '', detail = '' }) {
+export async function logActivity({ action, law_id = null, law_code = '', law_name = '', detail = '', actor = null }) {
   if (!hasSupabase) return
   try {
-    await supabase.from('lg_activity_log').insert({ action, law_id, law_code, law_name, detail })
+    await supabase.from('lg_activity_log').insert({ action, law_id, law_code, law_name, detail, actor: actor || currentUserName() })
   } catch (e) { console.warn('logActivity failed', e) }
 }
 export async function fetchActivity(limit = 5000) {
