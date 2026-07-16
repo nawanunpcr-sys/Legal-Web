@@ -190,7 +190,8 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
             <div className="panel" style={{marginTop:0,borderTopLeftRadius:0,borderTopRightRadius:0}}>
               <div className="tablewrap"><table>
                 <thead><tr><th style={{width:34}}></th><th>รหัส / ชื่อกฎหมาย</th><th>กระทรวง</th><th>วันที่ประกาศ</th><th>วันที่บังคับใช้</th><th>สถานะ</th></tr></thead>
-                <tbody>{grouped[c][t.level].map(l=>(
+                {/* เรียง: สอดคล้อง/รอประเมินก่อน — ไม่สอดคล้อง (NC) ท้ายสุด (ยังคง badge แดง) */}
+                <tbody>{[...grouped[c][t.level]].sort((a,b)=>((a.status==='bad')-(b.status==='bad'))||a.code.localeCompare(b.code)).map(l=>(
                   <tr key={l.id} className={sel.has(l.id)?'row-sel':''} style={l.active===false?{opacity:.55}:null}>
                     <td onClick={e=>{e.stopPropagation();toggleSel(l.id)}} style={{textAlign:'center'}}><input type="checkbox" checked={sel.has(l.id)} onChange={()=>toggleSel(l.id)} onClick={e=>e.stopPropagation()}/></td>
                     <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/>{(()=>{ const e=effectiveInfo(l); return e?<span className="pill" style={{fontSize:10,padding:'1px 7px',background:'var(--review-bg)',color:'var(--review)'}}>จะบังคับใช้ใน {e.days} วัน</span>:null })()}{l.source_url&&<a href={l.source_url} target="_blank" rel="noreferrer" title="เปิดตัวบท (PDF)" onClick={e=>e.stopPropagation()} style={{fontSize:13,textDecoration:'none'}}>📄</a>}</div><div className="law-title">{l.name}</div></td>

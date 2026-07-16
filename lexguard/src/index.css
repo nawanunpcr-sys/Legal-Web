@@ -2249,3 +2249,15 @@ tbody tr.row-danger td:first-child { box-shadow: inset 3px 0 0 var(--bad) }
 .clawd-fab b { color: #e8a06a; }
 
 @media print { .clawd-wrap, .clawd-fab { display: none !important; } }
+
+/* P10 · Task 6 — ย่อขนาดภาพรวมไตรมาสลง ~20-25% (scoped, ไม่กระทบชาร์ตรายเดือน) */
+.q-compact .mchart { height: 122px }
+.q-compact .qsum-grid { gap: 8px; margin-top: 12px }
+.q-compact .qsum-card { padding: 8px 9px 9px; border-radius: 11px }
+.q-compact .qsum-q { margin-bottom: 6px; font-size: 11px }
+.q-compact .qsum-pill { padding: 5px 4px }
+.q-compact .qsum-pill b.num { font-size: 15px }
+.q-compact .qsum-pill small { font-size: 9.5px }
+.q-compact .qchart .mchart-lab { font-size: 10px }
+.q-compact table { font-size: 11.5px }
+.q-compact .panel-b { padding-top: 10px }

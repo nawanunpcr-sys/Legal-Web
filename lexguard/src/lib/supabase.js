@@ -1004,6 +1004,17 @@ export function subscribeWorkflow(onChange) {
   return () => { try { supabase.removeChannel(ch) } catch { /* noop */ } }
 }
 
+// Realtime: registry stats stay live when laws/requirements change (add/repeal/assess)
+// across tabs/users — no page refresh needed (Task 6). Returns an unsubscribe fn.
+export function subscribeLaws(onChange) {
+  if (!hasSupabase) return () => {}
+  const ch = supabase.channel('rt-laws')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'lg_laws' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'lg_requirements' }, onChange)
+    .subscribe()
+  return () => { try { supabase.removeChannel(ch) } catch { /* noop */ } }
+}
+
 // ── Workflow A · Process 1 — เพิ่มกฎหมายใหม่เข้าทะเบียน (ผู้ตรวจสอบ) ────────────
 // สร้าง lg_laws (+requirements) แล้วเปิด tracker case ที่ stage 2 (รอประเมิน).
 // discovered = แถวจาก lg_ai_discovered_laws (ถ้าเลือกมา) → mark 'registered'.

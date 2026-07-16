@@ -96,7 +96,7 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
   const catRows = cats.filter(c=>byCat[c.code]).map(c=>({c, ...byCat[c.code]}))
 
   return (
-    <div className="panel" style={{marginTop:16}}>
+    <div className="panel q-compact" style={{marginTop:16}}>
       <div className="panel-h">
         <h3>กฎหมายที่เพิ่ม / ยกเลิก รายไตรมาส</h3>
         <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>

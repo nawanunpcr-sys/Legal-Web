@@ -6,7 +6,7 @@ import { supabase, hasSupabase, fetchAll,
          fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
          logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
-         fetchWorkflow, subscribeWorkflow, createAddWorkflow, createMonitorWorkflow,
+         fetchWorkflow, subscribeWorkflow, subscribeLaws, createAddWorkflow, createMonitorWorkflow,
          submitWorkflowAssessment, closeWorkflowPlan, fetchDiscoveredLaws,
          fetchSettings, saveSettings, DEFAULT_SETTINGS } from './lib/supabase.js'
 import { AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
@@ -165,6 +165,15 @@ export default function App(){
   useEffect(()=>{ if(!authed || !hasSupabase) return
     let t=null
     const unsub = subscribeWorkflow(()=>{ clearTimeout(t); t=setTimeout(loadWorkflow, 250) })
+    return ()=>{ clearTimeout(t); unsub() }
+  },[authed])
+
+  // Realtime: registry stats (จำนวนกฎหมาย/สอดคล้อง/NC) live on add/repeal/assess — no page refresh
+  useEffect(()=>{ if(!authed || !hasSupabase) return
+    let t=null
+    const unsub = subscribeLaws(()=>{ clearTimeout(t); t=setTimeout(async()=>{
+      try{ const d=await fetchAll(); setLaws(d.laws); fetchQuarterStats().then(setQuarterStats) }catch(e){ console.warn('laws realtime reload',e) }
+    }, 300) })
     return ()=>{ clearTimeout(t); unsub() }
   },[authed])
 
