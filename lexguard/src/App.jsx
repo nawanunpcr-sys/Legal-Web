@@ -3,23 +3,14 @@ import { supabase, hasSupabase, fetchAll,
          setRequirementStatus, recomputeLawStatus, bulkSetCompliance, setLawActive,
          repealLaw, restoreLaw, createLaw, createLawFull,
          markCommSent, updateCommSchedule,
-         dismissNotification,
          fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
-         fetchStaging, fetchUpdates, addStagedLaw, dismissStaged, setUpdateStatus,
-         verifyStagingBatch, saveStagingEdits,
          logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
-         fetchTracker, fetchTrackerSubstatuses, subscribeTracker, createTrackerCase,
-         fetchDepartments, fetchAssessmentFlow, fetchImprovementPlans,
-         screenBatch, assignBatch, assessRequirement, setFlowAssessStatus,
-         createImprovementPlan, updateImprovementPlan, closeImprovementPlan, finalizeAssessment,
-         planEffectiveStatus,
          fetchSettings, saveSettings, DEFAULT_SETTINGS } from './lib/supabase.js'
 import { AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
          getSession as getAuthSession, signOut as authSignOut, onAuthChange } from './lib/auth.js'
 import LawDrawer from './components/LawDrawer.jsx'
 import Reports from './components/Reports.jsx'
-import UnifiedTracker from './components/UnifiedTracker.jsx'
 import { I } from './components/icons.jsx'
 import Login from './components/Login.jsx'
 import Landing from './components/Landing.jsx'
@@ -34,7 +25,6 @@ import { buildReport } from './components/PdfExport.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
 import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, currentRound,
          jorporReportDeadlines, effectiveInfo, trainingStatus } from './lib/ui.jsx'
-import RoundSelect from './components/RoundSelect.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import RegistryCompliance from './pages/Registry.jsx'
 import Analysis from './pages/Analysis.jsx'
@@ -44,19 +34,13 @@ import ExportPdfModal from './components/ExportPdfModal.jsx'
 import Improvements from './pages/Improvements.jsx'
 import NotificationsPage from './pages/Notifications.jsx'
 import SettingsPage from './pages/Settings.jsx'
-import Updates from './pages/Updates.jsx'
-import Staging from './pages/Staging.jsx'
-import Assessment from './pages/Assessment.jsx'
-import Plans from './pages/Plans.jsx'
 
 const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
     { id:'registry',      label:'ทะเบียน & ความสอดคล้อง', icon:'book'    },
-    { id:'tracker',       label:'Process Tracker',        icon:'update'  },
   ]},
   { label: 'ประเมิน & สื่อสาร', items: [
-    { id:'plans',         label:'แผนปรับปรุง',            icon:'spark'   },
     { id:'comm',          label:'สื่อสาร & ส่งรายงาน',    icon:'chat'    },
   ]},
   { label: 'อ้างอิง & ระบบ', items: [
@@ -74,10 +58,7 @@ const TITLES = {
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
   repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
   comm:          ['สื่อสาร & ส่งรายงาน',   'ตารางการสื่อสาร (ISD-86) และการส่งรายงานราชการในหน้าเดียว'],
-  tracker:       ['Process Tracker',        'ค้นหา → คัดกรอง → ประเมิน → อนุมัติ → ติดตาม ครบในหน้าเดียว'],
   analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
-  plans:         ['แผนปรับปรุง',            'ติดตามแผนปรับปรุงข้อ NC จนปิด (พลิกเป็น C)'],
-  updates:       ['อัปเดตกฎหมาย · ShawPat','เฝ้าระวังกฎหมายใหม่จาก ShawPat'],
   notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
   settings:      ['ตั้งค่า',                'ข้อมูลองค์กรและการแสดงผลของระบบ'],
 }
@@ -89,8 +70,8 @@ export default function App(){
   const [view,setView]     = useState(()=>{ try{ const v=localStorage.getItem('cr_view')||'dashboard';
     // backward-compat: the old split 'register'/'compliance' views are now one 'registry' view
     if(v==='register'||v==='compliance'){ try{ localStorage.setItem('cr_registry_mode', JSON.stringify(v==='compliance'?'compliance':'register')) }catch{} return 'registry' }
-    if(v==='process') return 'tracker'   // P9: merged 'ติดตามกระบวนการ' into Process Tracker
-    if(v==='staging'||v==='assessment') return 'tracker'  // P10: merged into Process Tracker hub
+    // P10: the old Process Tracker + staging/assessment/plans/updates views were removed
+    if(v==='process'||v==='tracker'||v==='staging'||v==='assessment'||v==='plans'||v==='updates') return 'registry'
     if(v==='reports') return 'comm'       // P10: merged into สื่อสาร & ส่งรายงาน hub
     return v }catch{ return 'dashboard' } })
   const [dark,setDark]     = useState(()=>{ try{ const v=localStorage.getItem('cr_dark'); return v==null?false:v==='1' }catch{ return false } })
@@ -111,21 +92,12 @@ export default function App(){
   const [round,setRound]     = usePersist('cr_round', currentRound())   // รอบประเมิน F-259 { q, by(พ.ศ.) }
   const [training,setTraining] = usePersist('lex_training', { hours:0, target:12, year:new Date().getFullYear()+543 })  // อบรม จป. 12 ชม./ปี
   const [months,setMonths]   = useState([])
-  const [staging,setStaging] = useState([])
-  const [updates,setUpdates] = useState([])
   const [activity,setActivity] = useState([])
   const [quarterStats,setQuarterStats] = useState([])
   const [settings,setSettings] = useState(DEFAULT_SETTINGS)
-  const [trackerRows,setTrackerRows] = useState([])
-  const [trackerSubs,setTrackerSubs] = useState({})
   const [reports,setReports] = useState([])
-  const [departments,setDepartments] = useState([])   // หน่วยงาน (ผู้ประเมิน) — migration 018
-  const [flow,setFlow]       = useState([])            // lg_assessment_flow (คัดกรอง/มอบหมาย/ประเมิน)
-  const [plans,setPlans]     = useState([])            // lg_improvement_plans
   const [showNotify,setShowNotify] = useState(false)
-  const [trackerTab,setTrackerTab] = usePersist('cr_tracker_tab','track')   // track | screen | assess (Process Tracker hub)
   const [commTab,setCommTab]       = usePersist('cr_comm_tab','comm')       // comm | reports (สื่อสาร & ส่งรายงาน hub)
-  const [presetDept,setPresetDept] = useState(null)   // ตั้งกรองหน่วยงานเมื่อคลิกจากการ์ด dashboard
   const [curMonthRows,setCurMonthRows] = useState([])   // compliance_months rows for the *real* current year — drives the live Dashboard monthly stage bar regardless of whatever year is browsed in the Register monthly panel
 
   // auth gate — reads through auth.js (demo: localStorage lg_session · supabase: real session)
@@ -149,20 +121,12 @@ export default function App(){
   // auto-collapse sidebar to icon rail on tablet/narrow screens
   useEffect(()=>{ const h=()=>{ if(window.innerWidth<1024) setNavOpen(false) }; h(); window.addEventListener('resize',h); return ()=>window.removeEventListener('resize',h) },[])
 
-  async function reloadSkills(){
-    try{ const [s,u,a] = await Promise.all([fetchStaging(), fetchUpdates(), fetchActivity()]); setStaging(s); setUpdates(u); setActivity(a) }
-    catch(e){ console.warn('skills reload error',e) }
-  }
-  async function loadTracker(){ try{ const [r,s]=await Promise.all([fetchTracker(),fetchTrackerSubstatuses()]); setTrackerRows(r); setTrackerSubs(s) }catch(e){ console.warn('tracker reload',e) } }
   async function loadReports(){ try{ setReports(await fetchReports()) }catch(e){ console.warn('reports reload',e) } }
-  async function loadWorkflow(){ try{ const [f,p]=await Promise.all([fetchAssessmentFlow(),fetchImprovementPlans()]); setFlow(f); setPlans(p) }catch(e){ console.warn('workflow reload',e) } }
   async function loadCurMonth(){ try{ setCurMonthRows(await fetchComplianceMonths(new Date().getFullYear())) }catch(e){ console.warn('cur month reload',e) } }
-  // P10: staging/assessment merged into Process Tracker, reports merged into สื่อสาร&รายงาน.
-  // goView() remaps legacy view ids to the new hub view + sub-tab so every old
-  // navigation call (deep links, notifications, dashboard cards) still lands right.
+  // P10: staging/assessment/tracker/plans/reports views were removed. goView()
+  // remaps the one surviving legacy id (reports → comm hub) so old deep links /
+  // notifications still land right.
   function goView(v){
-    if(v==='staging'){ setTrackerTab('screen'); setView('tracker'); return }
-    if(v==='assessment'){ setTrackerTab('assess'); setView('tracker'); return }
     if(v==='reports'){ setCommTab('reports'); setView('comm'); return }
     setView(v)
   }
@@ -170,22 +134,13 @@ export default function App(){
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, s, u, a, qs, rp, st, dep, fl, pl] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchStaging(), fetchUpdates(), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings(), fetchDepartments(), fetchAssessmentFlow(), fetchImprovementPlans()])
+      const [d, mData, a, qs, rp, st] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings()])
       setCats(withCatColors(d.cats)); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setCurMonthRows(mData); setStaging(s); setUpdates(u); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st)
-      setDepartments(dep); setFlow(fl); setPlans(pl)
-      loadTracker()
+      setMonths(mData); setCurMonthRows(mData); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
   })() },[authed])
-
-  // Phase 2 · Realtime: keep tracker rows live across tabs/users
-  useEffect(()=>{ if(!authed || !hasSupabase) return
-    let t=null
-    const unsub = subscribeTracker(()=>{ clearTimeout(t); t=setTimeout(loadTracker, 250) })
-    return ()=>{ clearTimeout(t); unsub() }
-  },[authed])
 
   useEffect(()=>{ (async()=>{
     if(!hasSupabase) return
@@ -196,30 +151,7 @@ export default function App(){
   const catMap      = useMemo(()=>Object.fromEntries(cats.map(c=>[c.code,c])),[cats])
   const activeLaws  = useMemo(()=>laws.filter(l=>l.status!=='repealed'),[laws])
   const repealedLaws= useMemo(()=>laws.filter(l=>l.status==='repealed'),[laws])
-  // จัดกลุ่มด้วย (cat, law_code) เพราะรหัสซ้ำข้ามหมวดได้ — ถ้าจัดกลุ่มด้วย law_code เดี่ยวๆ กฎหมายคนละหมวดที่เลขชนกันจะถูกรวมเป็นฉบับเดียว
-  const stagingBatches = useMemo(()=>{ const g={}; staging.forEach(r=>{ const k=(r.cat||'')+'|'+r.law_code; (g[k]=g[k]||[]).push(r)}); return Object.entries(g) },[staging])
-  const newUpdates  = useMemo(()=>updates.filter(u=>u.status==='new'),[updates])
-  // P8: batch ที่ยังไม่ผ่านการตรวจทาน AI (verify_status ≠ passed) — คอลัมน์แรกของบอร์ด
-  const reviewPending = useMemo(()=>stagingBatches.filter(([k,rows])=>(rows[0]?.verify_status||'pending')!=='passed'),[stagingBatches])
-  // ── สายงานประเมิน: แผนที่หน่วยงาน + งานประเมินที่มอบหมายแล้ว + สรุปงานค้าง ──
-  const deptMap     = useMemo(()=>Object.fromEntries(departments.map(d=>[d.id,d.name])),[departments])
   const lawMap      = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
-  const assignedFlow= useMemo(()=>flow.filter(f=>f.assigned_dept_id && !f.finalized_at),[flow])
-  const openPlans   = useMemo(()=>plans.filter(p=>planEffectiveStatus(p)!=='done'),[plans])
-  const overduePlans= useMemo(()=>plans.filter(p=>planEffectiveStatus(p)==='overdue'),[plans])
-  const pendingAssess = useMemo(()=>assignedFlow.filter(f=>f.assess_status!=='done'),[assignedFlow])
-  // งานค้างตามหน่วยงาน (item 5): { deptId, name, waiting, ncOpen, planOverdue }
-  const deptWorkload = useMemo(()=>{
-    const m={}
-    const ensure=id=>{ if(!m[id]) m[id]={ deptId:id, name:deptMap[id]||('หน่วยงาน #'+id), waiting:0, ncOpen:0, planOverdue:0 }; return m[id] }
-    pendingAssess.forEach(f=>{ ensure(f.assigned_dept_id).waiting++ })
-    // NC ค้าง = ข้อกำหนด unmet ในกฎหมายที่หน่วยงานถูกมอบหมาย (นับต่อหน่วยงานที่รับผิดชอบข้อนั้น หรือหน่วยงานที่ถูก assign)
-    assignedFlow.forEach(f=>{ const law=lawMap[f.law_id]; if(!law) return
-      const nc=law.reqs.filter(r=>r.status==='unmet').length
-      if(nc) ensure(f.assigned_dept_id).ncOpen += nc })
-    overduePlans.forEach(p=>{ if(p.owner_dept_id) ensure(p.owner_dept_id).planOverdue++ })
-    return Object.values(m).sort((a,b)=>(b.waiting+b.ncOpen+b.planOverdue)-(a.waiting+a.ncOpen+a.planOverdue))
-  },[pendingAssess,assignedFlow,overduePlans,lawMap,deptMap])
   const suggest     = useMemo(()=>suggestionLists(laws),[laws])
   const searchResults = useMemo(()=>{
     const q=search.trim().toLowerCase(); if(q.length<2) return []
@@ -229,104 +161,11 @@ export default function App(){
     return out.slice(0,12)
   },[search,activeLaws,reports,catMap])
 
-  async function handleAddStaged(code, rows){
-    try{
-      const law = await addStagedLaw(rows)
-      const d=await fetchAll(); setLaws(d.laws); await reloadSkills(); fetchQuarterStats().then(setQuarterStats)
-      // อนุมัติเข้าทะเบียนแล้ว → เริ่มติดตามที่ขั้น 3 (ประเมินความสอดคล้อง) ข้ามถ้ามี case อยู่แล้ว
-      if(law?.id && !trackerRows.some(r=>r.law_id===law.id)){
-        try{ await createTrackerCase({ law_id: law.id, startStage: 3, startSubstatus: 'pending_assign' }); await loadTracker() }
-        catch(e2){ console.warn('createTrackerCase after staging failed', e2) }
-      }
-    }
-    catch(e){ toast('เพิ่มเข้าทะเบียนไม่สำเร็จ: '+e.message) }
-  }
-  async function handleDropStaged(rows){
-    try{ await dismissStaged(rows.map(r=>r.id)); await reloadSkills() }
-    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
-  }
-  async function handleMarkUpdate(id, status){
-    try{ await setUpdateStatus(id,status); await reloadSkills() }
-    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
-  }
-
-  // ── P8 · ตรวจทานผลสรุป AI (ผู้ตรวจสอบ) ก่อนเข้าสายงานคัดกรอง ─────────────────
-  async function handleVerify(ids, opts){
-    try{ await verifyStagingBatch(ids, opts); await reloadSkills(); fetchActivity().then(setActivity)
-      toast(opts.passed?'ผ่านการตรวจทาน → ไปคอลัมน์รอคัดกรอง':'ตีกลับให้ผู้ค้นหาแล้ว','success') }
-    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
-  }
-  async function handleSaveStagingEdits(ids, lawFields, reqRows){
-    try{ await saveStagingEdits(ids, lawFields, reqRows); await reloadSkills(); fetchActivity().then(setActivity)
-      toast('บันทึกการแก้ไขผลสรุป AI แล้ว','success') }
-    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message); throw e }
-  }
-
-  // ── สายงานประเมิน (migration 018) ──────────────────────────────────────────
-  // ขั้น 1 · คัดกรอง batch (เกี่ยวข้อง / ไม่เกี่ยวข้อง)
-  async function handleScreen(batch, relevant, note){
-    try{ await screenBatch(batch,{relevant,note}); await loadWorkflow(); fetchActivity().then(setActivity)
-      toast(relevant?'คัดกรองแล้ว: เกี่ยวข้อง → รอมอบหมาย':'บันทึกแล้ว: ไม่เกี่ยวข้อง (เก็บไว้ดูย้อนหลัง)','success') }
-    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
-  }
-  // ขั้น 2 · มอบหมายให้หน่วยงาน (แตกงานย่อยต่อหน่วยงาน) → ขึ้นทะเบียนจริง
-  async function handleAssign(batch, rows, depts, dueDate, by){
-    try{
-      const law = await assignBatch(batch, rows, depts, {dueDate, by})
-      const d=await fetchAll(); setLaws(d.laws); await reloadSkills(); await loadWorkflow(); fetchQuarterStats().then(setQuarterStats)
-      if(law?.id && !trackerRows.some(r=>r.law_id===law.id)){
-        try{ await createTrackerCase({ law_id: law.id, startStage: 3, startSubstatus: 'pending_assign' }); await loadTracker() }catch{}
-      }
-      toast(`ส่งประเมินให้ ${depts.length} หน่วยงานแล้ว`,'success')
-    }catch(e){ toast('ส่งประเมินไม่สำเร็จ: '+e.message) }
-  }
-  // ขั้น 3 · ประเมินรายข้อกำหนด C / NC
-  async function handleAssess(req, law, status, assessorName){
-    try{
-      await assessRequirement(req, law, status, assessorName)
-      const d=await fetchAll(); setLaws(d.laws); fetchActivity().then(setActivity)
-    }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
-  }
-  async function handleFlowStatus(flowId, status, assessorName){
-    try{ await setFlowAssessStatus(flowId, status, assessorName); await loadWorkflow() }
-    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
-  }
-  // ขั้น 4 · แผนปรับปรุง
-  async function handleCreatePlan(payload){
-    try{ await createImprovementPlan(payload); await loadWorkflow(); fetchActivity().then(setActivity) }
-    catch(e){ toast('สร้างแผนไม่สำเร็จ: '+e.message); throw e }
-  }
-  async function handleUpdatePlan(id, patch){
-    try{ await updateImprovementPlan(id, patch); await loadWorkflow() }
-    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
-  }
-  async function handleClosePlan(plan, evidence){
-    try{
-      await closeImprovementPlan(plan,{evidence})
-      const d=await fetchAll(); setLaws(d.laws); await loadWorkflow(); fetchActivity().then(setActivity)
-      toast('ปิดแผนแล้ว — ข้อกำหนดพลิกเป็นสอดคล้อง (C)','success')
-    }catch(e){ toast('ปิดแผนไม่สำเร็จ: '+e.message) }
-  }
-  // ขั้นสุดท้าย · ยืนยันเข้าทะเบียนสมบูรณ์
-  async function handleFinalize(lawId, lawCode){
-    try{ await finalizeAssessment(lawId, lawCode); await loadWorkflow(); fetchActivity().then(setActivity)
-      toast('ยืนยันเข้าทะเบียนสมบูรณ์แล้ว','success') }
-    catch(e){ toast('ไม่สำเร็จ: '+e.message) }
-  }
-
   const inForceLaws = useMemo(()=>activeLaws.filter(l=>l.active!==false),[activeLaws])
   const stats = useMemo(()=>{
     let req=0,met=0; inForceLaws.forEach(l=>l.reqs.forEach(r=>{req++;if(r.status==='met')met++}))
     return { total:inForceLaws.length, req, met, nc:req-met, pct:req?Math.round(met/req*100):100 }
   },[inForceLaws])
-
-  // ปี พ.ศ. ที่ให้เลือกในตัวเลือกรอบประเมิน (จาก quarterStats + วันที่สร้างกฎหมาย + ปีปัจจุบัน)
-  const roundYears = useMemo(()=>{
-    const ys=new Set(quarterStats.map(q=>q.year+543))
-    laws.forEach(l=>{ if(l.created_at){ const y=new Date(l.created_at).getFullYear(); if(!isNaN(y)) ys.add(y+543) } })
-    ys.add(new Date().getFullYear()+543)
-    return [...ys].sort((a,b)=>b-a)
-  },[quarterStats,laws])
 
   const reportAlerts = useMemo(()=>
     reports.filter(r=>{ if(!r.next_due_date) return false; const d=daysTo(r.next_due_date); return d<0||d<=(r.notify_days_before||30) }).length
@@ -341,32 +180,14 @@ export default function App(){
     reports.forEach(r=>{ if(r.next_due_date){ const d=daysTo(r.next_due_date); const nb=r.notify_days_before||30
       if(d<0) out.push({type:'bad',goView:'reports',text:'รายงานเกินกำหนดส่ง: '+r.title.slice(0,50),sub:'เกิน '+Math.abs(d)+' วัน — '+thDate(r.next_due_date)})
       else if(d<=nb) out.push({type:'report_due',goView:'reports',days:d,text:'ใกล้กำหนดส่งรายงาน: '+r.title.slice(0,50),sub:'อีก '+d+' วัน — '+thDate(r.next_due_date)}) }})
-    newUpdates.slice(0,15).forEach(u=>out.push({type:'law_update',goView:'updates',text:'กฎหมายใหม่: '+u.title.slice(0,55),sub:'จาก ShawPat'+(u.published_date?' · '+u.published_date:'')}))
     // จป.ว: เตือนล่วงหน้า 14 วันก่อนเส้นตายรายงาน 2 ครั้ง/ปี (กฎกระทรวง 2565 ข้อ 47)
     jorporReportDeadlines().forEach(d=>{ if(d.days>=0 && d.days<=14) out.push({type:'report_jorpor',goView:'reports',days:d.days,text:d.label,sub:'ครบกำหนดใน '+d.days+' วัน — '+thDate(d.due.toISOString())}) })
     // กฎหมายประกาศแล้วแต่ยังไม่บังคับใช้: เตือนล่วงหน้า 30 วัน
     activeLaws.forEach(l=>{ const e=effectiveInfo(l); if(e && e.days<=30) out.push({type:'effective_soon',law:l,days:e.days,text:l.code+' จะบังคับใช้ใน '+e.days+' วัน',sub:l.name.slice(0,60)}) })
     // อบรม จป. 12 ชม./ปี: เตือนเมื่อเหลือ <90 วันแล้วยังไม่ครบ
     { const ts=trainingStatus(training); if(ts.alert) out.push({type:'training',goView:'settings',text:'อบรมพัฒนาความรู้ จป. ยังไม่ครบ '+ts.target+' ชม.',sub:'ทำได้ '+ts.hours+' ชม. · เหลืออีก '+ts.remain+' ชม. · เหลือเวลา '+ts.daysLeft+' วัน'}) }
-    // สายงานประเมิน (item 6) — assign_new / assess_overdue / plan_due
-    assignedFlow.forEach(f=>{
-      const dept=deptMap[f.assigned_dept_id]||'หน่วยงาน'
-      if(f.assess_status!=='done'){
-        if(f.assess_due_date){ const d=daysTo(f.assess_due_date)
-          if(d<0) out.push({type:'bad',goView:'assessment',text:'งานประเมินเกินกำหนด: '+(f.law_code||''),sub:dept+' · เกิน '+Math.abs(d)+' วัน — '+thDate(f.assess_due_date)})
-          else if(d<=7) out.push({type:'assess_due',goView:'assessment',days:d,text:'ใกล้ครบกำหนดประเมิน: '+(f.law_code||''),sub:dept+' · อีก '+d+' วัน — '+thDate(f.assess_due_date)}) }
-        else out.push({type:'assign_new',goView:'assessment',text:'งานมอบหมายใหม่: '+(f.law_code||''),sub:'ส่งให้ '+dept+' ประเมิน'})
-      }
-    })
-    openPlans.forEach(p=>{ if(!p.due_date) return; const d=daysTo(p.due_date); const dept=p.owner_dept_id?(deptMap[p.owner_dept_id]||''):''
-      if(d<0) out.push({type:'bad',goView:'plans',text:'แผนปรับปรุงเลยกำหนด',sub:(dept?dept+' · ':'')+(p.plan_text||'').slice(0,50)+' — เกิน '+Math.abs(d)+' วัน'})
-      else if(d<=7) out.push({type:'plan_due',goView:'plans',days:d,text:'แผนปรับปรุงใกล้ครบกำหนด',sub:(dept?dept+' · ':'')+(p.plan_text||'').slice(0,50)+' — อีก '+d+' วัน'}) })
-    // P8: รอตรวจทาน AI (agent/AI สร้างรายการใหม่ → ผู้ตรวจสอบต้องตรวจก่อน)
-    reviewPending.forEach(([key,rows])=>{ const f=rows[0]
-      out.push({type:'verify_pending',goView:'staging',text:'รอตรวจทาน AI: '+((f.law_name||f.law_code||'')).slice(0,50),
-        sub:(f.verify_status==='failed'?'ถูกตีกลับ — ให้แก้แล้วส่งใหม่':'ผลสรุป AI รอผู้ตรวจสอบตรวจทาน')}) })
     return out.sort((a,b)=>(a.type==='bad'?-1:0)-(b.type==='bad'?-1:0))
-  },[activeLaws,comms,notifs,newUpdates,reports,training,assignedFlow,openPlans,deptMap,reviewPending])
+  },[activeLaws,comms,notifs,reports,training])
 
   useEffect(()=>{
     if(!authed || loading || bellNotifications.length===0) return
@@ -503,15 +324,6 @@ export default function App(){
     if(hasSupabase){ try{ await toggleMonthCheck(year,month,nowChecked) }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) } }
   }
 
-  // toggle เดือนของ "ปีปัจจุบัน" จากการ์ดบน Dashboard (อัปเดต curMonthRows)
-  async function handleToggleMonthCur(month){
-    const y=new Date().getFullYear()
-    const rec=curMonthRows.find(m=>m.year===y && m.month===month)
-    const next = rec ? !rec.checked : true
-    try{ await toggleMonthCheck(y, month, next); await loadCurMonth() }
-    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
-  }
-
   // The two "current month" review actions — always act on the real current
   // year/month (not whatever year is being browsed in the Register panel).
   async function syncCurrentMonthEverywhere(year){
@@ -531,10 +343,7 @@ export default function App(){
     try{
       await setMonthReviewStatus(year, month, 'has_new_laws', currentUserName())
       await syncCurrentMonthEverywhere(year)
-      // P9: new-law discovery now flows through the AI/updates → staging pipeline,
-      // which auto-creates a Process Tracker case (stage 1) once a law is identified.
-      setView('updates')
-      toast('บันทึกแล้ว: เดือนนี้มีกฎหมายใหม่ — ไปเฝ้าระวัง/ค้นหากฎหมายใหม่','success')
+      toast('บันทึกแล้ว: เดือนนี้มีกฎหมายใหม่','success')
     }catch(e){ toast('ดำเนินการไม่สำเร็จ: '+e.message) }
   }
 
@@ -581,10 +390,7 @@ export default function App(){
                 n.id==='registry'      ? activeLaws.length        :
                 n.id==='improvements'  ? (stats.nc||null)         :
                 n.id==='repealed'      ? (repealedLaws.length||null) :
-                n.id==='tracker'       ? ((stagingBatches.length+pendingAssess.length)||null) :
                 n.id==='comm'          ? (reportAlerts||null)     :
-                n.id==='plans'         ? (openPlans.length||null)     :
-                n.id==='updates'       ? (newUpdates.length||null)   :
                 n.id==='notifications' ? (bellNotifications.length||null) : null
               return (
                 <button key={n.id} className={'nav-item'+(view===n.id?' active':'')}
@@ -618,7 +424,7 @@ export default function App(){
                 {searchResults.map((r,i)=>(
                   <div key={i} className={'sr-item'+(r.color?' sr-item--cat':'')} style={r.color?{'--sr-c':r.color}:undefined} onMouseDown={()=>{
                     if(r.kind==='law') setOpenLaw(r.law)
-                    else if(r.kind==='report') setView('reports')
+                    else if(r.kind==='report') goView('reports')
                     setSearch('')
                   }}>
                     <span className="sr-tag" title={r.catName||''}>{r.kind==='law'?(r.law.cat||'กฎหมาย'):'รายงาน'}</span>
@@ -666,9 +472,7 @@ export default function App(){
             </div>
           </div>
           <div className="view-swap" key={view}>
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} updates={updates} staging={stagingBatches} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>goView('reports')} onGoView={goView} trackerRows={trackerRows} trackerSubs={trackerSubs} onGoTracker={()=>setView('tracker')}
-            deptWorkload={deptWorkload} onGoDept={(v,dept)=>{ setPresetDept(dept||null); goView(v) }}
-            reviewPending={reviewPending.length}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>goView('reports')} onGoView={goView}
             monthsData={months}/>}
           {view==='registry'      && <RegistryCompliance
             regLaws={activeLaws} cats={cats} catMap={catMap} stats={stats}
@@ -686,23 +490,7 @@ export default function App(){
             {commTab==='comm'    && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
             {commTab==='reports' && <Reports reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
           </div>)}
-          {view==='tracker'       && (<div className="view">
-            <div className="seg" style={{marginBottom:14}}>
-              <button className={'seg-btn'+(trackerTab==='track'?' active':'')} onClick={()=>setTrackerTab('track')}>ติดตาม (5 ขั้น)</button>
-              <button className={'seg-btn'+(trackerTab==='screen'?' active':'')} onClick={()=>setTrackerTab('screen')}>คัดกรอง & อนุมัติ</button>
-              <button className={'seg-btn'+(trackerTab==='assess'?' active':'')} onClick={()=>setTrackerTab('assess')}>ประเมินความสอดคล้อง</button>
-            </div>
-            {trackerTab==='track'  && <UnifiedTracker rows={trackerRows} subs={trackerSubs} laws={activeLaws} suggest={suggest} catMap={catMap} onReload={loadTracker}/>}
-            {trackerTab==='screen' && <Staging batches={stagingBatches} flow={flow} laws={laws} plans={plans} departments={departments} cats={cats} catMap={catMap} deptMap={deptMap}
-              onScreen={handleScreen} onAssign={handleAssign} onFinalize={handleFinalize} onDrop={handleDropStaged} onGoAssess={()=>setTrackerTab('assess')}
-              onVerify={handleVerify} onSaveEdits={handleSaveStagingEdits}/>}
-            {trackerTab==='assess' && <Assessment flow={assignedFlow} laws={laws} departments={departments} catMap={catMap} deptMap={deptMap} plans={plans}
-              presetDept={presetDept} onAssess={handleAssess} onFlowStatus={handleFlowStatus} onCreatePlan={handleCreatePlan} onOpen={setOpenLaw}/>}
-          </div>)}
-          {view==='analysis'      && <Analysis      laws={inForceLaws} cats={cats} catMap={catMap} allLaws={laws} onAnalyzed={reloadSkills} goView={goView} onCreateFull={handleCreateFull} suggest={suggest}/>}
-          {view==='plans'         && <Plans         plans={plans} departments={departments} deptMap={deptMap} laws={laws} lawMap={lawMap}
-            presetDept={presetDept} onUpdatePlan={handleUpdatePlan} onClosePlan={handleClosePlan} onCreatePlan={handleCreatePlan} onOpen={setOpenLaw}/>}
-          {view==='updates'       && <Updates       updates={updates} onMark={handleMarkUpdate} onScanned={reloadSkills}/>}
+          {view==='analysis'      && <Analysis      laws={inForceLaws} cats={cats} catMap={catMap} allLaws={laws} goView={goView} onCreateFull={handleCreateFull} suggest={suggest}/>}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={goView}/>}
           {view==='settings'      && (can(role,'delete')
             ? <SettingsPage settings={settings} onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }} training={training} setTraining={setTraining}/>
@@ -729,4 +517,3 @@ export default function App(){
     </AuthContext.Provider>
   )
 }
-
