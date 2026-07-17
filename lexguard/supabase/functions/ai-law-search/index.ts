@@ -91,8 +91,8 @@ ${keywords ? `\nคำค้นเพิ่มเติมที่ผู้ใ�
       prompt,
       webSearch: true,
       allowedDomains: ALLOWED_DOMAINS,
-      maxUses: 10,
-      maxTokens: 8000,
+      maxUses: 4,      // จำกัดจำนวน web search ให้จบภายในเวลา edge function (~150s)
+      maxTokens: 4000,
     });
 
     let laws: DiscoveredLaw[] = [];

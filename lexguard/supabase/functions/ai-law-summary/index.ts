@@ -48,6 +48,7 @@ const SYSTEM = `คุณคือ จป.วิชาชีพ ที่ทำ�
 - ข้อไหนไม่พบข้อมูลยืนยัน ให้ใส่ null และตั้ง confidence เป็น "low" พร้อมอธิบายใน notes
 - แปลง พ.ศ. เป็น ค.ศ. (พ.ศ. - 543) รูปแบบ YYYY-MM-DD
 - ผลสรุปนี้จะถูกมนุษย์ตรวจทานก่อนใช้เสมอ — ความถูกต้องสำคัญกว่าความครบถ้วน ไม่รู้ให้บอกว่าไม่รู้
+- ถ้ากฎหมายมีข้อกำหนดจำนวนมาก (เช่น พ.ร.บ.) ให้เลือกเฉพาะข้อสำคัญที่สุดไม่เกิน 18 ข้อ เพื่อให้ผลสรุปกระชับและครบถ้วนใน JSON เดียว
 
 ตอบกลับเป็น JSON object ล้วนเท่านั้น ห้ามมี markdown fence หรือคำอธิบายนอก JSON`;
 
@@ -98,8 +99,8 @@ ${extra_context ? `ข้อมูลเพิ่มเติม: ${extra_contex
       prompt,
       webSearch: true,
       allowedDomains: ALLOWED_DOMAINS,
-      maxUses: 8,
-      maxTokens: 12000,
+      maxUses: 5,      // ค้นน้อยลง = เร็วขึ้น (จบใน edge function limit ~150s)
+      maxTokens: 12000, // เผื่อ output ให้ JSON ครบไม่ถูกตัดกลางคัน
     });
 
     let summary: LawSummary;
