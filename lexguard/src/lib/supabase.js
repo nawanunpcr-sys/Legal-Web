@@ -971,6 +971,7 @@ export async function fetchDiscoveredLaws() {
 export async function saveDiscoveredLaw(row) {
   const payload = {
     law_name: row.law_name, source: row.source || 'manual', summary: row.summary || null,
+    source_url: row.source_url || null,
     announced_date: row.announced_date || null, effective_date: row.effective_date || null,
     ministry: row.ministry || null, related_docs: row.related_docs || null,
     status: row.status || 'imported', searched_at: row.searched_at || new Date().toISOString(),

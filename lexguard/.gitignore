@@ -11,3 +11,4 @@ dist
 source-data/
 local-data/
 *.xlsx
+supabase/functions/.env.local

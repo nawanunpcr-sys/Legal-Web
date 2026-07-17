@@ -2,21 +2,18 @@
 // ค้นหากฎหมายใหม่จากราชกิจจาฯ + Shawpat → เลือก → นำเข้า → สรุป (AI) → แก้ไข → Save.
 // รายการที่นำเข้าเก็บใน lg_ai_discovered_laws และเป็น source ให้ Workflow A (เพิ่มกฎหมาย).
 import { useState } from 'react'
-import { saveDiscoveredLaw, deleteDiscoveredLaw, logSearch } from '../lib/supabase.js'
+import { saveDiscoveredLaw, deleteDiscoveredLaw } from '../lib/supabase.js'
+import { searchNewLaws, summarizeLaw } from '../lib/aiLaw.js'
 import { I } from '../components/icons.jsx'
 import { thDate } from '../lib/ui.jsx'
-import { useAuth, NO_PERM } from '../lib/auth.js'
+import { useAuth, NO_PERM, currentUserName } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
 
-async function callDiscover(mode, payload) {
-  const r = await fetch('/api/law-discover', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ mode, payload }),
-  })
-  const data = await r.json().catch(() => ({ error: 'อ่านผลลัพธ์ไม่ได้' }))
-  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status))
-  return data
+// แปลง key_points ของผลสรุป AI → บรรทัดข้อความ (ใช้กับฟอร์มแก้ไข + Workflow A)
+function keyPointsToLines(s) {
+  const kp = Array.isArray(s?.key_points) ? s.key_points : []
+  return kp.map(k => `${k.clause ? k.clause + ': ' : ''}${k.action_required || k.content || ''}`.trim()).filter(Boolean)
 }
 
 /* Editable summary form (ผลสรุป AI แก้ไขได้) */
@@ -82,12 +79,16 @@ export default function Discovery({ discovered = [], onReload, searchLog = [], o
   async function search() {
     setSearching(true); setResults(null)
     try {
-      const { items } = await callDiscover('search')
-      const list = items || []
+      // เรียก Edge Function `ai-law-search` (Task 4). ฟังก์ชันบันทึก lg_search_log ให้เอง
+      // (Task 12 · service_role) รวมกรณีไม่พบกฎหมายใหม่ — ฝั่ง client ไม่ต้อง log ซ้ำ
+      const res = await searchNewLaws({ searchedBy: currentUserName() })
+      const list = (res.laws || []).map(l => ({
+        law_name: l.law_name, source: l.source, source_url: l.source_url || '',
+        ministry: l.ministry, category_guess: l.category_guess,
+        announced_date: l.announced_date, effective_date: l.effective_date,
+        summary: l.short_note || '',
+      }))
       setResults(list); setSel(new Set())
-      // Task 12: บันทึกทุกครั้ง รวมกรณีไม่พบกฎหมายใหม่ (หลักฐาน ISO 45001)
-      await logSearch({ sources: ['ratchakitcha', 'shawpat'], resultsCount: list.length,
-        resultSummary: list.map(i => i.law_name).slice(0, 50), noNewLaws: list.length === 0 })
       onSearchLogged && onSearchLogged()
     }
     catch (e) { toast('ค้นหาไม่สำเร็จ: ' + e.message); setResults([]) }
@@ -102,7 +103,7 @@ export default function Discovery({ discovered = [], onReload, searchLog = [], o
     try {
       for (const i of sel) { const it = results[i]
         await saveDiscoveredLaw({
-          law_name: it.law_name, source: it.source || 'ratchakitcha',
+          law_name: it.law_name, source: it.source || 'ratchakitcha', source_url: it.source_url || null,
           summary: it.summary ? [it.summary] : [], announced_date: it.announced_date || null,
           effective_date: it.effective_date || null, ministry: it.ministry || null,
           related_docs: [], status: 'imported', searched_at: new Date().toISOString(),
@@ -117,11 +118,13 @@ export default function Discovery({ discovered = [], onReload, searchLog = [], o
   async function summarize(row) {
     setSummId(row.id)
     try {
-      const s = await callDiscover('summarize', { law_name: row.law_name, source_url: row.source_url || '' })
+      const s = await summarizeLaw({ lawName: row.law_name, sourceUrl: row.source_url || '' })
+      const lines = keyPointsToLines(s)
       await saveDiscoveredLaw({ ...row,
         ministry: s.ministry || row.ministry, announced_date: s.announced_date || row.announced_date,
-        effective_date: s.effective_date || row.effective_date, related_docs: s.related_docs || row.related_docs,
-        summary: s.summary && s.summary.length ? s.summary : row.summary, status: 'imported' })
+        effective_date: s.effective_date || row.effective_date,
+        related_docs: (s.related_docs && s.related_docs.length) ? s.related_docs : row.related_docs,
+        summary: lines.length ? lines : row.summary, status: 'imported' })
       toast('สรุปด้วย AI แล้ว — ตรวจ/แก้ไขได้', 'success'); onReload && onReload()
     } catch (e) { toast('สรุปไม่สำเร็จ: ' + e.message) }
     setSummId(null)
@@ -156,7 +159,9 @@ export default function Discovery({ discovered = [], onReload, searchLog = [], o
                   <td style={{textAlign:'center'}}>{s.no_new_laws
                     ? <span className="pill" style={{fontSize:11,background:'var(--grayfill)',color:'var(--ink-soft)'}}>ไม่มีใหม่</span>
                     : <span className="pill p-ok" style={{fontSize:11}}>{s.results_count} รายการ</span>}</td>
-                  <td style={{fontSize:12,color:'var(--ink-soft)'}}>{Array.isArray(s.result_summary)&&s.result_summary.length?s.result_summary.slice(0,3).join(' · ')+(s.result_summary.length>3?' …':''):'—'}</td>
+                  <td style={{fontSize:12,color:'var(--ink-soft)'}}>{(()=>{ const rs=s.result_summary
+                    const names = Array.isArray(rs) ? rs : (Array.isArray(rs?.laws) ? rs.laws.map(x=>typeof x==='string'?x:(x.law_name||'')) : [])
+                    return names.length ? names.slice(0,3).join(' · ')+(names.length>3?' …':'') : '—' })()}</td>
                 </tr>
               ))}
             </tbody>
