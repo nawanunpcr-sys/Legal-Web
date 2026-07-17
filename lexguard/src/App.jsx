@@ -7,7 +7,7 @@ import { supabase, hasSupabase, fetchAll,
          logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
          fetchWorkflow, subscribeWorkflow, subscribeLaws, createAddWorkflow, createMonitorWorkflow,
-         submitWorkflowAssessment, closeWorkflowPlan, fetchDiscoveredLaws,
+         submitWorkflowAssessment, closeWorkflowPlan, fetchDiscoveredLaws, fetchSearchLog,
          fetchSettings, saveSettings, DEFAULT_SETTINGS } from './lib/supabase.js'
 import { AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
          getSession as getAuthSession, signOut as authSignOut, onAuthChange } from './lib/auth.js'
@@ -111,6 +111,7 @@ export default function App(){
   const [reports,setReports] = useState([])
   const [workflowRows,setWorkflowRows] = useState([])   // lg_law_workflow — Process Tracker รายกฎหมาย (P10)
   const [discovered,setDiscovered] = useState([])        // lg_ai_discovered_laws (หน้าค้นหากฎหมาย AI)
+  const [searchLog,setSearchLog] = useState([])          // lg_search_log (หลักฐานการติดตามกฎหมาย)
   const [showAddLaw,setShowAddLaw] = useState(false)     // Workflow A · Process 1 wizard
   const [trackerFocus,setTrackerFocus] = useState(0)     // signal: คลิก badge/เมนู tracker → โฟกัสงานค้าง
   const [flowPopup,setFlowPopup]   = useState(null)      // { title, msg } — popup กึ่งกลางจอ (ยืนยันเพิ่ม/ประเมินเสร็จ)
@@ -142,6 +143,7 @@ export default function App(){
   async function loadReports(){ try{ setReports(await fetchReports()) }catch(e){ console.warn('reports reload',e) } }
   async function loadWorkflow(){ try{ setWorkflowRows(await fetchWorkflow()) }catch(e){ console.warn('workflow reload',e) } }
   async function loadDiscovered(){ try{ setDiscovered(await fetchDiscoveredLaws()) }catch(e){ console.warn('discovered reload',e) } }
+  async function loadSearchLog(){ try{ setSearchLog(await fetchSearchLog()) }catch(e){ console.warn('search log reload',e) } }
   async function loadCurMonth(){ try{ setCurMonthRows(await fetchComplianceMonths(new Date().getFullYear())) }catch(e){ console.warn('cur month reload',e) } }
   // P10: staging/assessment/tracker/plans/reports views were removed. goView()
   // remaps the one surviving legacy id (reports → comm hub) so old deep links /
@@ -154,9 +156,9 @@ export default function App(){
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, a, qs, rp, st, wf, disc] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings(), fetchWorkflow(), fetchDiscoveredLaws()])
+      const [d, mData, a, qs, rp, st, wf, disc, slog] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings(), fetchWorkflow(), fetchDiscoveredLaws(), fetchSearchLog()])
       setCats(withCatColors(d.cats)); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setCurMonthRows(mData); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st); setWorkflowRows(wf); setDiscovered(disc)
+      setMonths(mData); setCurMonthRows(mData); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st); setWorkflowRows(wf); setDiscovered(disc); setSearchLog(slog)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -230,8 +232,15 @@ export default function App(){
       else if(d<=30) out.push({type:'report_law',law:l,days:d,text:l.code+' ใกล้ครบกำหนดส่งรายงานราชการ',sub:'อีก '+d+' วัน — '+thDate(l.report_due_date)}) })
     // อบรม จป. 12 ชม./ปี: เตือนเมื่อเหลือ <90 วันแล้วยังไม่ครบ
     { const ts=trainingStatus(training); if(ts.alert) out.push({type:'training',goView:'settings',text:'อบรมพัฒนาความรู้ จป. ยังไม่ครบ '+ts.target+' ชม.',sub:'ทำได้ '+ts.hours+' ชม. · เหลืออีก '+ts.remain+' ชม. · เหลือเวลา '+ts.daysLeft+' วัน'}) }
+    // Task 12: เดือนนี้ยังไม่มีการค้นหากฎหมายใหม่ (เตือนตั้งแต่วันที่ 25 — หลักฐาน ISO 45001)
+    { const now=new Date()
+      if(now.getDate()>=25){
+        const y=now.getFullYear(), m=now.getMonth()
+        const hasSearchThisMonth = searchLog.some(s=>{ const d=new Date(s.searched_at); return d.getFullYear()===y && d.getMonth()===m })
+        if(!hasSearchThisMonth) out.push({type:'search_missing',goView:'discovery',text:'เดือนนี้ยังไม่มีการค้นหากฎหมายใหม่',sub:'บันทึกหลักฐานการติดตามกฎหมาย (ISO 45001 ข้อ 6.1.3)'})
+      } }
     return out.sort((a,b)=>(a.type==='bad'?-1:0)-(b.type==='bad'?-1:0))
-  },[activeLaws,comms,notifs,reports,training])
+  },[activeLaws,comms,notifs,reports,training,searchLog])
 
   useEffect(()=>{
     if(!authed || loading || bellNotifications.length===0) return
@@ -556,7 +565,7 @@ export default function App(){
             round={round} onExportF259={()=>setShowPdf(true)} onAddLaw={()=>setShowAddLaw(true)}
             monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
-          {view==='discovery'     && <Discovery discovered={discovered} onReload={loadDiscovered}/>}
+          {view==='discovery'     && <Discovery discovered={discovered} onReload={loadDiscovered} searchLog={searchLog} onSearchLogged={loadSearchLog}/>}
           {view==='history'       && <History activity={activity} laws={laws} catMap={catMap}/>}
           {view==='tracker'       && <ProcessTracker rows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest} focusSignal={trackerFocus}
             onStartMonitor={handleStartMonitor} onAssess={handleWorkflowAssess} onClosePlan={handleClosePlan} onOpenLaw={setOpenLaw}/>}

@@ -12,6 +12,7 @@ const NOTIF_META = {
   effective_soon:{ label:'จะบังคับใช้',    icon:'clock', bg:'var(--review-bg)', fg:'var(--review)' },
   training:      { label:'อบรม จป.',       icon:'spark', bg:'var(--review-bg)', fg:'var(--review)' },
   report_law:    { label:'ส่งรายงานราชการ', icon:'clock', bg:'var(--review-bg)', fg:'var(--review)' },
+  search_missing:{ label:'ค้นหากฎหมาย',    icon:'search', bg:'var(--review-bg)', fg:'var(--review)' },
 }
 export default function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
   const [filter, setFilter] = useState('all')

@@ -23,6 +23,7 @@ const URGENCY_COLOR = { red: 'var(--bad)', orange: 'var(--review)', blue: 'var(-
 
 function notifIcon(n) {
   if (n.type === 'law_update' || n.type === 'training') return 'spark'
+  if (n.type === 'search_missing') return 'search'
   if (n.type === 'comm') return 'chat'
   if (n.type === 'report_jorpor' || n.type === 'report_due' || n.type === 'report_law' || n.type === 'effective_soon') return 'clock'
   if (n.type === 'bad' && (n.goView === 'reports' || n.goView === 'comm')) return 'inbox'

@@ -1086,3 +1086,19 @@ export async function deleteWorkflowCase(id) {
   const { error } = await supabase.from('lg_law_workflow').delete().eq('id', id)
   if (error) throw error
 }
+
+// ---- P10 · Task 12 · Search Log (ISO 45001 6.1.3 evidence) ----
+export async function logSearch({ searchedBy, sources, resultsCount = 0, resultSummary = null, noNewLaws = false } = {}) {
+  if (!hasSupabase) return
+  try {
+    await supabase.from('lg_search_log').insert({
+      searched_by: searchedBy || currentUserName(), sources: sources || null,
+      results_count: resultsCount || 0, result_summary: resultSummary, no_new_laws: !!noNewLaws,
+    })
+  } catch (e) { console.warn('logSearch failed', e) }
+}
+export async function fetchSearchLog(limit = 300) {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_search_log').select('*').order('searched_at', { ascending: false }).limit(limit)
+  return data || []
+}

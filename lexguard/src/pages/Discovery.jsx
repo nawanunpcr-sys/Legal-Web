@@ -2,7 +2,7 @@
 // ค้นหากฎหมายใหม่จากราชกิจจาฯ + Shawpat → เลือก → นำเข้า → สรุป (AI) → แก้ไข → Save.
 // รายการที่นำเข้าเก็บใน lg_ai_discovered_laws และเป็น source ให้ Workflow A (เพิ่มกฎหมาย).
 import { useState } from 'react'
-import { saveDiscoveredLaw, deleteDiscoveredLaw } from '../lib/supabase.js'
+import { saveDiscoveredLaw, deleteDiscoveredLaw, logSearch } from '../lib/supabase.js'
 import { I } from '../components/icons.jsx'
 import { thDate } from '../lib/ui.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
@@ -66,8 +66,9 @@ function EditModal({ row, onClose, onSaved }) {
   </>)
 }
 
-export default function Discovery({ discovered = [], onReload }) {
+export default function Discovery({ discovered = [], onReload, searchLog = [], onSearchLogged }) {
   const { can } = useAuth()
+  const [tab, setTab] = useState('search')       // search | log
   const [searching, setSearching] = useState(false)
   const [results, setResults] = useState(null)   // null=ยังไม่ค้น, []=ไม่พบ
   const [sel, setSel] = useState(new Set())
@@ -76,10 +77,19 @@ export default function Discovery({ discovered = [], onReload }) {
   const [editRow, setEditRow] = useState(null)
 
   const imported = discovered.filter(d => d.status !== 'deleted')
+  const lastSearch = searchLog[0] || null   // เรียงใหม่→เก่าอยู่แล้ว
 
   async function search() {
     setSearching(true); setResults(null)
-    try { const { items } = await callDiscover('search'); setResults(items || []); setSel(new Set()) }
+    try {
+      const { items } = await callDiscover('search')
+      const list = items || []
+      setResults(list); setSel(new Set())
+      // Task 12: บันทึกทุกครั้ง รวมกรณีไม่พบกฎหมายใหม่ (หลักฐาน ISO 45001)
+      await logSearch({ sources: ['ratchakitcha', 'shawpat'], resultsCount: list.length,
+        resultSummary: list.map(i => i.law_name).slice(0, 50), noNewLaws: list.length === 0 })
+      onSearchLogged && onSearchLogged()
+    }
     catch (e) { toast('ค้นหาไม่สำเร็จ: ' + e.message); setResults([]) }
     setSearching(false)
   }
@@ -125,6 +135,36 @@ export default function Discovery({ discovered = [], onReload }) {
 
   return (
     <div className="view">
+      <div className="seg" style={{marginBottom:14}}>
+        <button className={'seg-btn'+(tab==='search'?' active':'')} onClick={()=>setTab('search')}>ค้นหา & นำเข้า</button>
+        <button className={'seg-btn'+(tab==='log'?' active':'')} onClick={()=>setTab('log')}>ประวัติการค้นหา ({searchLog.length})</button>
+      </div>
+
+      {tab==='log' && (
+        <div className="panel">
+          <div className="panel-h"><h3>ประวัติการค้นหากฎหมาย</h3>
+            <span className="sub" style={{marginLeft:'auto'}}>หลักฐานการติดตามกฎหมายสม่ำเสมอ (ISO 45001 ข้อ 6.1.3)</span></div>
+          <div className="tablewrap"><table>
+            <thead><tr><th>วันเวลา</th><th>ผู้ค้นหา</th><th>แหล่ง</th><th style={{textAlign:'center'}}>ผลลัพธ์</th><th>รายการที่พบ</th></tr></thead>
+            <tbody>
+              {searchLog.length===0 && <tr><td colSpan="5" style={{textAlign:'center',color:'var(--ink-faint)',padding:30}}>ยังไม่มีประวัติการค้นหา</td></tr>}
+              {searchLog.map(s=>(
+                <tr key={s.id}>
+                  <td style={{whiteSpace:'nowrap',fontSize:12.5}}>{thDate(s.searched_at)} {new Date(s.searched_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})}</td>
+                  <td style={{fontSize:12.5}}>{s.searched_by}</td>
+                  <td style={{fontSize:12}}>{(s.sources||[]).join(', ')||'—'}</td>
+                  <td style={{textAlign:'center'}}>{s.no_new_laws
+                    ? <span className="pill" style={{fontSize:11,background:'var(--grayfill)',color:'var(--ink-soft)'}}>ไม่มีใหม่</span>
+                    : <span className="pill p-ok" style={{fontSize:11}}>{s.results_count} รายการ</span>}</td>
+                  <td style={{fontSize:12,color:'var(--ink-soft)'}}>{Array.isArray(s.result_summary)&&s.result_summary.length?s.result_summary.slice(0,3).join(' · ')+(s.result_summary.length>3?' …':''):'—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+        </div>
+      )}
+
+      {tab==='search' && (<>
       {/* ── ค้นหา ── */}
       <div className="panel" style={{padding:'16px 18px'}}>
         <div style={{display:'flex',alignItems:'center',gap:12}}>
@@ -137,11 +177,18 @@ export default function Discovery({ discovered = [], onReload }) {
           </button>
         </div>
 
+        {!searching && lastSearch && <div style={{marginTop:10,fontSize:12,color:'var(--ink-faint)'}}>
+          ค้นหาล่าสุด: {thDate(lastSearch.searched_at)} {new Date(lastSearch.searched_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})} โดย {lastSearch.searched_by}
+          {lastSearch.no_new_laws ? ' · ไม่พบกฎหมายใหม่' : ' · พบ '+lastSearch.results_count+' รายการ'}
+        </div>}
+
         {searching && <div style={{marginTop:14,fontSize:13,color:'var(--brand)'}}>⏳ กำลังดึงข้อมูลจากแหล่งกฎหมายและวิเคราะห์ด้วย AI…</div>}
 
         {results && !searching && (
           <div style={{marginTop:14}}>
-            {results.length===0 && <div style={{fontSize:13,color:'var(--ink-faint)',padding:'8px 0'}}>ไม่พบกฎหมายใหม่จากการค้นหาครั้งนี้</div>}
+            {results.length===0 && <div style={{fontSize:13,color:'var(--ink-faint)',padding:'8px 0'}}>
+              ไม่มีกฎหมายที่ออกมาล่าสุด{lastSearch?` — ค้นหาล่าสุด: ${thDate(lastSearch.searched_at)} โดย ${lastSearch.searched_by}`:''}
+            </div>}
             {results.length>0 && (<>
               <div style={{display:'flex',alignItems:'center',marginBottom:8}}>
                 <span style={{fontSize:12.5,color:'var(--ink-soft)'}}>พบ {results.length} รายการ · เลือกที่ต้องการแล้วกดนำเข้า</span>
@@ -196,6 +243,7 @@ export default function Discovery({ discovered = [], onReload }) {
           })}
         </div>
       </div>
+      </>)}
 
       {editRow && <EditModal row={editRow} onClose={()=>setEditRow(null)} onSaved={onReload}/>}
     </div>
