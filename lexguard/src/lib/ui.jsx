@@ -122,3 +122,30 @@ export function dupCheck(allLaws, name) {
   const n = normName(name); if (n.length < 8) return null
   return allLaws.find(l => { const m = normName(l.name); return m && (m.includes(n.slice(0, 20)) || n.includes(m.slice(0, 20))) }) || null
 }
+
+// ── P10 Task 9 · ตรวจกฎหมายซ้ำก่อนเข้าทะเบียน (เก็บอักษรไทยไว้ ต่างจาก normName) ──
+export const normText = s => String(s || '').trim().toLowerCase().replace(/["'’().,\-–—/]/g, '').replace(/\s+/g, ' ').trim()
+export const stripEra = s => String(s || '').replace(/พ\.?\s?ศ\.?\s?[\d๐-๙]{3,4}/g, '').replace(/\(?\s*ฉบับที่\s?[\d๐-๙]+\s*\)?/g, '')
+export const baseName = s => normText(stripEra(s))
+function bigrams(s) { const r = new Set(); for (let i = 0; i < s.length - 1; i++) r.add(s.slice(i, i + 2)); return r }
+export function diceSim(a, b) {
+  a = String(a || ''); b = String(b || ''); if (!a || !b) return 0; if (a === b) return 1
+  const A = bigrams(a), B = bigrams(b); if (!A.size || !B.size) return 0
+  let inter = 0; A.forEach(x => { if (B.has(x)) inter++ })
+  return (2 * inter) / (A.size + B.size)
+}
+// คืน { type:'exact'|'amendment'|'fuzzy', law, sim } หรือ null
+export function findLawDuplicate(allLaws = [], name, sourceUrl = '') {
+  const nt = normText(name); if (nt.length < 6) return null
+  const su = (sourceUrl || '').trim()
+  const exact = allLaws.find(l => normText(l.name) === nt || (su && l.source_url && l.source_url.trim() === su))
+  if (exact) return { type: 'exact', law: exact, sim: 1 }
+  const bn = baseName(name)
+  let best = null, bestSim = 0
+  allLaws.forEach(l => { const s = diceSim(bn, baseName(l.name)); if (s > bestSim) { bestSim = s; best = l } })
+  if (best && bestSim > 0.6) {
+    const sameBase = baseName(name) === baseName(best.name) && normText(name) !== normText(best.name)
+    return { type: sameBase ? 'amendment' : 'fuzzy', law: best, sim: bestSim }
+  }
+  return null
+}

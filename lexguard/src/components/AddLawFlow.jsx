@@ -4,10 +4,10 @@
 //      → Submit สร้างกฎหมายเข้าทะเบียน (status รอประเมิน) + เปิด tracker case
 //   2) แนบไฟล์กฎหมาย/เอกสารที่เกี่ยวข้อง → เสร็จสิ้น
 import { useState, useEffect, useMemo } from 'react'
-import { LAW_TYPES, fetchDiscoveredLaws, deleteDiscoveredLaw } from '../lib/supabase.js'
+import { LAW_TYPES, fetchDiscoveredLaws, deleteDiscoveredLaw, logActivity } from '../lib/supabase.js'
 import Attachments from './Attachments.jsx'
 import { I } from './icons.jsx'
-import { nextCode, thDate } from '../lib/ui.jsx'
+import { nextCode, thDate, findLawDuplicate } from '../lib/ui.jsx'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
 
@@ -35,6 +35,11 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, onCreate, onCl
   const [reqText, setReqText] = useState('')      // สาระสำคัญ 1 ข้อ/บรรทัด
   const [saving, setSaving] = useState(false)
   const [newLaw, setNewLaw] = useState(null)
+  const [dup, setDup] = useState(null)               // Task 9: { type:'exact'|'amendment'|'fuzzy', law, sim, blocked? }
+  const [dupConfirmed, setDupConfirmed] = useState(false)
+
+  // ชื่อเปลี่ยน → ล้างสถานะการเตือนซ้ำ เพื่อเช็คใหม่
+  function changeName(v) { setName(v); setDup(null); setDupConfirmed(false) }
 
   useEffect(() => { let alive = true
     fetchDiscoveredLaws().then(d => { if (alive) { setDiscovered(d.filter(x => x.status !== 'registered')); setLoadingDisc(false) } })
@@ -51,14 +56,15 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, onCreate, onCl
   const nowLabel = new Date().toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })
 
   function pick(d) {
-    setSelId(d.id)
+    setSelId(d.id); setDup(null); setDupConfirmed(false)
     setName(d.law_name || ''); setMinistry(d.ministry || '')
     setAnnounce(d.announced_date || ''); setEffective(d.effective_date || '')
     setDocList((d.related_docs || []).join(', '))
     setReqText(summaryToReqs(d.summary).join('\n'))
   }
   function pickManual() {
-    setSelId('manual'); setName(''); setMinistry(''); setAnnounce(''); setEffective(''); setDocList(''); setReqText('')
+    setSelId('manual'); setDup(null); setDupConfirmed(false)
+    setName(''); setMinistry(''); setAnnounce(''); setEffective(''); setDocList(''); setReqText('')
   }
   async function removeDiscovered(d) {
     if (!(await confirmDialog(`ลบ "${(d.law_name||'').slice(0,40)}" ออกจากรายการ?`, { danger: true }))) return
@@ -68,17 +74,30 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, onCreate, onCl
 
   const valid = owner.trim() && selId && cat && name.trim()
 
-  async function submit() {
+  async function submit(force = false) {
     if (!valid || saving) return
+    const disc = selId === 'manual' ? null : discovered.find(d => d.id === selId)
+    // Task 9 · กันซ้ำ 2 ชั้น (exact = บล็อก, fuzzy/amendment = เตือนให้ยืนยัน)
+    if (!force && !dupConfirmed) {
+      const found = findLawDuplicate(allLaws, name.trim(), disc?.source_url || '')
+      if (found) {
+        if (found.type === 'exact') { setDup({ ...found, blocked: true }); return }
+        setDup(found); return
+      }
+    }
     setSaving(true)
     try {
       const reqs = reqText.split('\n').map(s => s.trim()).filter(Boolean).map(t => ({ text: t, status: 'met' }))
-      const disc = selId === 'manual' ? null : discovered.find(d => d.id === selId)
       const { law } = await onCreate({
         lawFields: { code: previewCode, cat, name: name.trim(), hierarchy_level: level, ministry,
           announce_date: announce, effective_date: effective, doc_list: docList },
         reqs, ownerName: owner.trim(), discovered: disc,
       })
+      // บันทึกการยืนยันเพิ่มทั้งที่ระบบเตือน
+      if (dup && dup.type !== 'exact') {
+        logActivity({ action: 'duplicate_override', law_id: law.id, law_code: law.code, law_name: law.name,
+          detail: `ยืนยันเพิ่มทั้งที่ระบบเตือนว่าอาจซ้ำกับ ${dup.law.code} (คล้าย ${Math.round(dup.sim * 100)}%)` })
+      }
       setNewLaw(law); setStep(2)
     } catch (e) { toast('เพิ่มเข้าทะเบียนไม่สำเร็จ: ' + e.message) }
     finally { setSaving(false) }
@@ -151,7 +170,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, onCreate, onCl
                 </div>
               </div>
               <label className="form-label">ชื่อกฎหมาย <span style={{color:'var(--bad)'}}>*</span></label>
-              <textarea className="form-input" rows={2} value={name} onChange={e=>setName(e.target.value)}/>
+              <textarea className="form-input" rows={2} value={name} onChange={e=>changeName(e.target.value)}/>
               <label className="form-label">กระทรวง / หน่วยงาน</label>
               <input className="form-input" type="text" value={ministry} onChange={e=>setMinistry(e.target.value)}/>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
@@ -164,9 +183,27 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, onCreate, onCl
               <textarea className="form-input" rows={4} placeholder="เช่น จัดให้มี จป.วิชาชีพ…" value={reqText} onChange={e=>setReqText(e.target.value)}/>
             </div>)}
 
+            {dup && dup.blocked && (
+              <div style={{marginTop:12,padding:'11px 14px',borderRadius:9,background:'color-mix(in srgb,var(--bad) 9%,transparent)',border:'1px solid var(--bad)',fontSize:12.5}}>
+                <b style={{color:'var(--bad)'}}>⛔ กฎหมายนี้อยู่ในทะเบียนแล้ว ({dup.law.code})</b>
+                <div style={{color:'var(--ink-soft)',marginTop:3}}>“{(dup.law.name||'').slice(0,70)}” — แก้ชื่อให้ต่างออกไป หรือยกเลิก</div>
+              </div>
+            )}
+            {dup && !dup.blocked && (
+              <div style={{marginTop:12,padding:'11px 14px',borderRadius:9,background:'color-mix(in srgb,var(--review) 12%,transparent)',border:'1px solid var(--review)',fontSize:12.5}}>
+                <b style={{color:'var(--review)'}}>⚠️ {dup.type==='amendment'
+                  ? `อาจเป็นฉบับแก้ไขเพิ่มเติมของ ${dup.law.code}`
+                  : `อาจซ้ำกับ ${dup.law.code} (คล้าย ${Math.round(dup.sim*100)}%)`}</b>
+                <div style={{color:'var(--ink-soft)',margin:'3px 0 8px'}}>“{(dup.law.name||'').slice(0,70)}” — ยืนยันเพิ่มต่อหรือไม่?</div>
+                <div style={{display:'flex',gap:8}}>
+                  <button className="btn btn-ghost" style={{padding:'5px 12px',fontSize:12}} onClick={()=>{ setDup(null); setDupConfirmed(false) }}>ยกเลิก</button>
+                  <button className="btn btn-primary" style={{padding:'5px 12px',fontSize:12}} onClick={()=>{ setDupConfirmed(true); submit(true) }}>ยืนยันเพิ่มต่อ</button>
+                </div>
+              </div>
+            )}
             <div className="modal-foot" style={{marginTop:14}}>
               <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
-              <button className="btn btn-primary" disabled={!valid||saving} onClick={submit}>
+              <button className="btn btn-primary" disabled={!valid||saving||!!dup} onClick={()=>submit(false)}>
                 {saving ? 'กำลังบันทึก…' : <><I n="check"/>เพิ่มเข้าทะเบียน ({previewCode})</>}
               </button>
             </div>

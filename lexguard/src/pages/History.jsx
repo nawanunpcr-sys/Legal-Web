@@ -18,6 +18,7 @@ const ACT_META = {
   screen:      { t:'คัดกรอง',         c:'var(--review)' },
   assign:      { t:'มอบหมาย',         c:'var(--review)' },
   finalize:    { t:'ยืนยันสมบูรณ์',    c:'var(--ok)'     },
+  duplicate_override: { t:'ยืนยันเพิ่มซ้ำ', c:'var(--review)' },
 }
 const hhmm = s => { const d=new Date(s); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0') }
 
