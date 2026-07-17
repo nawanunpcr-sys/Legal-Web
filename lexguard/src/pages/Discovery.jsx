@@ -63,9 +63,11 @@ function EditModal({ row, onClose, onSaved }) {
   </>)
 }
 
-export default function Discovery({ discovered = [], onReload, searchLog = [], onSearchLogged }) {
+export default function Discovery({ discovered = [], onReload, searchLog = [], onSearchLogged, cats = [] }) {
   const { can } = useAuth()
   const [tab, setTab] = useState('search')       // search | log
+  const [keyword, setKeyword] = useState('')     // คำค้นหาที่พิมพ์เอง (เว้นว่าง = กฎหมายใหม่ทั้งหมด)
+  const [cat, setCat] = useState('all')          // หมวดที่ต้องการเจาะจง (LA–LG/CC)
   const [searching, setSearching] = useState(false)
   const [results, setResults] = useState(null)   // null=ยังไม่ค้น, []=ไม่พบ
   const [sel, setSel] = useState(new Set())
@@ -79,9 +81,13 @@ export default function Discovery({ discovered = [], onReload, searchLog = [], o
   async function search() {
     setSearching(true); setResults(null)
     try {
+      // ประกอบคำค้น: คำที่พิมพ์ + หมวดที่เลือก → ส่งเป็น keywords ให้ AI
+      const catObj = cats.find(c => c.code === cat)
+      const catHint = cat !== 'all' ? `เฉพาะหมวด ${cat}${catObj?.name ? ` (${catObj.name})` : ''}` : ''
+      const kw = [keyword.trim(), catHint].filter(Boolean).join(' · ')
       // เรียก Edge Function `ai-law-search` (Task 4). ฟังก์ชันบันทึก lg_search_log ให้เอง
       // (Task 12 · service_role) รวมกรณีไม่พบกฎหมายใหม่ — ฝั่ง client ไม่ต้อง log ซ้ำ
-      const res = await searchNewLaws({ searchedBy: currentUserName() })
+      const res = await searchNewLaws({ searchedBy: currentUserName(), keywords: kw })
       const list = (res.laws || []).map(l => ({
         law_name: l.law_name, source: l.source, source_url: l.source_url || '',
         ministry: l.ministry, category_guess: l.category_guess,
@@ -172,15 +178,23 @@ export default function Discovery({ discovered = [], onReload, searchLog = [], o
       {tab==='search' && (<>
       {/* ── ค้นหา ── */}
       <div className="panel" style={{padding:'16px 18px'}}>
-        <div style={{display:'flex',alignItems:'center',gap:12}}>
-          <div style={{flex:1}}>
-            <h3 style={{margin:0,fontSize:15}}>ค้นหากฎหมายใหม่ประจำเดือน</h3>
-            <p style={{margin:'2px 0 0',fontSize:12.5,color:'var(--ink-faint)'}}>ค้นจากราชกิจจานุเบกษา และ Shawpat ด้วย AI</p>
-          </div>
+        <h3 style={{margin:0,fontSize:15}}>ค้นหากฎหมายที่ออกใหม่</h3>
+        <p style={{margin:'2px 0 0',fontSize:12.5,color:'var(--ink-faint)'}}>ค้นจากราชกิจจานุเบกษา และ Shawpat ด้วย AI — พิมพ์คำค้นหา หรือเลือกหมวด หรือเว้นว่างเพื่อค้นกฎหมายใหม่ทั้งหมด</p>
+        <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',marginTop:12}}>
+          <input className="form-input" style={{flex:1,minWidth:200,margin:0}} placeholder="คำค้นหา (เช่น ไฟฟ้า, ที่อับอากาศ, PDPA)…"
+            value={keyword} onChange={e=>setKeyword(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter'&&!searching&&can('edit')) search() }}/>
+          <select className="form-input" style={{maxWidth:220,margin:0}} value={cat} onChange={e=>setCat(e.target.value)} title="เจาะจงหมวดกฎหมาย">
+            <option value="all">ทุกหมวด</option>
+            {cats.map(c=><option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
+          </select>
           <button className="btn btn-primary" disabled={searching||!can('edit')} title={can('edit')?'':NO_PERM} onClick={search}>
             {searching ? <><span className="spin" style={{width:14,height:14,display:'inline-block',marginRight:6}}/>กำลังค้นหา…</> : <><I n="search"/>ค้นหากฎหมาย</>}
           </button>
         </div>
+        {(keyword.trim()||cat!=='all') && <div style={{marginTop:8,fontSize:12,color:'var(--ink-faint)'}}>
+          กำลังจะค้น: {[keyword.trim(),cat!=='all'?`หมวด ${cat}`:''].filter(Boolean).join(' · ')||'กฎหมายใหม่ทั้งหมด'}
+          <span style={{marginLeft:8,color:'var(--brand)',cursor:'pointer'}} onClick={()=>{ setKeyword(''); setCat('all') }}>ล้าง</span>
+        </div>}
 
         {!searching && lastSearch && <div style={{marginTop:10,fontSize:12,color:'var(--ink-faint)'}}>
           ค้นหาล่าสุด: {thDate(lastSearch.searched_at)} {new Date(lastSearch.searched_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})} โดย {lastSearch.searched_by}

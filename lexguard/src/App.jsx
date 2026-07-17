@@ -565,7 +565,7 @@ export default function App(){
             round={round} onExportF259={()=>setShowPdf(true)} onAddLaw={()=>setShowAddLaw(true)}
             monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
-          {view==='discovery'     && <Discovery discovered={discovered} onReload={loadDiscovered} searchLog={searchLog} onSearchLogged={loadSearchLog}/>}
+          {view==='discovery'     && <Discovery discovered={discovered} onReload={loadDiscovered} searchLog={searchLog} onSearchLogged={loadSearchLog} cats={cats}/>}
           {view==='history'       && <History activity={activity} laws={laws} catMap={catMap} settings={settings} workflowRows={workflowRows} searchLog={searchLog}/>}
           {view==='tracker'       && <ProcessTracker rows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest} focusSignal={trackerFocus}
             onStartMonitor={handleStartMonitor} onAssess={handleWorkflowAssess} onClosePlan={handleClosePlan} onOpenLaw={setOpenLaw}/>}
