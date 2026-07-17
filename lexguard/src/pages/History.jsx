@@ -1,7 +1,9 @@
 // P10 · Task 5 — ประวัติการทำรายการ (Activity Log) แยกตามหมวด LA–LG.
 // คลิกกฎหมาย → เห็น timeline ว่ากฎหมายตัวนี้ทำอะไรไปบ้าง เมื่อไหร่ โดยใคร.
 import { useState, useMemo } from 'react'
-import { Tag, thDate } from '../lib/ui.jsx'
+import { Tag, thDate, TH_MONTHS } from '../lib/ui.jsx'
+import { I } from '../components/icons.jsx'
+import { buildMonthlyReport } from '../components/PdfExport.jsx'
 
 const ACT_META = {
   create:      { t:'เพิ่มใหม่',      c:'var(--ok)'     },
@@ -39,9 +41,24 @@ function LawTimeline({ items }) {
   )
 }
 
-export default function History({ activity = [], laws = [], catMap = {} }) {
+export default function History({ activity = [], laws = [], catMap = {}, settings = {}, workflowRows = [], searchLog = [] }) {
   const [cat, setCat] = useState('all')
   const [openId, setOpenId] = useState(null)
+  const now = new Date()
+  const [pmonth, setPmonth] = useState(now.getMonth() + 1)
+  const [pyear, setPyear] = useState(now.getFullYear())
+
+  const years = useMemo(() => {
+    const ys = new Set([now.getFullYear()])
+    activity.forEach(a => { const y = new Date(a.created_at).getFullYear(); if (!isNaN(y)) ys.add(y) })
+    return [...ys].sort((a, b) => b - a)
+  }, [activity])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  function exportPdf() {
+    const catName = Object.fromEntries(Object.entries(catMap).map(([k, v]) => [k, v?.name || k]))
+    buildMonthlyReport({ month: pmonth, year: pyear, settings, activity, workflowRows, searchLog, laws, catName, issuer: settings.user_name })
+    setTimeout(() => window.print(), 80)
+  }
 
   const lawMap = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
   // law_id → activity[] (เรียงใหม่→เก่า)
@@ -64,6 +81,16 @@ export default function History({ activity = [], laws = [], catMap = {} }) {
 
   return (
     <div className="view">
+      <div className="panel" style={{padding:'12px 16px',marginBottom:14,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <span style={{fontSize:13,fontWeight:600}}>สรุปประจำเดือน (PDF)</span>
+        <select className="form-input" style={{maxWidth:130,margin:0,padding:'5px 8px'}} value={pmonth} onChange={e=>setPmonth(+e.target.value)}>
+          {TH_MONTHS.map((m,i)=><option key={i} value={i+1}>{m}</option>)}
+        </select>
+        <select className="form-input" style={{maxWidth:110,margin:0,padding:'5px 8px'}} value={pyear} onChange={e=>setPyear(+e.target.value)}>
+          {years.map(y=><option key={y} value={y}>ปี {y+543}</option>)}
+        </select>
+        <button className="btn btn-primary" style={{marginLeft:'auto'}} onClick={exportPdf}><I n="download"/>Export สรุปประจำเดือน</button>
+      </div>
       <div className="filterbar">
         <span className={'chip'+(cat==='all'?' active':'')} onClick={()=>setCat('all')}>ทุกหมวด</span>
         {cats.map(c=><span key={c} className={'chip'+(cat===c?' active':'')} onClick={()=>setCat(c)}>{c} — {catMap[c]?.name}</span>)}
