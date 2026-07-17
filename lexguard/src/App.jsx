@@ -112,6 +112,7 @@ export default function App(){
   const [workflowRows,setWorkflowRows] = useState([])   // lg_law_workflow — Process Tracker รายกฎหมาย (P10)
   const [discovered,setDiscovered] = useState([])        // lg_ai_discovered_laws (หน้าค้นหากฎหมาย AI)
   const [showAddLaw,setShowAddLaw] = useState(false)     // Workflow A · Process 1 wizard
+  const [trackerFocus,setTrackerFocus] = useState(0)     // signal: คลิก badge/เมนู tracker → โฟกัสงานค้าง
   const [flowPopup,setFlowPopup]   = useState(null)      // { title, msg } — popup กึ่งกลางจอ (ยืนยันเพิ่ม/ประเมินเสร็จ)
   const [showNotify,setShowNotify] = useState(false)
   const [commTab,setCommTab]       = usePersist('cr_comm_tab','comm')       // comm | reports (สื่อสาร & ส่งรายงาน hub)
@@ -195,6 +196,10 @@ export default function App(){
     reports.forEach(r=>{ if((r.title||'').toLowerCase().includes(q)) out.push({kind:'report',label:(r.title||'').slice(0,40),sub:'รายงานราชการ'}) })
     return out.slice(0,12)
   },[search,activeLaws,reports,catMap])
+
+  // Task 10 · งานค้างในกระบวนการ (จาก workflowRows ที่ subscribe realtime อยู่แล้ว)
+  const openWorkCount = useMemo(()=>workflowRows.filter(w=>w.status!=='เสร็จสิ้น').length,[workflowRows])
+  const trackerUrgent = useMemo(()=>workflowRows.some(w=>w.status==='ไม่สอดคล้อง' && !w.plan_closed_at && w.reverify_date && daysTo(w.reverify_date)<0),[workflowRows])
 
   const inForceLaws = useMemo(()=>activeLaws.filter(l=>l.active!==false),[activeLaws])
   const stats = useMemo(()=>{
@@ -459,17 +464,15 @@ export default function App(){
           <div key={gi} className="nav-group">
             {group.label && <div className="nav-label">{group.label}</div>}
             {group.items.filter(n=>n.id!=='settings'||can(role,'delete')).map(n=>{
-              const badge =
-                n.id==='registry'      ? activeLaws.length        :
-                n.id==='improvements'  ? (stats.nc||null)         :
-                n.id==='repealed'      ? (repealedLaws.length||null) :
-                n.id==='comm'          ? (reportAlerts||null)     :
-                n.id==='notifications' ? (bellNotifications.length||null) : null
+              // Task 10: badge งานค้างบน Process Tracker (รอประเมิน + แผนค้าง) — สีแดงถ้ามีเลยกำหนด
+              const badge = n.id==='tracker' ? (openWorkCount||null) : null
+              const urgent = n.id==='tracker' && trackerUrgent
               return (
                 <button key={n.id} className={'nav-item'+(view===n.id?' active':'')}
-                  onClick={()=>setView(n.id)} title={n.label}>
+                  onClick={()=>{ setView(n.id); if(n.id==='tracker') setTrackerFocus(f=>f+1) }} title={n.label}>
                   <span className="nav-ic"><I n={n.icon}/></span>
                   <span className="label">{n.label}</span>
+                  {badge ? <span className={'badge'+(urgent?'':' accent')} title={urgent?'มีรายการเลยกำหนดทวนสอบ':'งานค้างในกระบวนการ'}>{badge}</span> : null}
                 </button>
               )
             })}
@@ -555,7 +558,7 @@ export default function App(){
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
           {view==='discovery'     && <Discovery discovered={discovered} onReload={loadDiscovered}/>}
           {view==='history'       && <History activity={activity} laws={laws} catMap={catMap}/>}
-          {view==='tracker'       && <ProcessTracker rows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest}
+          {view==='tracker'       && <ProcessTracker rows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest} focusSignal={trackerFocus}
             onStartMonitor={handleStartMonitor} onAssess={handleWorkflowAssess} onClosePlan={handleClosePlan} onOpenLaw={setOpenLaw}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={searchDebounced} onOpen={setOpenLaw} onRestore={handleRestore}/>}

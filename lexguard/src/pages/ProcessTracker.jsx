@@ -1,6 +1,6 @@
 // P10 · Process Tracker รายกฎหมาย (lg_law_workflow) — Workflow A + B ใช้ UI ร่วมกัน.
 // แต่ละ case = 1 แถว lg_law_workflow, มี tracker 3 ขั้น: ผู้ตรวจสอบ → ผู้ประเมิน → เสร็จสิ้น.
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { WF_STAGES, WF_STATUS } from '../lib/supabase.js'
 import AssessForm from '../components/AssessForm.jsx'
 import Attachments from '../components/Attachments.jsx'
@@ -154,12 +154,18 @@ function CaseDrawer({ wf, law, catMap, suggest, onAssess, onClosePlan, onOpenLaw
   </>)
 }
 
-export default function ProcessTracker({ rows = [], laws = [], catMap = {}, suggest = {}, onStartMonitor, onAssess, onClosePlan, onOpenLaw }) {
+const STATUS_FILTERS = [['all','ทั้งหมด'],['open','งานค้าง'],['รอประเมิน','รอประเมิน'],['ไม่สอดคล้อง','ไม่สอดคล้อง'],['เสร็จสิ้น','เสร็จสิ้น']]
+
+export default function ProcessTracker({ rows = [], laws = [], catMap = {}, suggest = {}, focusSignal = 0, onStartMonitor, onAssess, onClosePlan, onOpenLaw }) {
   const { can } = useAuth()
   const [showMonitor, setShowMonitor] = useState(false)
   const [openWf, setOpenWf] = useState(null)
   const [catFilter, setCatFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [q, setQ] = useState('')
+
+  // Task 10: คลิก badge/เมนู Process Tracker → โฟกัส "งานค้าง"
+  useEffect(()=>{ if(focusSignal>0) setStatusFilter('open') }, [focusSignal])
 
   const lawMap = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
   const cases = useMemo(()=>{
@@ -167,10 +173,12 @@ export default function ProcessTracker({ rows = [], laws = [], catMap = {}, sugg
     return rows.filter(wf=>{
       const law=lawMap[wf.law_id]; if(!law) return false
       if(catFilter!=='all' && law.cat!==catFilter) return false
+      if(statusFilter==='open' && wf.status==='เสร็จสิ้น') return false
+      if(statusFilter!=='all' && statusFilter!=='open' && wf.status!==statusFilter) return false
       if(s && !(law.code.toLowerCase().includes(s)||(law.name||'').toLowerCase().includes(s))) return false
       return true
     })
-  },[rows,lawMap,catFilter,q])
+  },[rows,lawMap,catFilter,statusFilter,q])
   const cats = useMemo(()=>[...new Set(rows.map(wf=>lawMap[wf.law_id]?.cat).filter(Boolean))].sort(),[rows,lawMap])
 
   const openLawObj = openWf ? lawMap[openWf.law_id] : null
@@ -184,6 +192,11 @@ export default function ProcessTracker({ rows = [], laws = [], catMap = {}, sugg
         <button className="btn btn-primary" style={{marginLeft:'auto'}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>setShowMonitor(true)}>
           <I n="plus"/>ติดตาม/ทวนสอบกฎหมายเดิม
         </button>
+      </div>
+      <div className="filterbar" style={{marginTop:-6}}>
+        {STATUS_FILTERS.map(([k,lbl])=>(
+          <span key={k} className={'chip'+(statusFilter===k?' active':'')} onClick={()=>setStatusFilter(k)}>{lbl}</span>
+        ))}
       </div>
 
       {cases.length===0 && (
