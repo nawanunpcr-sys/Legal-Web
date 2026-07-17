@@ -232,7 +232,14 @@ export default function Dashboard({laws,cats,catMap,onOpen,quarterStats=[],repor
       <span style={{marginLeft:'auto',color:'var(--brand)',fontSize:12.5,fontWeight:500}}>ไปตรวจสอบรายเดือน →</span>
     </div>
 
-    {/* รายการที่ยังไม่สอดคล้อง */}
+    <div style={{marginTop:36}}>
+      <div className="dash-sec-h">ภาพรวมรายไตรมาส</div>
+      <QuarterlyAddRepealChart quarterStats={quarterStats} cats={cats} catMap={catMap}/>
+    </div>
+
+    <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports} danger/>
+
+    {/* รายการที่ยังไม่สอดคล้อง — ย้ายมาไว้ล่างสุดของหน้า */}
     <div className="panel" style={{marginTop:16}}>
       <div className="panel-h"><h3>รายการที่ยังไม่สอดคล้อง — ต้องติดตาม</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกเพื่อดูรายละเอียด</span></div>
       <div className="tablewrap"><table><thead><tr><th>รหัส / ชื่อกฎหมาย</th><th>หมวด</th><th>กระทรวง</th><th>สถานะ</th></tr></thead><tbody>
@@ -245,12 +252,5 @@ export default function Dashboard({laws,cats,catMap,onOpen,quarterStats=[],repor
         </tr>))}
       </tbody></table></div>
     </div>
-
-    <div style={{marginTop:36}}>
-      <div className="dash-sec-h">ภาพรวมรายไตรมาส</div>
-      <QuarterlyAddRepealChart quarterStats={quarterStats} cats={cats} catMap={catMap}/>
-    </div>
-
-    <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports} danger/>
   </div>
 }
