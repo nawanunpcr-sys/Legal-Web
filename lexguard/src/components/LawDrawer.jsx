@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { STATUS, uploadEvidence, updateRequirementField, fetchReviewLog, addReviewLog, updateLawField } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
+import { daysTo } from '../lib/ui.jsx'
 import { I } from './icons.jsx'
 
 const REVIEW_RESULTS = ['ไม่มีการเปลี่ยนแปลง', 'มีการแก้ไข', 'ถูกยกเลิก']
@@ -95,6 +96,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
   const [reviews, setReviews] = useState([])
   const [evOverrides, setEvOverrides] = useState({})   // { reqId: {evidence_url, evidence_label} } — fresh uploads
   const [reviewDate, setReviewDate] = useState(law.review_date)
+  const [reportDue, setReportDue] = useState(law.report_due_date || '')
   const [uploadingReq, setUploadingReq] = useState(null)
   const p = prog(law)
   const isRepealed = law.status === 'repealed'
@@ -102,7 +104,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
   const summary = law.reqs.slice(0,3).map(r=>r.text).join(' ').slice(0,280)
 
   useEffect(()=>{
-    setEvOverrides({}); setReviewDate(law.review_date)
+    setEvOverrides({}); setReviewDate(law.review_date); setReportDue(law.report_due_date || '')
     let alive = true
     fetchReviewLog(law.id).then(r=>{ if(alive) setReviews(r) }).catch(()=>{})
     return ()=>{ alive = false }
@@ -123,6 +125,13 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
       setEvOverrides(prev=>({ ...prev, [req.id]:{ evidence_url:url, evidence_label:label } }))
     }catch(e){ toast('แนบหลักฐานไม่สำเร็จ: '+e.message) }
     setUploadingReq(null)
+  }
+
+  async function saveReportDue(v){
+    setReportDue(v)
+    try{ await updateLawField(law.id, { report_due_date: v || null }); law.report_due_date = v || null
+      toast(v?'บันทึกวันครบกำหนดส่งรายงานแล้ว':'ล้างวันครบกำหนดแล้ว','success') }
+    catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
   async function handleSaveReview(data){
@@ -199,6 +208,11 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
                 {law.effective_date && <><dt>วันที่บังคับใช้</dt><dd>{law.effective_date}</dd></>}
                 {law.doc_list && <><dt>เอกสารที่เกี่ยวข้อง</dt><dd>{law.doc_list}</dd></>}
                 {!isRepealed && <><dt>กำหนดทบทวนถัดไป</dt><dd className="num">{thDate(reviewDate)}</dd></>}
+                {!isRepealed && <><dt>ครบกำหนดส่งรายงานราชการ</dt><dd style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                  <input className="form-input" type="date" style={{maxWidth:170,padding:'4px 8px'}} value={reportDue||''} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onChange={e=>saveReportDue(e.target.value)}/>
+                  {reportDue && (()=>{ const d=daysTo(reportDue); const col=d<15?'var(--bad)':d<=30?'var(--review)':'var(--ink-faint)'
+                    return <span style={{fontSize:11.5,color:col,fontWeight:600}}>{d<0?'เกิน '+Math.abs(d)+' วัน':'อีก '+d+' วัน'}</span> })()}
+                </dd></>}
                 {law.source_url && <><dt>ต้นฉบับ</dt><dd><a href={law.source_url} target="_blank" rel="noreferrer" style={{color:'var(--brand)'}}>เปิดเอกสาร ↗</a></dd></>}
                 <dt>สถานะ</dt><dd><span className={'pill '+(STATUS[law.status]?.cls||'p-ok')}>{STATUS[law.status]?.label||law.status}</span></dd>
               </dl>

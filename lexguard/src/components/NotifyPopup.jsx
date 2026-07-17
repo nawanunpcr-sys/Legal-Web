@@ -3,6 +3,8 @@ import { I } from './icons.jsx'
 
 export function notifUrgency(n) {
   if (n.type === 'bad') return 'red'
+  // ส่งรายงานราชการ: <15 วัน = แดง, 30–15 วัน = เหลือง (orange slot)
+  if (n.type === 'report_law') return (typeof n.days === 'number' && n.days < 15) ? 'red' : 'orange'
   if (typeof n.days === 'number') {
     if (n.days < 0) return 'red'
     if (n.days <= 7) return 'orange'
@@ -22,7 +24,7 @@ const URGENCY_COLOR = { red: 'var(--bad)', orange: 'var(--review)', blue: 'var(-
 function notifIcon(n) {
   if (n.type === 'law_update' || n.type === 'training') return 'spark'
   if (n.type === 'comm') return 'chat'
-  if (n.type === 'report_jorpor' || n.type === 'report_due' || n.type === 'effective_soon') return 'clock'
+  if (n.type === 'report_jorpor' || n.type === 'report_due' || n.type === 'report_law' || n.type === 'effective_soon') return 'clock'
   if (n.type === 'bad' && (n.goView === 'reports' || n.goView === 'comm')) return 'inbox'
   return 'alert'
 }

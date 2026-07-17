@@ -11,6 +11,7 @@ const NOTIF_META = {
   report_jorpor: { label:'รายงาน จป.ว',   icon:'clock', bg:'var(--review-bg)', fg:'var(--review)' },
   effective_soon:{ label:'จะบังคับใช้',    icon:'clock', bg:'var(--review-bg)', fg:'var(--review)' },
   training:      { label:'อบรม จป.',       icon:'spark', bg:'var(--review-bg)', fg:'var(--review)' },
+  report_law:    { label:'ส่งรายงานราชการ', icon:'clock', bg:'var(--review-bg)', fg:'var(--review)' },
 }
 export default function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
   const [filter, setFilter] = useState('all')
@@ -59,6 +60,7 @@ export default function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
                 <div className="notif-title">{n.text}</div>
                 <div className="notif-sub">{n.sub}</div>
                 {n.type==='review'&&n.days!==undefined&&<div style={{marginTop:4,fontSize:11.5,color:'var(--review)',fontWeight:600}}>เหลือเวลา {n.days} วัน</div>}
+                {n.type==='report_law'&&n.days!==undefined&&<div style={{marginTop:4,fontSize:11.5,color:n.days<15?'var(--bad)':'var(--review)',fontWeight:600}}>เหลืออีก {n.days} วัน</div>}
                 {n.type==='bad'&&<div style={{marginTop:4,fontSize:11.5,color:'var(--bad)',fontWeight:600}}>คลิกเพื่อดูข้อกำหนดและแก้ไข →</div>}
               </div>
               <span className="notif-badge" style={{background:m.bg,color:m.fg}}>{m.label}</span>
