@@ -38,10 +38,14 @@ function isAllowedUrl(u){
 //       (rate-limit ในหน่วยความจำใช้ไม่ได้ข้าม serverless instance — เป็นเพียงเบรกชั่วคราว)
 // (ก) ตรวจ Origin/Referer ว่ามาจากโดเมนของแอปเอง (อ่านจาก env ALLOWED_ORIGIN)
 function sameOrigin(req){
-  const allowed = process.env.ALLOWED_ORIGIN
-  if(!allowed) return false
   const origin = req.headers.origin || req.headers.referer || ''
-  return origin.startsWith(allowed)
+  if(!origin) return false
+  // (1) ตรงกับโดเมนที่ตั้งใน env ALLOWED_ORIGIN (รองรับหลายค่า คั่นด้วย comma)
+  const allowed = (process.env.ALLOWED_ORIGIN||'').split(',').map(s=>s.trim()).filter(Boolean)
+  if(allowed.some(a => origin.startsWith(a))) return true
+  // (2) same-origin จริง: โฮสต์ของ origin ตรงกับโฮสต์ที่เสิร์ฟคำขอ
+  //     → ใช้ได้ทุกโดเมน *.vercel.app ของแอปเองโดยไม่ต้องตั้ง env (กันเรียกข้ามโดเมนอยู่)
+  try{ return new URL(origin).host === req.headers.host }catch{ return false }
 }
 // (ข) จำกัดความถี่แบบง่ายในหน่วยความจำ: ไม่เกิน 10 ครั้ง/นาที/IP
 const RATE_LIMIT = 10, RATE_WINDOW = 60_000
