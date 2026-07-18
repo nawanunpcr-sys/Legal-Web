@@ -67,10 +67,14 @@ export default async function handler(req,res){
   try{
     // stage=false (P12): ข้ามการเขียน lg_import_staging แล้ว return JSON ให้ client ไปเก็บเอง
     // (default true = พฤติกรรมเดิม เพื่อความ backward-compatible)
-    const { source='', kind='auto', sourceUrl='', stage=true } = req.body||{}
-    if(!source.trim()) return res.status(400).json({error:'กรุณาใส่ URL หรือวางตัวบทกฎหมาย'})
+    // pdfBase64 (P12): แนบไฟล์ PDF ให้ Claude อ่านเป็นเอกสารโดยตรง (base64, ไม่มีส่วน data: นำหน้า)
+    const { source='', kind='auto', sourceUrl='', stage=true, pdfBase64='', pdfName='' } = req.body||{}
+    const hasPdf = !!(pdfBase64 && pdfBase64.length)
+    if(!hasPdf && !source.trim()) return res.status(400).json({error:'กรุณาใส่ URL, วางตัวบทกฎหมาย หรือแนบไฟล์ PDF'})
+    // กัน request body เกินลิมิตของ Vercel (~4.5MB) — base64 ~6M ≈ ไฟล์ ~4.5MB
+    if(hasPdf && pdfBase64.length > 6_000_000) return res.status(413).json({error:'ไฟล์ PDF ใหญ่เกินไป — กรุณาแยกไฟล์ หรือ copy ตัวบทมาวางแทน'})
     let text = source, srcUrl = ''
-    const isUrl = /^https?:\/\//i.test(source.trim())
+    const isUrl = !hasPdf && /^https?:\/\//i.test(source.trim())
     if(isUrl && kind!=='text'){
       srcUrl = source.trim()
       if(!isAllowedUrl(srcUrl)) return res.status(400).json({error:'รองรับเฉพาะเว็บราชการ/แหล่งกฎหมายที่กำหนดไว้เท่านั้น'})
@@ -80,11 +84,16 @@ export default async function handler(req,res){
       text = strip(await r.text()).slice(0,16000)
       if(text.length<200) return res.status(422).json({error:'ดึงเนื้อหาจากหน้าได้น้อยเกินไป ลองวางตัวบทเป็นข้อความ'})
     }
+    // PDF → document content block (base64) · ข้อความ/URL → text ธรรมดา
+    const userContent = hasPdf
+      ? [ { type:'document', source:{ type:'base64', media_type:'application/pdf', data:pdfBase64 } },
+          { type:'text', text:`ไฟล์ PDF ตัวบทกฎหมาย${pdfName?` (${pdfName})`:''}${sourceUrl?` · ลิงก์: ${sourceUrl}`:''} — โปรดอ่านและสรุปตามรูปแบบที่กำหนด` } ]
+      : `ตัวบทกฎหมาย${srcUrl?` (จาก ${srcUrl})`:''}:\n\n${text}`
     const ar = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'content-type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
       body:JSON.stringify({model:MODEL,max_tokens:8000,system:SYSTEM,
-        messages:[{role:'user',content:`ตัวบทกฎหมาย${srcUrl?` (จาก ${srcUrl})`:''}:\n\n${text}`}]})
+        messages:[{role:'user',content:userContent}]})
     })
     if(!ar.ok) return res.status(502).json({error:'เรียก Claude API ไม่สำเร็จ: '+(await ar.text()).slice(0,200)})
     const data = await ar.json()

@@ -12,14 +12,25 @@ import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
 
 // เรียก endpoint เดิม (คีย์อยู่ฝั่ง Vercel env) — stage:false = ไม่เขียน lg_import_staging
-async function analyzeSource({ source, sourceUrl = '' }) {
+// รองรับทั้งข้อความ/URL (source) และไฟล์ PDF (pdfBase64)
+async function analyzeSource({ source = '', sourceUrl = '', pdfBase64 = '', pdfName = '' }) {
   const r = await fetch('/api/law-analyze', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ source, sourceUrl, stage: false }),
+    body: JSON.stringify({ source, sourceUrl, pdfBase64, pdfName, stage: false }),
   })
   const d = await r.json()
   if (!r.ok) throw new Error(d.error || 'สรุปไม่สำเร็จ')
   return { law: d.law || {}, requirements: d.requirements || [] }
+}
+
+// อ่านไฟล์เป็น base64 (ตัดส่วน "data:...;base64," นำหน้าออก)
+function readFileBase64(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader()
+    fr.onload = () => resolve(String(fr.result).split(',')[1] || '')
+    fr.onerror = reject
+    fr.readAsDataURL(file)
+  })
 }
 
 // req ดิบจาก AI → แถวแก้ไขได้
@@ -89,6 +100,20 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
     setBusy(false)
   }
 
+  async function analyzePdf(file) {
+    if (!file || busy) return
+    if (file.size > 4 * 1024 * 1024) { toast('ไฟล์ PDF ใหญ่เกิน 4MB — กรุณาแยกไฟล์ หรือ copy ตัวบทมาวางแทน'); return }
+    setBusy(true); setLaw(null); setReqs([])
+    try {
+      const pdfBase64 = await readFileBase64(file)
+      const { law: l, requirements } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
+      setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
+      setReqs(toReqRows(requirements))
+      toast('สรุปจากไฟล์ PDF แล้ว — ตรวจ/แก้ไขได้', 'success')
+    } catch (e) { toast('สรุป PDF ไม่สำเร็จ: ' + e.message) }
+    setBusy(false)
+  }
+
   const setReq = (i, v) => setReqs(p => p.map((x, j) => j === i ? v : x))
   const rmReq = i => setReqs(p => p.filter((_, j) => j !== i))
   const setLawField = (k, v) => setLaw(p => ({ ...p, [k]: v }))
@@ -123,10 +148,16 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
       <label className="form-label" style={{ marginTop: 10 }}>ลิงก์ตัวบทจริง (แนะนำ — กรณีวางเป็นข้อความ)</label>
       <input className="form-input" style={{ marginTop: 0 }} value={srcUrl} onChange={e => setSrcUrl(e.target.value)}
         placeholder="เช่น https://ratchakitcha.soc.go.th/documents/xxxx" />
-      <div style={{ marginTop: 12 }}>
+      <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <button className="btn btn-primary" disabled={busy || !src.trim() || !can('edit')} title={can('edit') ? '' : NO_PERM} onClick={analyze}>
           {busy ? <><span className="spin" style={{ width: 14, height: 14, display: 'inline-block', marginRight: 6 }} />กำลังสรุป…</> : <><I n="spark" />สรุป (AI)</>}
         </button>
+        <label className="btn btn-ghost" style={{ cursor: busy || !can('edit') ? 'not-allowed' : 'pointer', opacity: busy || !can('edit') ? .55 : 1 }} title={can('edit') ? 'แนบไฟล์ PDF ให้ AI อ่านและสรุป' : NO_PERM}>
+          <I n="folder" />แนบไฟล์ PDF
+          <input type="file" accept="application/pdf" style={{ display: 'none' }} disabled={busy || !can('edit')}
+            onChange={e => { const f = e.target.files?.[0]; analyzePdf(f); e.target.value = '' }} />
+        </label>
+        <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>รองรับ PDF ≤ 4MB (เหมาะกับลิงก์ราชกิจจาฯ ที่เป็นไฟล์ PDF)</span>
       </div>
 
       {law && (
