@@ -15,7 +15,6 @@ import LawDrawer from './components/LawDrawer.jsx'
 import Reports from './components/Reports.jsx'
 import { I } from './components/icons.jsx'
 import Login from './components/Login.jsx'
-import Landing from './components/Landing.jsx'
 import NotifyPopup, { isOverdueItem } from './components/NotifyPopup.jsx'
 import { DashboardSkeleton } from './components/Skeleton.jsx'
 import Toaster from './components/Toaster.jsx'
@@ -77,7 +76,6 @@ const TITLES = {
 
 export default function App(){
   const [session,setSession] = useState(undefined) // undefined=checking, null=logged out
-  const [showLogin,setShowLogin] = useState(false)  // false=show public Landing, true=show Login form
   const [navOpen,setNavOpen] = useState(()=>{ try{ return localStorage.getItem('cr_nav')!=='0' }catch{ return true } })
   const [view,setView]     = useState(()=>{ try{ const v=localStorage.getItem('cr_view')||'dashboard';
     // backward-compat: the old split 'register'/'compliance' views are now one 'registry' view
@@ -446,9 +444,7 @@ export default function App(){
   }
 
   if(session===undefined) return <div className="loading"><div className="spin"/>กำลังตรวจสอบสิทธิ์…</div>
-  if(!authed) return showLogin
-    ? <Login onAuthed={s=>setSession(s)}/>
-    : <Landing onEnter={()=>setShowLogin(true)}/>
+  if(!authed) return <Login onAuthed={s=>setSession(s)}/>
   if(loading) return (
     <div style={{minHeight:'100vh',background:'var(--paper)',padding:'32px 36px'}}>
       <DashboardSkeleton/>
