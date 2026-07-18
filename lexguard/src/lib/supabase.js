@@ -501,172 +501,6 @@ export async function saveStagingEdits(ids, lawFields = {}, reqRows = []) {
     detail: 'แก้ไขผลสรุป AI ก่อนตรวจทาน' })
 }
 
-// ---- DEPRECATED (P9) — free-form kanban, merged into lg_process_tracker ----
-// Exports kept so nothing breaks; lg_process_items receives no new writes.
-export const PROCESS_STAGES = [
-  { key: 'discovery', label: 'ค้นพบกฎหมายใหม่', role: 'Monitor',   color: '#0071e3' },
-  { key: 'review',    label: 'ตรวจเนื้อหา',      role: 'Reviewer',  color: '#0058b0' },
-  { key: 'forward',   label: 'ส่งต่อหน่วยงาน',    role: 'Forwarder', color: '#ff9500' },
-  { key: 'verify',    label: 'ตรวจสอบ/ติดตาม',   role: 'Verifier',  color: '#7a5d96' },
-  { key: 'done',      label: 'เสร็จสิ้น',          role: '',          color: '#248a3d' },
-]
-// DEPRECATED — merged into lg_process_tracker
-export async function fetchProcessItems() {
-  if (!hasSupabase) return []
-  const { data } = await supabase.from('lg_process_items').select('*').order('updated_at', { ascending: false })
-  return data || []
-}
-// DEPRECATED — merged into lg_process_tracker
-export async function createProcessItem(item) {
-  const { data, error } = await supabase.from('lg_process_items').insert({
-    title: item.title, ref_type: item.ref_type || 'manual', ref_id: item.ref_id || null,
-    stage: item.stage || 'discovery', assignee: item.assignee || null, note: item.note || null,
-  }).select().single()
-  if (error) throw error
-  return data
-}
-// DEPRECATED — merged into lg_process_tracker
-export async function updateProcessItem(id, patch) {
-  const { error } = await supabase.from('lg_process_items').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)
-  if (error) throw error
-}
-// DEPRECATED — merged into lg_process_tracker
-export async function deleteProcessItem(id) {
-  const { error } = await supabase.from('lg_process_items').delete().eq('id', id)
-  if (error) throw error
-}
-// Realtime: subscribe to live changes on lg_process_items so the tracker moves
-// across open tabs/devices without a manual refresh. Returns an unsubscribe fn.
-export function subscribeProcessItems(onChange) {
-  if (!hasSupabase) return () => {}
-  const ch = supabase
-    .channel('rt-process-items')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'lg_process_items' }, onChange)
-    .subscribe()
-  return () => { try { supabase.removeChannel(ch) } catch { /* noop */ } }
-}
-
-// ---- Process Tracker (5-stage law lifecycle · single source of truth) ----
-// P9: merged from the old 3-stage tracker + the free-form kanban into ONE
-// lifecycle backed entirely by lg_process_tracker (one row per stage per law).
-export const TRACKER_STAGES = [
-  { n: 1, key: 'ai_search',      title: 'AI ค้นหา/วิเคราะห์',   role: 'ผู้ค้นหา/วิเคราะห์',    color: '#0071e3' },
-  { n: 2, key: 'verify_content', title: 'ทวนสอบเนื้อหา AI',     role: 'ผู้ทวนสอบเนื้อหา',     color: '#7a5d96' },
-  { n: 3, key: 'assess',         title: 'ประเมินความสอดคล้อง',  role: 'หน่วยงานที่เกี่ยวข้อง', color: '#ff9500' },
-  { n: 4, key: 'approve',        title: 'อนุมัติเข้าทะเบียน',    role: 'Admin',                color: '#16a34a' },
-  { n: 5, key: 'monitor',        title: 'ติดตาม/ทวนสอบตามรอบ',  role: 'ผู้ทวนสอบ',            color: '#0058b0' },
-]
-export const TRACKER_STATUS = {
-  waiting:     { label: 'รอดำเนินการ', color: '#a5a8b2' },
-  in_progress: { label: 'กำลังทำ',     color: '#d97706' },
-  done:        { label: 'เสร็จ',        color: '#16a34a' },
-  overdue:     { label: 'เกินกำหนด',   color: '#dc2626' },
-}
-// entry / completion substatus for each stage (must match lg_process_substatus)
-const DEFAULT_SUB = { 1: 'pending_search', 2: 'pending_verify', 3: 'pending_assign', 4: 'pending_approve', 5: 'scheduled' }
-const DONE_SUB    = { 1: 'analyzed',       2: 'verified',       3: 'assessed',       4: 'approved',        5: 'reviewed' }
-// result values (lg_review_log.result) that send a case back to re-assessment
-export const REVIEW_REASSESS_RESULT = 'มีการแก้ไข'
-
-export async function fetchTrackerSubstatuses() {
-  if (!hasSupabase) return {}
-  const { data } = await supabase.from('lg_process_substatus').select('*').order('stage').order('sort')
-  const g = {}
-  ;(data || []).forEach(r => { (g[r.stage] = g[r.stage] || []).push(r) })
-  return g
-}
-export async function fetchTracker() {
-  if (!hasSupabase) return []
-  const { data } = await supabase.from('lg_process_tracker').select('*').order('law_id').order('stage')
-  return data || []
-}
-// create a tracking case = 5 stage rows for one law.
-// startStage lets callers begin partway through (e.g. staging-approved laws start
-// at stage 3 "ประเมินความสอดคล้อง" because AI search + content-verify are already
-// done); earlier stages are marked done. Defaults keep the stage-1 behaviour.
-export async function createTrackerCase({ law_id, requirement_id = null, startStage = 1, startSubstatus = null }) {
-  const now = new Date().toISOString()
-  const rows = TRACKER_STAGES.map(s => {
-    if (s.n < startStage)   return { law_id, requirement_id, stage: s.n, substatus: DONE_SUB[s.n],                    status: 'done',        started_at: now, completed_at: now }
-    if (s.n === startStage) return { law_id, requirement_id, stage: s.n, substatus: startSubstatus || DEFAULT_SUB[s.n], status: 'in_progress', started_at: now, completed_at: null }
-    return { law_id, requirement_id, stage: s.n, substatus: DEFAULT_SUB[s.n], status: 'waiting', started_at: null, completed_at: null }
-  })
-  const { error } = await supabase.from('lg_process_tracker').insert(rows)
-  if (error) throw error
-}
-export async function updateTrackerStage(id, patch) {
-  const { error } = await supabase.from('lg_process_tracker').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)
-  if (error) throw error
-}
-export async function deleteTrackerCase(lawId) {
-  const { error } = await supabase.from('lg_process_tracker').delete().eq('law_id', lawId)
-  if (error) throw error
-}
-
-// Advance a case (keyed by law_id) so that `toStage` becomes the active stage:
-//  · every earlier stage is closed (status=done, completed_at set)
-//  · `toStage` is (re)opened (status=in_progress, started_at set, completed_at cleared)
-//  · every later stage is reset to waiting (so re-entering an earlier stage rolls
-//    the tail back — used by re-assessment)
-// Re-entering stage 3 (was already done) bumps assessment_round.
-export async function advanceStage(lawId, toStage) {
-  const now = new Date().toISOString()
-  const { data: rows, error } = await supabase.from('lg_process_tracker').select('*').eq('law_id', lawId)
-  if (error) throw error
-  for (const r of rows || []) {
-    if (r.stage < toStage) {
-      if (r.status !== 'done') await updateTrackerStage(r.id, { status: 'done', substatus: DONE_SUB[r.stage] || r.substatus, completed_at: r.completed_at || now })
-    } else if (r.stage === toStage) {
-      const reenter = r.status === 'done'
-      const patch = { status: 'in_progress', substatus: DEFAULT_SUB[toStage], started_at: r.started_at || now, completed_at: null }
-      if (toStage === 3 && reenter) patch.assessment_round = (r.assessment_round || 1) + 1
-      await updateTrackerStage(r.id, patch)
-    } else if (r.status !== 'waiting' || r.completed_at) {
-      await updateTrackerStage(r.id, { status: 'waiting', substatus: DEFAULT_SUB[r.stage], started_at: null, completed_at: null })
-    }
-  }
-}
-
-// Record a periodic review on stage 5. Writes an lg_review_log entry, bumps
-// review_round + last/next_review_date, and — when the law changed
-// (result === 'มีการแก้ไข') — sends the case back to stage 3 (assessment_round +1).
-// next_review_date fallback: last review + 12 months (no review-frequency field on lg_laws).
-export async function logReview(lawId, { date, result, note, reviewer } = {}) {
-  const reviewDate = date || new Date().toISOString().slice(0, 10)
-  const now = new Date().toISOString()
-  const { error: e1 } = await supabase.from('lg_review_log').insert({
-    law_id: lawId, review_date: reviewDate, reviewer: reviewer || currentUserName(), result: result || null, note: note || null,
-  })
-  if (e1) throw e1
-
-  const reassess = result === REVIEW_REASSESS_RESULT
-  const nd = new Date(reviewDate); nd.setMonth(nd.getMonth() + 12)
-  const nextDate = nd.toISOString().slice(0, 10)
-
-  // re-assessment rolls the tail back first, so the stage-5 counters below survive it
-  if (reassess) await advanceStage(lawId, 3)
-
-  const { data: s5 } = await supabase.from('lg_process_tracker').select('*').eq('law_id', lawId).eq('stage', 5).maybeSingle()
-  if (s5) await updateTrackerStage(s5.id, {
-    review_round: (s5.review_round || 0) + 1,
-    last_review_date: reviewDate,
-    next_review_date: reassess ? null : nextDate,
-    substatus: reassess ? 'scheduled' : 'reviewed',
-    status:    reassess ? 'waiting'   : 'done',
-    completed_at: reassess ? null : now,
-  })
-}
-// Phase 2 · Realtime: subscribe to live changes on lg_process_tracker.
-// onChange(payload) fires on any insert/update/delete. Returns an unsubscribe fn.
-export function subscribeTracker(onChange) {
-  if (!hasSupabase) return () => {}
-  const ch = supabase
-    .channel('rt-process-tracker')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'lg_process_tracker' }, onChange)
-    .subscribe()
-  return () => { try { supabase.removeChannel(ch) } catch { /* noop */ } }
-}
-
 // ---- Monthly compliance check-off ----
 export async function fetchComplianceMonths(year) {
   if (!hasSupabase) return []
@@ -1037,17 +871,37 @@ export async function createAddWorkflow({ lawFields, reqs = [], ownerName, disco
   return { law, workflow: wf }
 }
 
+// รอบถัดไป + รอบที่ยังเปิดของกฎหมายหนึ่ง (P11 · Phase B)
+export async function lawRoundInfo(lawId) {
+  if (!hasSupabase || !lawId) return { nextRound: 1, openRound: null }
+  const { data } = await supabase.from('lg_law_workflow').select('round,status').eq('law_id', lawId)
+  const rows = data || []
+  const maxRound = rows.reduce((m, r) => Math.max(m, r.round || 1), 0)
+  const open = rows.find(r => r.status !== 'เสร็จสิ้น')
+  return { nextRound: maxRound + 1, openRound: open ? (open.round || 1) : null }
+}
+
 // ── Workflow B · Process 1 — ติดตาม/ทวนสอบกฎหมายเดิม (ผู้ตรวจสอบ) ───────────────
 export async function createMonitorWorkflow({ law, ownerName, followIssue }) {
   const now = new Date().toISOString()
+  const { nextRound, openRound } = await lawRoundInfo(law.id)
+  if (openRound) throw new Error(`กฎหมายนี้มีรายการติดตามที่ยังไม่ปิด (รอบที่ ${openRound})`)
   const { data: wf, error } = await supabase.from('lg_law_workflow').insert({
-    law_id: law.id, workflow_type: 'monitor', stage: 2, status: 'รอประเมิน',
+    law_id: law.id, workflow_type: 'monitor', stage: 2, status: 'รอประเมิน', round: nextRound,
     owner_name: ownerName || currentUserName(), owner_at: now, follow_issue: followIssue || null,
   }).select().single()
   if (error) throw error
   await logActivity({ action: 'monitor', law_id: law.id, law_code: law.code, law_name: law.name,
-    detail: `เปิดรายการทวนสอบ — ${(followIssue || '').slice(0, 80)}` })
+    detail: `เปิดรายการทวนสอบ (รอบที่ ${nextRound}) — ${(followIssue || '').slice(0, 80)}` })
   return wf
+}
+
+// timeline ประวัติกิจกรรมของกฎหมายหนึ่ง (P11 · Phase B) — filter law_id + limit เท่านั้น
+export async function fetchActivityByLaw(lawId, limit = 20) {
+  if (!hasSupabase || !lawId) return []
+  const { data } = await supabase.from('lg_activity_log')
+    .select('*').eq('law_id', lawId).order('created_at', { ascending: false }).limit(limit)
+  return data || []
 }
 
 // ── Process 2 · ผู้ประเมิน (ใช้ร่วมทั้ง Workflow A และ B) ──────────────────────
