@@ -28,11 +28,10 @@ import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, c
          jorporReportDeadlines, effectiveInfo, trainingStatus } from './lib/ui.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import ProcessTracker from './pages/ProcessTracker.jsx'
-import Discovery from './pages/Discovery.jsx'
+import LawSummary from './pages/LawSummary.jsx'
 import History from './pages/History.jsx'
 import AddLawFlow from './components/AddLawFlow.jsx'
 import RegistryCompliance from './pages/Registry.jsx'
-import Analysis from './pages/Analysis.jsx'
 import Communication from './pages/Communications.jsx'
 import Repealed from './pages/Repealed.jsx'
 import ExportPdfModal from './components/ExportPdfModal.jsx'
@@ -44,7 +43,7 @@ const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
     { id:'registry',      label:'ทะเบียน & ความสอดคล้อง', icon:'book'    },
-    { id:'discovery',     label:'ค้นหากฎหมาย',            icon:'search'  },
+    { id:'summary',       label:'สรุปกฎหมาย',            icon:'spark'   },
     { id:'tracker',       label:'Process Tracker',        icon:'update'  },
   ]},
   { label: 'ประเมิน & สื่อสาร', items: [
@@ -66,10 +65,9 @@ const TITLES = {
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
   repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
   comm:          ['สื่อสาร & ส่งรายงาน',   'ตารางการสื่อสาร (ISD-86) และการส่งรายงานราชการในหน้าเดียว'],
-  discovery:     ['ค้นหากฎหมาย',           'ค้นหาและสรุปกฎหมายใหม่ด้วย AI (ราชกิจจาฯ · Shawpat)'],
+  summary:       ['สรุปกฎหมาย',            'สรุปกฎหมายด้วย AI + คลังสรุป + ส่งต่อเข้าทะเบียน'],
   tracker:       ['Process Tracker',        'ติดตามการเพิ่มกฎหมายใหม่ และการทวนสอบกฎหมายเดิม รายฉบับ'],
   history:       ['ประวัติการทำรายการ',     'ไทม์ไลน์การกระทำต่อกฎหมายแต่ละฉบับ แยกตามหมวด LA–LG'],
-  analysis:      ['วิเคราะห์ & สรุป AI',   'สรุปกฎหมายเข้าทะเบียนด้วย AI (Skill)'],
   notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
   settings:      ['ตั้งค่า',                'ข้อมูลองค์กรและการแสดงผลของระบบ'],
 }
@@ -83,6 +81,7 @@ export default function App(){
     // P10: the old free-form process/staging/assessment/plans/updates views were removed
     // (note: 'tracker' is now the NEW per-law Process Tracker — keep it)
     if(v==='process'||v==='staging'||v==='assessment'||v==='plans'||v==='updates') return 'tracker'
+    if(v==='discovery'||v==='analysis') return 'summary'   // P12: รวมเป็นหน้า "สรุปกฎหมาย"
     if(v==='reports') return 'comm'       // P10: merged into สื่อสาร & ส่งรายงาน hub
     return v }catch{ return 'dashboard' } })
   const [dark,setDark]     = useState(()=>{ try{ const v=localStorage.getItem('cr_dark'); return v==null?false:v==='1' }catch{ return false } })
@@ -111,6 +110,7 @@ export default function App(){
   const [discovered,setDiscovered] = useState([])        // lg_ai_discovered_laws (หน้าค้นหากฎหมาย AI)
   const [searchLog,setSearchLog] = useState([])          // lg_search_log (หลักฐานการติดตามกฎหมาย)
   const [showAddLaw,setShowAddLaw] = useState(false)     // Workflow A · Process 1 wizard
+  const [addLawInit,setAddLawInit] = useState(null)      // P12: prefill AddLawFlow จากหน้าสรุปกฎหมาย
   const [trackerFocus,setTrackerFocus] = useState(0)     // signal: คลิก badge/เมนู tracker → โฟกัสงานค้าง
   const [flowPopup,setFlowPopup]   = useState(null)      // { title, msg } — popup กึ่งกลางจอ (ยืนยันเพิ่ม/ประเมินเสร็จ)
   const [showNotify,setShowNotify] = useState(false)
@@ -141,13 +141,15 @@ export default function App(){
   async function loadReports(){ try{ setReports(await fetchReports()) }catch(e){ console.warn('reports reload',e) } }
   async function loadWorkflow(){ try{ setWorkflowRows(await fetchWorkflow()) }catch(e){ console.warn('workflow reload',e) } }
   async function loadDiscovered(){ try{ setDiscovered(await fetchDiscoveredLaws()) }catch(e){ console.warn('discovered reload',e) } }
-  async function loadSearchLog(){ try{ setSearchLog(await fetchSearchLog()) }catch(e){ console.warn('search log reload',e) } }
+  async function loadLaws(){ try{ const d=await fetchAll(); setLaws(d.laws) }catch(e){ console.warn('laws reload',e) } }
+  function openAddLaw(init=null){ setAddLawInit(init); setShowAddLaw(true) }   // P12
   async function loadCurMonth(){ try{ setCurMonthRows(await fetchComplianceMonths(new Date().getFullYear())) }catch(e){ console.warn('cur month reload',e) } }
   // P10: staging/assessment/tracker/plans/reports views were removed. goView()
   // remaps the one surviving legacy id (reports → comm hub) so old deep links /
   // notifications still land right.
   function goView(v){
     if(v==='reports'){ setCommTab('reports'); setView('comm'); return }
+    if(v==='discovery'||v==='analysis'){ setView('summary'); return }   // P12
     setView(v)
   }
 
@@ -558,10 +560,11 @@ export default function App(){
           {view==='registry'      && <RegistryCompliance
             regLaws={activeLaws} cats={cats} catMap={catMap} stats={stats}
             search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
-            round={round} onExportF259={()=>setShowPdf(true)} onAddLaw={()=>setShowAddLaw(true)}
+            round={round} onExportF259={()=>setShowPdf(true)} onAddLaw={()=>openAddLaw()}
             monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
-          {view==='discovery'     && <Discovery discovered={discovered} onReload={loadDiscovered} searchLog={searchLog} onSearchLogged={loadSearchLog} cats={cats}/>}
+          {view==='summary'       && <LawSummary laws={activeLaws} cats={cats} catMap={catMap} discovered={discovered} suggest={suggest}
+            onReloadDiscovered={loadDiscovered} onReloadLaws={loadLaws} onOpenLaw={setOpenLaw} onAddToRegistry={init=>openAddLaw(init)}/>}
           {view==='history'       && <History activity={activity} laws={laws} catMap={catMap} settings={settings} workflowRows={workflowRows} searchLog={searchLog}/>}
           {view==='tracker'       && <ProcessTracker rows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest} focusSignal={trackerFocus}
             onStartMonitor={handleStartMonitor} onAssess={handleWorkflowAssess} onClosePlan={handleClosePlan} onOpenLaw={setOpenLaw}/>}
@@ -575,7 +578,6 @@ export default function App(){
             {commTab==='comm'    && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
             {commTab==='reports' && <Reports reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
           </div>)}
-          {view==='analysis'      && <Analysis      laws={inForceLaws} cats={cats} catMap={catMap} allLaws={laws} goView={goView} onCreateFull={handleCreateFull} suggest={suggest}/>}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={goView}/>}
           {view==='settings'      && (can(role,'delete')
             ? <SettingsPage settings={settings} onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }} training={training} setTraining={setTraining}/>
@@ -589,9 +591,9 @@ export default function App(){
           onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive}
           prog={prog} thDate={thDate}/>
       )}
-      {showAddLaw && <AddLawFlow cats={cats} allLaws={laws} suggest={suggest}
-        onCreate={handleCreateAddWorkflow} onClose={()=>setShowAddLaw(false)}
-        onDone={()=>setFlowPopup({ title:'เพิ่มเข้าทะเบียนแล้ว', msg:'กฎหมายถูกเพิ่มเข้าทะเบียนแล้ว (สถานะ: รอประเมิน) — ดูได้ที่ Process Tracker' })}/>}
+      {showAddLaw && <AddLawFlow cats={cats} allLaws={laws} suggest={suggest} initialData={addLawInit}
+        onCreate={handleCreateAddWorkflow} onClose={()=>{ setShowAddLaw(false); setAddLawInit(null) }}
+        onDone={()=>{ loadDiscovered(); setFlowPopup({ title:'เพิ่มเข้าทะเบียนแล้ว', msg:'กฎหมายถูกเพิ่มเข้าทะเบียนแล้ว (สถานะ: รอประเมิน) — ดูได้ที่ Process Tracker' }) }}/>}
       {flowPopup && (
         <div className="flow-popup-overlay" style={{position:'fixed',inset:0,display:'grid',placeItems:'center',zIndex:400,background:'rgba(20,24,33,.45)'}} onClick={()=>setFlowPopup(null)}>
           <div className="panel" style={{maxWidth:380,padding:'22px 24px',textAlign:'center'}} onClick={e=>e.stopPropagation()}>

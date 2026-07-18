@@ -19,20 +19,27 @@ function summaryToReqs(summary) {
     .filter(Boolean)
 }
 
-export default function AddLawFlow({ cats, allLaws, suggest = {}, onCreate, onClose, onDone }) {
+export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = null, onCreate, onClose, onDone }) {
   const [step, setStep] = useState(1)
   const [owner, setOwner] = useState('')
   const [discovered, setDiscovered] = useState([])
   const [loadingDisc, setLoadingDisc] = useState(true)
-  const [selId, setSelId] = useState(null)       // id ของ discovered ที่เลือก · 'manual' = กรอกเอง
-  const [cat, setCat] = useState(cats[0]?.code || 'LA')
+  // 'prefill' = มาจากหน้าสรุปกฎหมาย (P12) · 'manual' = กรอกเอง · uuid = เลือกจากคิว
+  const [selId, setSelId] = useState(initialData ? 'prefill' : null)
+  // P12: เก็บ requirements แบบมีโครงสร้าง (responsible/frequency) ไว้ส่งเข้าทะเบียนโดยไม่ตกหล่น
+  const prefillReqs = useMemo(() => (initialData?.requirements || []).map(q => ({
+    responsible: q.responsible || '', frequency: q.frequency || '', documents: q.documents || '',
+  })), [initialData])
+  const il = initialData?.law || {}
+  const [cat, setCat] = useState(il.cat || cats[0]?.code || 'LA')
   const [level, setLevel] = useState('4')
-  const [name, setName] = useState('')
-  const [ministry, setMinistry] = useState('')
-  const [announce, setAnnounce] = useState('')
-  const [effective, setEffective] = useState('')
-  const [docList, setDocList] = useState('')
-  const [reqText, setReqText] = useState('')      // สาระสำคัญ 1 ข้อ/บรรทัด
+  const [name, setName] = useState(il.name || '')
+  const [ministry, setMinistry] = useState(il.ministry || '')
+  const [announce, setAnnounce] = useState(il.announce_date || '')
+  const [effective, setEffective] = useState(il.effective_date || '')
+  const [docList, setDocList] = useState(il.documents || '')
+  const [reqText, setReqText] = useState(       // สาระสำคัญ 1 ข้อ/บรรทัด
+    (initialData?.requirements || []).map(q => `${q.section_ref ? q.section_ref + ': ' : ''}${q.req_text || ''}`.trim()).filter(Boolean).join('\n'))
   const [saving, setSaving] = useState(false)
   const [newLaw, setNewLaw] = useState(null)
   const [dup, setDup] = useState(null)               // Task 9: { type:'exact'|'amendment'|'fuzzy', law, sim, blocked? }
@@ -76,7 +83,9 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, onCreate, onCl
 
   async function submit(force = false) {
     if (!valid || saving) return
-    const disc = selId === 'manual' ? null : discovered.find(d => d.id === selId)
+    const disc = initialData
+      ? (initialData.discoveredId ? { id: initialData.discoveredId } : null)   // P12 · mark คิวเป็น registered
+      : (selId === 'manual' ? null : discovered.find(d => d.id === selId))
     // Task 9 · กันซ้ำ 2 ชั้น (exact = บล็อก, fuzzy/amendment = เตือนให้ยืนยัน)
     if (!force && !dupConfirmed) {
       const found = findLawDuplicate(allLaws, name.trim(), disc?.source_url || '')
@@ -87,7 +96,11 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, onCreate, onCl
     }
     setSaving(true)
     try {
-      const reqs = reqText.split('\n').map(s => s.trim()).filter(Boolean).map(t => ({ text: t, status: 'met' }))
+      // P12: คงข้อมูล responsible/frequency จาก prefill ตามลำดับบรรทัด (ถ้าผู้ใช้ไม่ได้เพิ่ม/ลบบรรทัด)
+      const reqs = reqText.split('\n').map(s => s.trim()).filter(Boolean).map((t, i) => ({
+        text: t, status: 'met',
+        responsible: prefillReqs[i]?.responsible || '', frequency: prefillReqs[i]?.frequency || '', documents: prefillReqs[i]?.documents || '',
+      }))
       const { law } = await onCreate({
         lawFields: { code: previewCode, cat, name: name.trim(), hierarchy_level: level, ministry,
           announce_date: announce, effective_date: effective, doc_list: docList },
@@ -126,6 +139,12 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, onCreate, onCl
               </div>
             </div>
 
+            {initialData && (
+              <div style={{marginTop:12,padding:'9px 12px',border:'1px solid var(--brand)',borderRadius:8,background:'var(--brand-tint)',fontSize:12.5,color:'var(--brand)'}}>
+                <b>ข้อมูลจากสรุป AI</b> — ตรวจ/แก้ไขด้านล่างแล้วกด “เพิ่มเข้าทะเบียน” ได้เลย (ไม่ต้องคัดลอก)
+              </div>
+            )}
+            {!initialData && (<>
             <label className="form-label" style={{marginTop:12}}>กฎหมายที่ค้นหา/สรุปมาแล้ว</label>
             {loadingDisc && <div style={{fontSize:12.5,color:'var(--ink-faint)',padding:'8px 0'}}>กำลังโหลด…</div>}
             {!loadingDisc && discovered.length===0 && (
@@ -149,6 +168,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, onCreate, onCl
             <button type="button" className={'btn btn-ghost'+(selId==='manual'?' active':'')} style={{marginTop:2}} onClick={pickManual}>
               <I n="plus"/>กรอกกฎหมายเอง (ไม่ได้มาจากการค้นหา)
             </button>
+            </>)}
 
             {selId && (<div style={{marginTop:14,borderTop:'1px solid var(--line-soft)',paddingTop:12}}>
               <div style={{background:'var(--brand-tint)',border:'1px solid var(--brand)',borderRadius:9,padding:'10px 16px',marginBottom:10,display:'flex',alignItems:'center',gap:12}}>

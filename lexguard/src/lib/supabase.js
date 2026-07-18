@@ -809,7 +809,9 @@ export async function saveDiscoveredLaw(row) {
     announced_date: row.announced_date || null, effective_date: row.effective_date || null,
     ministry: row.ministry || null, related_docs: row.related_docs || null,
     status: row.status || 'imported', searched_at: row.searched_at || new Date().toISOString(),
+    ai_payload: row.ai_payload !== undefined ? row.ai_payload : undefined,  // P12: {law, requirements} เต็มไว้ prefill
   }
+  if (payload.ai_payload === undefined) delete payload.ai_payload
   if (row.id) {
     const { error } = await supabase.from('lg_ai_discovered_laws').update(payload).eq('id', row.id)
     if (error) throw error
@@ -819,6 +821,13 @@ export async function saveDiscoveredLaw(row) {
   if (error) throw error
   return data.id
 }
+// P12 · Phase B — เก็บผลสรุป AI ย้อนหลังไว้ที่ lg_laws.ai_summary (ไม่ทับ requirements ที่ยืนยันแล้ว)
+export async function saveLawAiSummary(lawId, aiSummary) {
+  const { error } = await supabase.from('lg_laws')
+    .update({ ai_summary: aiSummary, ai_summary_at: new Date().toISOString() }).eq('id', lawId)
+  if (error) throw error
+}
+
 export async function deleteDiscoveredLaw(id) {
   // soft delete so the FK from lg_law_workflow.discovered_law_id never dangles
   const { error } = await supabase.from('lg_ai_discovered_laws').update({ status: 'deleted' }).eq('id', id)

@@ -61,7 +61,9 @@ export default async function handler(req,res){
   if(!SUPA_URL||!SUPA_KEY) return res.status(500).json({error:'ยังไม่ได้ตั้งค่า Supabase (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)'})
   if(!process.env.ANTHROPIC_API_KEY) return res.status(500).json({error:'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Vercel'})
   try{
-    const { source='', kind='auto', sourceUrl='' } = req.body||{}
+    // stage=false (P12): ข้ามการเขียน lg_import_staging แล้ว return JSON ให้ client ไปเก็บเอง
+    // (default true = พฤติกรรมเดิม เพื่อความ backward-compatible)
+    const { source='', kind='auto', sourceUrl='', stage=true } = req.body||{}
     if(!source.trim()) return res.status(400).json({error:'กรุณาใส่ URL หรือวางตัวบทกฎหมาย'})
     let text = source, srcUrl = ''
     const isUrl = /^https?:\/\//i.test(source.trim())
@@ -97,12 +99,12 @@ export default async function handler(req,res){
       // กรณีวางตัวบทเป็นข้อความ (ไม่มี URL ที่ fetch) ให้ใช้ "ลิงก์ตัวบทจริง" ที่ผู้ใช้กรอกมา
       frequency: r.frequency||'', other_terms: r.other_terms||'', source_url: srcUrl || (sourceUrl||'').trim(), status:'proposed'
     }))
-    if(rows.length){
+    if(stage && rows.length){
       const sr = await fetch(`${SUPA_URL}/rest/v1/lg_import_staging`,{method:'POST',
         headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'content-type':'application/json',Prefer:'return=minimal'},
         body:JSON.stringify(rows)})
       if(!sr.ok) return res.status(502).json({error:'บันทึกลง staging ไม่สำเร็จ: '+(await sr.text()).slice(0,200)})
     }
-    return res.status(200).json({law,count:rows.length,batch,requirements:reqs})
+    return res.status(200).json({law,count:reqs.length,batch,requirements:reqs})
   }catch(e){ return res.status(500).json({error:String(e&&e.message||e)}) }
 }
