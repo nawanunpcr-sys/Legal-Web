@@ -73,22 +73,28 @@ export default async function handler(req,res){
     if(!hasPdf && !source.trim()) return res.status(400).json({error:'กรุณาใส่ URL, วางตัวบทกฎหมาย หรือแนบไฟล์ PDF'})
     // กัน request body เกินลิมิตของ Vercel (~4.5MB) — base64 ~6M ≈ ไฟล์ ~4.5MB
     if(hasPdf && pdfBase64.length > 6_000_000) return res.status(413).json({error:'ไฟล์ PDF ใหญ่เกินไป — กรุณาแยกไฟล์ หรือ copy ตัวบทมาวางแทน'})
-    let text = source, srcUrl = ''
+    let text = source, srcUrl = '', pdfUrl = ''
     const isUrl = !hasPdf && /^https?:\/\//i.test(source.trim())
     if(isUrl && kind!=='text'){
       srcUrl = source.trim()
       if(!isAllowedUrl(srcUrl)) return res.status(400).json({error:'รองรับเฉพาะเว็บราชการ/แหล่งกฎหมายที่กำหนดไว้เท่านั้น'})
       const r = await fetch(srcUrl,{headers:{'user-agent':'Mozilla/5.0 LexRegistry'}})
       const ct = r.headers.get('content-type')||''
-      if(ct.includes('pdf')) return res.status(415).json({error:'ลิงก์เป็น PDF — กรุณาเปิดไฟล์แล้ววางตัวบทเป็นข้อความแทน'})
-      text = strip(await r.text()).slice(0,16000)
-      if(text.length<200) return res.status(422).json({error:'ดึงเนื้อหาจากหน้าได้น้อยเกินไป ลองวางตัวบทเป็นข้อความ'})
+      if(ct.includes('pdf') || /\.pdf($|\?|#)/i.test(srcUrl)){
+        pdfUrl = srcUrl   // ลิงก์เป็น PDF → ให้ Claude ดึงและอ่านเอง (url document source)
+      } else {
+        text = strip(await r.text()).slice(0,16000)
+        if(text.length<200) return res.status(422).json({error:'ดึงเนื้อหาจากหน้าได้น้อยเกินไป ลองวางตัวบทเป็นข้อความ หรือแนบไฟล์ PDF'})
+      }
     }
-    // PDF → document content block (base64) · ข้อความ/URL → text ธรรมดา
+    // PDF แนบไฟล์ → base64 document · ลิงก์ PDF → url document (Claude ดึงเอง) · ข้อความ/HTML → text
     const userContent = hasPdf
       ? [ { type:'document', source:{ type:'base64', media_type:'application/pdf', data:pdfBase64 } },
           { type:'text', text:`ไฟล์ PDF ตัวบทกฎหมาย${pdfName?` (${pdfName})`:''}${sourceUrl?` · ลิงก์: ${sourceUrl}`:''} — โปรดอ่านและสรุปตามรูปแบบที่กำหนด` } ]
-      : `ตัวบทกฎหมาย${srcUrl?` (จาก ${srcUrl})`:''}:\n\n${text}`
+      : pdfUrl
+        ? [ { type:'document', source:{ type:'url', url:pdfUrl } },
+            { type:'text', text:`ไฟล์ PDF ตัวบทกฎหมายจากลิงก์ ${pdfUrl} — โปรดอ่านและสรุปตามรูปแบบที่กำหนด` } ]
+        : `ตัวบทกฎหมาย${srcUrl?` (จาก ${srcUrl})`:''}:\n\n${text}`
     const ar = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'content-type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
