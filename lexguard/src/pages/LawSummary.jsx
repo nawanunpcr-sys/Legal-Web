@@ -33,6 +33,17 @@ function readFileBase64(file) {
   })
 }
 
+// เว็บราชการที่ "วางลิงก์" ได้ (ต้องตรงกับ ALLOWED_HOSTS ใน api/law-analyze.js)
+const ALLOWED_SITES = [
+  ['ราชกิจจานุเบกษา', 'ratchakitcha.soc.go.th'],
+  ['กรมสวัสดิการและคุ้มครองแรงงาน', 'dlpw.go.th'],
+  ['กระทรวงแรงงาน', 'labour.go.th'],
+  ['สมาคมส่งเสริมความปลอดภัยฯ (ShawPat)', 'shawpat.or.th'],
+  ['กรมควบคุมโรค', 'ddc.moph.go.th'],
+  ['กระทรวงสาธารณสุข', 'moph.go.th'],
+  ['กรมโรงงานอุตสาหกรรม', 'diw.go.th'],
+]
+
 // req ดิบจาก AI → แถวแก้ไขได้
 const toReqRows = (reqs = []) => reqs.map(q => ({
   section_ref: q.section_ref || '', req_text: q.req_text || '',
@@ -142,8 +153,20 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
   return (
     <div className="panel" style={{ padding: '16px 18px' }}>
       <h3 style={{ margin: 0, fontSize: 15 }}>สรุปกฎหมายด้วย AI</h3>
-      <p style={{ margin: '2px 0 12px', fontSize: 12.5, color: 'var(--ink-faint)' }}>
-        วาง URL ราชกิจจาฯ/เว็บราชการ หรือวางตัวบทกฎหมายเป็นข้อความ แล้วกด “สรุป (AI)” — ระบบจะสรุปเป็นข้อกำหนดพร้อมส่งต่อเข้าทะเบียน</p>
+      <p style={{ margin: '2px 0 6px', fontSize: 12.5, color: 'var(--ink-faint)', lineHeight: 1.6 }}>
+        ทำได้ 3 แบบ แล้วกด “สรุป (AI)”:<br />
+        <b>1) วางตัวบทเป็นข้อความ</b> — ได้เสมอ ไม่จำกัดเว็บ (แนะนำถ้าลิงก์เข้าไม่ได้)<br />
+        <b>2) วางลิงก์</b> — ต้องเป็นเว็บราชการที่รองรับ (ดูด้านล่าง) รองรับทั้งหน้าเว็บและไฟล์ PDF<br />
+        <b>3) แนบไฟล์ PDF</b> — อัปโหลดไฟล์จากเครื่อง (≤ 4MB)</p>
+      <details style={{ margin: '0 0 12px', fontSize: 12 }}>
+        <summary style={{ cursor: 'pointer', color: 'var(--brand)' }}>เว็บที่ “วางลิงก์” ได้ ({ALLOWED_SITES.length} แหล่ง)</summary>
+        <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: 'var(--ink-soft)', lineHeight: 1.7 }}>
+          {ALLOWED_SITES.map(([name, host]) => (
+            <li key={host}>{name} — <code style={{ fontSize: 11.5 }}>{host}</code></li>
+          ))}
+        </ul>
+        <div style={{ marginTop: 4, color: 'var(--ink-faint)' }}>เว็บอื่นที่ไม่อยู่ในลิสต์ ให้ copy ตัวบทมาวางเป็นข้อความ หรือแนบไฟล์ PDF แทน</div>
+      </details>
       <textarea className="form-input" rows={4} style={{ marginTop: 0 }} placeholder="วาง URL หรือตัวบทกฎหมายที่นี่…" value={src} onChange={e => setSrc(e.target.value)} />
       <label className="form-label" style={{ marginTop: 10 }}>ลิงก์ตัวบทจริง (แนะนำ — กรณีวางเป็นข้อความ)</label>
       <input className="form-input" style={{ marginTop: 0 }} value={srcUrl} onChange={e => setSrcUrl(e.target.value)}
