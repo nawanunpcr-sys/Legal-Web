@@ -50,7 +50,7 @@ const SESSION_KEY = 'lg_session'
 // ── บัญชีหลักของทีม QA&SHE — ล็อกอินด้วย username/password ──
 // ใช้งานได้โดยไม่ต้องพึ่ง VITE_DEMO_PASSWORD (คนละชุดกับบัญชี demo ด้านล่าง)
 const APP_ACCOUNTS = [
-  { username: 'QA&SHEJAS', password: 'qaandshe26', name: 'QA & SHE', role: 'admin' },
+  { username: 'QA&SHEjastel', password: 'qa&shejastel26', name: 'QA & SHE', role: 'admin' },
 ]
 
 // ล็อกอินด้วยชื่อผู้ใช้/รหัสผ่าน (ตรวจสอบแบบไม่สนตัวพิมพ์เล็ก-ใหญ่ที่ชื่อผู้ใช้)

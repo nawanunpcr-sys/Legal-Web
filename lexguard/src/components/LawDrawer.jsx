@@ -95,6 +95,10 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [reviews, setReviews] = useState([])
   const [evOverrides, setEvOverrides] = useState({})   // { reqId: {evidence_url, evidence_label} } — fresh uploads
+  const [reqOverrides, setReqOverrides] = useState({}) // { reqId: {text, responsible, frequency, documents} } — inline edits
+  const [editingId, setEditingId] = useState(null)     // req id ที่กำลังแก้ไข
+  const [editForm, setEditForm] = useState({ text:'', responsible:'', frequency:'', documents:'' })
+  const [savingReq, setSavingReq] = useState(false)
   const [reviewDate, setReviewDate] = useState(law.review_date)
   const [reportDue, setReportDue] = useState(law.report_due_date || '')
   const [uploadingReq, setUploadingReq] = useState(null)
@@ -104,7 +108,8 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
   const summary = law.reqs.slice(0,3).map(r=>r.text).join(' ').slice(0,280)
 
   useEffect(()=>{
-    setEvOverrides({}); setReviewDate(law.review_date); setReportDue(law.report_due_date || '')
+    setEvOverrides({}); setReqOverrides({}); setEditingId(null)
+    setReviewDate(law.review_date); setReportDue(law.report_due_date || '')
     let alive = true
     fetchReviewLog(law.id).then(r=>{ if(alive) setReviews(r) }).catch(()=>{})
     return ()=>{ alive = false }
@@ -125,6 +130,37 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
       setEvOverrides(prev=>({ ...prev, [req.id]:{ evidence_url:url, evidence_label:label } }))
     }catch(e){ toast('แนบหลักฐานไม่สำเร็จ: '+e.message) }
     setUploadingReq(null)
+  }
+
+  function startEdit(r){
+    const ov = reqOverrides[r.id] || {}
+    setEditForm({
+      text:        ov.text        ?? r.text        ?? '',
+      responsible: ov.responsible ?? r.responsible ?? '',
+      frequency:   ov.frequency   ?? r.frequency   ?? '',
+      documents:   ov.documents   ?? r.documents   ?? '',
+    })
+    setEditingId(r.id)
+  }
+  async function saveEdit(r){
+    if(savingReq) return
+    const patch = {
+      text:        editForm.text.trim(),
+      responsible: editForm.responsible.trim() || null,
+      frequency:   editForm.frequency.trim()   || null,
+      documents:   editForm.documents.trim()   || null,
+    }
+    if(!patch.text){ toast('ข้อความข้อกำหนดห้ามว่าง'); return }
+    setSavingReq(true)
+    try{
+      await updateRequirementField(r.id, patch)
+      setReqOverrides(prev=>({ ...prev, [r.id]: patch }))
+      const idx = law.reqs.findIndex(x=>x.id===r.id)   // keep local copy in sync (prog/summary)
+      if(idx>=0) law.reqs[idx] = { ...law.reqs[idx], ...patch }
+      setEditingId(null)
+      toast('บันทึกข้อกำหนดแล้ว','success')
+    }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
+    finally{ setSavingReq(false) }
   }
 
   async function saveReportDue(v){
@@ -230,17 +266,39 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
                 const ov = evOverrides[r.id] || {}
                 const evidenceUrl   = ov.evidence_url   || r.evidence_url
                 const evidenceLabel = ov.evidence_label || r.evidence_label
+                const ro = reqOverrides[r.id] || {}
+                const rtext = ro.text        ?? r.text
+                const rresp = ro.responsible ?? r.responsible
+                const rfreq = ro.frequency   ?? r.frequency
+                const rdocs = ro.documents   ?? r.documents
+                const isEditing = editingId === r.id
                 return (
                 <div className={'req '+r.status} key={r.id}>
-                  <button className="ck" onClick={()=>onToggle(law,r)} disabled={!can('edit')} title={can('edit')?'สลับสถานะ':NO_PERM}>
+                  <button className="ck" onClick={()=>onToggle(law,r)} disabled={!can('edit')||isEditing} title={can('edit')?'สลับสถานะ':NO_PERM}>
                     {r.status==='met' ? 'C' : '·'}
                   </button>
                   <div style={{flex:1}}>
-                    <div className="rt">{r.text}</div>
+                    {isEditing ? (
+                      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                        <textarea className="form-input" rows={5} value={editForm.text}
+                          onChange={e=>setEditForm(f=>({...f,text:e.target.value}))}
+                          placeholder="ข้อความข้อกำหนด…" style={{resize:'vertical',whiteSpace:'pre-wrap'}} autoFocus/>
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                          <input className="form-input" value={editForm.responsible} onChange={e=>setEditForm(f=>({...f,responsible:e.target.value}))} placeholder="ผู้รับผิดชอบ"/>
+                          <input className="form-input" value={editForm.frequency} onChange={e=>setEditForm(f=>({...f,frequency:e.target.value}))} placeholder="ความถี่"/>
+                        </div>
+                        <input className="form-input" value={editForm.documents} onChange={e=>setEditForm(f=>({...f,documents:e.target.value}))} placeholder="เอกสาร/หลักฐานที่ต้องมี"/>
+                        <div style={{display:'flex',gap:8}}>
+                          <button className="btn btn-primary" style={{padding:'5px 14px',fontSize:12.5}} disabled={savingReq} onClick={()=>saveEdit(r)}>{savingReq?'กำลังบันทึก…':'บันทึก'}</button>
+                          <button className="btn btn-ghost" style={{padding:'5px 14px',fontSize:12.5}} disabled={savingReq} onClick={()=>setEditingId(null)}>ยกเลิก</button>
+                        </div>
+                      </div>
+                    ) : (<>
+                    <div className="rt" style={{whiteSpace:'pre-wrap'}}>{rtext}</div>
                     <div className="rmeta">
-                      {r.responsible && <span className="b">{r.responsible}</span>}
-                      {r.frequency && <span className="b">{r.frequency}</span>}
-                      {r.documents && <span className="b">{r.documents.slice(0,50)}</span>}
+                      {rresp && <span className="b">{rresp}</span>}
+                      {rfreq && <span className="b">{rfreq}</span>}
+                      {rdocs && <span className="b">{rdocs.slice(0,50)}</span>}
                     </div>
                     <div className="rmeta" style={{marginTop:5}}>
                       {r.evaluated_by
@@ -252,8 +310,11 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
                         <input type="file" accept="application/pdf,image/*" style={{display:'none'}} disabled={!can('edit')||uploadingReq===r.id}
                           onChange={e=>{ const f=e.target.files?.[0]; attachEvidence(r,f); e.target.value='' }}/>
                       </label>
+                      <button className="b" style={{cursor:can('edit')?'pointer':'not-allowed',opacity:can('edit')?1:.55,background:'none'}}
+                        disabled={!can('edit')} title={can('edit')?'แก้ไขข้อกำหนด':NO_PERM} onClick={()=>startEdit(r)}>แก้ไข</button>
                     </div>
                     {r.status==='unmet' && r.note && <div className="note">{r.note}</div>}
+                    </>)}
                   </div>
                 </div>
               )})}
