@@ -27,6 +27,7 @@ import { exportLawsToExcel } from './lib/integrations.js'
 import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, currentRound,
          jorporReportDeadlines, effectiveInfo, trainingStatus } from './lib/ui.jsx'
 import Dashboard from './pages/Dashboard.jsx'
+import LawCalendar from './pages/LawCalendar.jsx'
 import ProcessTracker from './pages/ProcessTracker.jsx'
 import LawSummary from './pages/LawSummary.jsx'
 import History from './pages/History.jsx'
@@ -42,6 +43,7 @@ import SettingsPage from './pages/Settings.jsx'
 const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
+    { id:'calendar',      label:'ปฏิทินกฎหมาย',          icon:'calendar'},
     { id:'registry',      label:'ทะเบียน & ความสอดคล้อง', icon:'book'    },
     { id:'summary',       label:'สรุปกฎหมาย',            icon:'spark'   },
     { id:'tracker',       label:'Process Tracker',        icon:'update'  },
@@ -59,6 +61,7 @@ const NAV_GROUPS = [
 
 const TITLES = {
   dashboard:     ['Dashboard',             'สรุปสถานะความสอดคล้องตามกฎหมาย SHE'],
+  calendar:      ['ปฏิทินกฎหมาย',          'รวมกำหนดรายงานราชการ · การสื่อสาร · การทวนสอบ ในมุมมองรายเดือน'],
   registry:      ['ทะเบียน & ความสอดคล้อง','ทะเบียนกฎหมายพร้อมสถานะความสอดคล้องรายข้อกำหนด'],
   register:      ['ทะเบียนกฎหมาย',         'กฎหมายที่เกี่ยวข้องและสถานะการปฏิบัติ'],
   compliance:    ['ติดตามความสอดคล้อง',    'สถานะรายข้อกำหนดแยกตามหมวดและลำดับชั้น'],
@@ -556,7 +559,8 @@ export default function App(){
           </div>
           <div className="view-swap" key={view}>
           {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>goView('reports')} onGoView={goView}
-            monthsData={months}/>}
+            monthsData={months} comms={comms} workflow={workflowRows} lawMap={lawMap}/>}
+          {view==='calendar'      && <LawCalendar   reports={reports} comms={comms} workflow={workflowRows} lawMap={lawMap} cats={cats} onGoView={goView}/>}
           {view==='registry'      && <RegistryCompliance
             regLaws={activeLaws} cats={cats} catMap={catMap} stats={stats}
             search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
