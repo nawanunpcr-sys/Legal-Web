@@ -6,6 +6,7 @@ import { LAW_TYPES } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import AssessForm from '../components/AssessForm.jsx'
+import DeleteLawModal from '../components/DeleteLawModal.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
 import { usePageFilters, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, effectiveInfo, prog, lawBEYear } from '../lib/ui.jsx'
 
@@ -101,7 +102,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 
 /* ─────────── REGISTRY + COMPLIANCE (merged view) ─────────── */
 export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,allLaws,round,onExportF259,onAddLaw,
-    workflow=[],suggest={},onAssess,focus,
+    workflow=[],suggest={},onAssess,focus,onDelete,
     monthsData=[],monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws}){
   const kpis=[
     {lab:'ข้อกำหนดทั้งหมด',   val:stats.req, accent:'#1C2431'},
@@ -126,7 +127,7 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
 
     <Register laws={regLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
       round={round} onExportF259={onExportF259} onAddLaw={onAddLaw}
-      workflow={workflow} suggest={suggest} onAssess={onAssess} focus={focus}/>
+      workflow={workflow} suggest={suggest} onAssess={onAssess} focus={focus} onDelete={onDelete}/>
   </div>
 }
 
@@ -134,7 +135,7 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
 // จัดลำดับหมวด: LA→LG ก่อน แล้ว CCS (CC) ท้ายสุด
 const catOrder=(a,b)=>((a==='CC')-(b==='CC'))||a.localeCompare(b)
 function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259,onAddLaw,
-    workflow=[],suggest={},onAssess,focus}){
+    workflow=[],suggest={},onAssess,focus,onDelete}){
   const { can }=useAuth()
   // Task 6.1 · จำ filter ต่อหน้า (lg_filters.registry)
   const [f,setF,resetF,filterActive]=usePageFilters('registry',{cat:'all',act:'all',sortKey:'code',sortDir:1})
@@ -143,6 +144,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   const [showAdd,setShowAdd]=useState(false)
   const [flashId,setFlashId]=useState(null)       // P14·T1 · แถวที่เพิ่งเพิ่ม (ไฮไลต์ 2 วิ)
   const [assessTarget,setAssessTarget]=useState(null)   // P14·T2 · { law, wf } เปิด popup ประเมิน
+  const [deleteTarget,setDeleteTarget]=useState(null)   // ลบกฎหมายจากแถวทะเบียน (admin)
 
   // P14·T1 · workflow ที่ยังเปิดอยู่ต่อกฎหมาย (ใช้ทำ badge "รอประเมิน")
   const openWfByLaw=useMemo(()=>{
@@ -259,7 +261,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
                     <td onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.issue_date||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.effective_date||'—'}</td>
-                    <td><div style={{display:'flex',alignItems:'center',gap:8}}><span onClick={()=>onOpen(l)}><Pill s={l.status}/></span>{pending&&can('edit')&&onAssess&&<button className="btn btn-primary" style={{padding:'3px 10px',fontSize:11}} title="ประเมินความสอดคล้อง" onClick={e=>{e.stopPropagation();setAssessTarget({law:l,wf:openWf})}}>ประเมิน</button>}</div></td>
+                    <td><div style={{display:'flex',alignItems:'center',gap:8}}><span onClick={()=>onOpen(l)}><Pill s={l.status}/></span>{pending&&can('edit')&&onAssess&&<button className="btn btn-primary" style={{padding:'3px 10px',fontSize:11}} title="ประเมินความสอดคล้อง" onClick={e=>{e.stopPropagation();setAssessTarget({law:l,wf:openWf})}}>ประเมิน</button>}{onDelete&&can('delete')&&<button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11,color:'var(--bad)'}} title="ลบกฎหมายถาวร" onClick={e=>{e.stopPropagation();setDeleteTarget(l)}}><I n="ban"/></button>}</div></td>
                   </tr>
                 )})}</tbody>
               </table></div>
@@ -282,6 +284,8 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
     })()}
     {/* P14·T2 · popup ประเมินกลางจอ — reuse AssessForm + logic เดียวกับ Process Tracker */}
     {assessTarget && <AssessPopup target={assessTarget} suggest={suggest} onAssess={onAssess} onClose={()=>setAssessTarget(null)}/>}
+    {/* ลบกฎหมายจากแถวทะเบียน (ยืนยันด้วยการพิมพ์รหัส) */}
+    {deleteTarget && <DeleteLawModal law={deleteTarget} onConfirm={()=>{ const l=deleteTarget; setDeleteTarget(null); onDelete(l) }} onClose={()=>setDeleteTarget(null)}/>}
   </div>
 }
 

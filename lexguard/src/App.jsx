@@ -589,7 +589,7 @@ export default function App(){
           {view==='registry'      && <RegistryCompliance
             regLaws={activeLaws} cats={cats} catMap={catMap} stats={stats}
             search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
-            workflow={workflowRows} suggest={suggest} onAssess={handleWorkflowAssess} focus={regFocus}
+            workflow={workflowRows} suggest={suggest} onAssess={handleWorkflowAssess} focus={regFocus} onDelete={handleDeleteLaw}
             round={round} onExportF259={()=>setShowPdf(true)} onAddLaw={()=>openAddLaw()}
             monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
