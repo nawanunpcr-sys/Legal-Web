@@ -95,13 +95,17 @@ export default async function handler(req,res){
         ? [ { type:'document', source:{ type:'url', url:pdfUrl } },
             { type:'text', text:`ไฟล์ PDF ตัวบทกฎหมายจากลิงก์ ${pdfUrl} — โปรดอ่านและสรุปตามรูปแบบที่กำหนด` } ]
         : `ตัวบทกฎหมาย${srcUrl?` (จาก ${srcUrl})`:''}:\n\n${text}`
+    // ส่งไฟล์ PDF (base64 หรือ url document) ต้องเปิด beta header ให้ Claude อ่าน PDF ได้
+    const sendingPdf = hasPdf || !!pdfUrl
+    const apiHeaders = {'content-type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'}
+    if(sendingPdf) apiHeaders['anthropic-beta'] = 'pdfs-2024-09-25'
     const ar = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
-      headers:{'content-type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
+      headers:apiHeaders,
       body:JSON.stringify({model:MODEL,max_tokens:8000,system:SYSTEM,
         messages:[{role:'user',content:userContent}]})
     })
-    if(!ar.ok) return res.status(502).json({error:'เรียก Claude API ไม่สำเร็จ: '+(await ar.text()).slice(0,200)})
+    if(!ar.ok) return res.status(502).json({error:'เรียก Claude API ไม่สำเร็จ: '+(await ar.text()).slice(0,500)})
     const data = await ar.json()
     let txt = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim()
     txt = txt.replace(/^```json\s*/i,'').replace(/```$/,'').trim()
