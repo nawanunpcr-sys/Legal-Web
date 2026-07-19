@@ -999,12 +999,12 @@ export async function syncReverifyOverdueNotifications(rows = []) {
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const overdue = rows.filter(wf => wf.status === 'ไม่สอดคล้อง' && wf.reverify_date && new Date(wf.reverify_date) < today)
   if (!overdue.length) return 0
-  const ids = overdue.map(w => w.id)
+  const ids = overdue.map(w => w.law_id)
   const { data: existing } = await supabase.from('lg_notification_log')
     .select('ref_id').eq('type', 'reverify_overdue').is('dismissed_at', null).in('ref_id', ids)
   const have = new Set((existing || []).map(r => r.ref_id))
-  const toInsert = overdue.filter(w => !have.has(w.id)).map(w => ({
-    type: 'reverify_overdue', ref_id: w.id, ref_type: 'workflow',
+  const toInsert = overdue.filter(w => !have.has(w.law_id)).map(w => ({
+    type: 'reverify_overdue', ref_id: w.law_id, ref_type: 'law',
     message: `เลยกำหนดทวนสอบกฎหมาย — ครบกำหนด ${w.reverify_date}`, due_date: w.reverify_date,
   }))
   if (toInsert.length) { try { await supabase.from('lg_notification_log').insert(toInsert) } catch (e) { console.warn('reverify notif insert', e) } }
