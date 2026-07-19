@@ -5,7 +5,7 @@ import { useAuth, NO_PERM } from '../lib/auth.js'
 import Attachments from './Attachments.jsx'
 import { I } from './icons.jsx'
 import EmptyState from './EmptyState.jsx'
-import { thDate } from '../lib/ui.jsx'
+import { thDate, TH_MONTHS } from '../lib/ui.jsx'
 
 const daysTo = s => Math.ceil((new Date(s)-new Date())/86400000)
 const today  = () => new Date().toISOString().slice(0,10)
@@ -101,8 +101,16 @@ function SubmitModal({ report, onSave, onClose }){
 export default function Reports({ reports, onSetEvent, onSubmit }){
   const { can }=useAuth()
   const [filter,setFilter]=useState('all')
+  const [month,setMonth]=useState('all')   // Task 5 · 'all' | 'YYYY-M' (กรองตามกำหนดส่งถัดไป)
   const [eventModal,setEventModal]=useState(null)
   const [submitModal,setSubmitModal]=useState(null)
+
+  const monthOptions=useMemo(()=>{
+    const set=new Set()
+    reports.forEach(r=>{ if(!r.next_due_date) return; const d=new Date(r.next_due_date); if(!isNaN(d)) set.add(d.getFullYear()+'-'+d.getMonth()) })
+    return [...set].sort().reverse()
+  },[reports])
+  const inMonth=r=>{ if(month==='all') return true; if(!r.next_due_date) return false; const d=new Date(r.next_due_date); return !isNaN(d)&&month===(d.getFullYear()+'-'+d.getMonth()) }
 
   const counts=useMemo(()=>{
     let overdue=0,upcoming=0,pending=0
@@ -114,6 +122,7 @@ export default function Reports({ reports, onSetEvent, onSubmit }){
   },[reports])
 
   const rows=reports.filter(r=>{
+    if(!inMonth(r)) return false          // Task 5 · เดือน AND กับ chip สถานะเดิม
     if(filter==='all') return true
     const d=r.next_due_date?daysTo(r.next_due_date):null
     if(filter==='overdue')  return d!==null&&d<0
@@ -138,6 +147,10 @@ export default function Reports({ reports, onSetEvent, onSubmit }){
       <span className={'chip'+(filter==='overdue'?' active':'')} onClick={()=>setFilter('overdue')}>เกินกำหนด ({counts.overdue})</span>
       <span className={'chip'+(filter==='upcoming'?' active':'')} onClick={()=>setFilter('upcoming')}>ใกล้ครบกำหนด ({counts.upcoming})</span>
       <span className={'chip'+(filter==='pending'?' active':'')} onClick={()=>setFilter('pending')}>รอกรอกวันเกิดเหตุ ({counts.pending})</span>
+      <select className="form-input" style={{maxWidth:150,margin:0,marginLeft:'auto'}} value={month} onChange={e=>setMonth(e.target.value)} title="กรองตามเดือนกำหนดส่ง">
+        <option value="all">ทุกเดือน</option>
+        {monthOptions.map(p=>{ const [y,m]=p.split('-'); return <option key={p} value={p}>{TH_MONTHS[+m]} {(+y)+543}</option> })}
+      </select>
     </div>
 
     <div className="panel"><div className="tablewrap"><table>

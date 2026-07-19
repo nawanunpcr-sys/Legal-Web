@@ -1,12 +1,12 @@
 // Communications page (ISD-86) — internal/external communication schedule.
 // Includes its CommScheduleModal & MarkSentModal helpers.
 // Moved verbatim from App.jsx (pure refactor).
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { RECURRENCE_LABELS } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import Attachments from '../components/Attachments.jsx'
-import { daysTo, thDate } from '../lib/ui.jsx'
+import { daysTo, thDate, TH_MONTHS } from '../lib/ui.jsx'
 
 function CommScheduleModal({comm,onSave,onClose}){
   const [date,setDate]=useState(comm.scheduled_date||'')
@@ -59,10 +59,18 @@ export default function Communication({comms,onMarkSent,onScheduleUpdate}){
   const { can }=useAuth()
   const [scope,setScope]=useState('internal')
   const [filter,setFilter]=useState('all')
+  const [month,setMonth]=useState('all')   // Task 5 · 'all' | 'YYYY-M' (กรองตามวันกำหนดถัดไป)
   const [schedModal,setSchedModal]=useState(null)
   const [sentModal,setSentModal]=useState(null)
+  const monthOptions=useMemo(()=>{
+    const set=new Set()
+    comms.forEach(c=>{ if(!c.next_scheduled_date) return; const d=new Date(c.next_scheduled_date); if(!isNaN(d)) set.add(d.getFullYear()+'-'+d.getMonth()) })
+    return [...set].sort().reverse()
+  },[comms])
+  const inMonth=c=>{ if(month==='all') return true; if(!c.next_scheduled_date) return false; const d=new Date(c.next_scheduled_date); return !isNaN(d)&&month===(d.getFullYear()+'-'+d.getMonth()) }
   const rows=comms.filter(c=>{
     if(c.scope!==scope) return false
+    if(!inMonth(c)) return false          // Task 5 · เดือน AND กับ chip สถานะเดิม
     if(filter==='upcoming'){ const d=c.next_scheduled_date?daysTo(c.next_scheduled_date):null; return d!==null&&d>=0&&d<=30 }
     if(filter==='overdue'){  const d=c.next_scheduled_date?daysTo(c.next_scheduled_date):null; return d!==null&&d<0 }
     return true
@@ -85,6 +93,10 @@ export default function Communication({comms,onMarkSent,onScheduleUpdate}){
       <span className={'chip'+(filter==='all'?' active':'')} onClick={()=>setFilter('all')}>ทั้งหมด</span>
       <span className={'chip'+(filter==='upcoming'?' active':'')} onClick={()=>setFilter('upcoming')}>ครบกำหนดเร็วๆ นี้</span>
       <span className={'chip'+(filter==='overdue'?' active':'')} onClick={()=>setFilter('overdue')}>เกินกำหนด</span>
+      <select className="form-input" style={{maxWidth:150,margin:0,marginLeft:'auto'}} value={month} onChange={e=>setMonth(e.target.value)} title="กรองตามเดือนกำหนดถัดไป">
+        <option value="all">ทุกเดือน</option>
+        {monthOptions.map(p=>{ const [y,m]=p.split('-'); return <option key={p} value={p}>{TH_MONTHS[+m]} {(+y)+543}</option> })}
+      </select>
       <span className="right">เอกสารอ้างอิง ISD-86 Rev.7</span>
     </div>
     <div className="panel"><div className="tablewrap"><table>
