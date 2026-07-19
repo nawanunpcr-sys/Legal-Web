@@ -80,11 +80,10 @@ function ReqRow({ r, i, onChange, onRemove, suggest }) {
         <button className="btn btn-ghost" style={{ padding: '7px 9px' }} onClick={() => onRemove(i)}><I n="x" /></button>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 6, marginLeft: 30 }}>
-        <input className="form-input" style={{ marginTop: 0 }} list="ls-resp" value={r.responsible} onChange={e => set('responsible', e.target.value)} placeholder="ผู้รับผิดชอบ" />
+        <input className="form-input" style={{ marginTop: 0 }} value={r.responsible} onChange={e => set('responsible', e.target.value)} placeholder="ผู้รับผิดชอบ" />
         <input className="form-input" style={{ marginTop: 0 }} value={r.frequency} onChange={e => set('frequency', e.target.value)} placeholder="ความถี่" />
         <input className="form-input" style={{ marginTop: 0 }} value={r.documents} onChange={e => set('documents', e.target.value)} placeholder="เอกสาร/หลักฐาน" />
       </div>
-      <datalist id="ls-resp">{(suggest?.responsibles || []).map(x => <option key={x} value={x} />)}</datalist>
     </div>
   )
 }

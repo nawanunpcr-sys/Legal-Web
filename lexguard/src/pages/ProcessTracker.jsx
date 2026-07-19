@@ -108,8 +108,7 @@ function MonitorModal({ laws, catMap, suggest, openCaseByLaw = {}, onStart, onCl
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
           <div>
             <label className="form-label">ผู้ตรวจ <span style={{color:'var(--bad)'}}>*</span></label>
-            <input className="form-input" list="mon-owner" placeholder="เลือกหรือพิมพ์ชื่อ…" value={owner} onChange={e=>setOwner(e.target.value)}/>
-            <datalist id="mon-owner">{(suggest.responsibles||[]).map((r,i)=><option key={i} value={r}/>)}</datalist>
+            <input className="form-input" placeholder="พิมพ์ชื่อผู้รับผิดชอบ…" value={owner} onChange={e=>setOwner(e.target.value)}/>
           </div>
           <div><label className="form-label">วันที่</label><input className="form-input" value={nowLabel} readOnly disabled/></div>
         </div>

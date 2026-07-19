@@ -31,9 +31,8 @@ export default function AssessForm({ law, suggest = {}, onSubmit, onCancel }) {
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
         <div>
           <label className="form-label">ผู้ประเมิน <span style={{color:'var(--bad)'}}>*</span></label>
-          <input className="form-input" list="assessor-list" placeholder="เลือกหรือพิมพ์ชื่อ…"
+          <input className="form-input" placeholder="พิมพ์ชื่อผู้ประเมิน…"
             value={assessor} onChange={e=>setAssessor(e.target.value)}/>
-          <datalist id="assessor-list">{(suggest.responsibles||[]).map((r,i)=><option key={i} value={r}/>)}</datalist>
         </div>
         <div>
           <label className="form-label">วันที่ประเมิน</label>
