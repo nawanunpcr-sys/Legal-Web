@@ -4,7 +4,7 @@ import { supabase, hasSupabase, fetchAll,
          repealLaw, restoreLaw, createLaw, createLawFull, deleteLaw,
          markCommSent, updateCommSchedule,
          fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
-         logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
+         logActivity, fetchActivity, deleteActivity, fetchQuarterStats, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
          fetchWorkflow, subscribeWorkflow, subscribeLaws, createAddWorkflow, createMonitorWorkflow,
          submitWorkflowAssessment, closeWorkflowPlan, fetchDiscoveredLaws, fetchSearchLog,
@@ -313,6 +313,14 @@ export default function App(){
     }
   }
 
+  // P15 · ลบรายการประวัติ (activity log) · optimistic + rollback
+  async function handleDeleteActivity(id){
+    const prev=activity
+    setActivity(a=>a.filter(x=>x.id!==id))
+    try{ await deleteActivity(id); toast('ลบรายการประวัติแล้ว','success') }
+    catch(e){ setActivity(prev); toast('ลบไม่สำเร็จ: '+e.message,'error') }
+  }
+
   async function handleBulkCompliance(ids, met){
     if(!ids.length) return
     try{
@@ -587,7 +595,7 @@ export default function App(){
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
           {view==='summary'       && <LawSummary laws={activeLaws} cats={cats} catMap={catMap} discovered={discovered} suggest={suggest}
             onReloadDiscovered={loadDiscovered} onReloadLaws={loadLaws} onOpenLaw={setOpenLaw} onAddToRegistry={init=>openAddLaw(init)}/>}
-          {view==='history'       && <History activity={activity} laws={laws} catMap={catMap} settings={settings} workflowRows={workflowRows} searchLog={searchLog}/>}
+          {view==='history'       && <History activity={activity} laws={laws} catMap={catMap} settings={settings} workflowRows={workflowRows} searchLog={searchLog} onDeleteActivity={handleDeleteActivity}/>}
           {view==='tracker'       && <ProcessTracker rows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest} focusSignal={trackerFocus}
             onStartMonitor={handleStartMonitor} onAssess={handleWorkflowAssess} onClosePlan={handleClosePlan} onOpenLaw={setOpenLaw}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}

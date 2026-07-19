@@ -442,6 +442,12 @@ export async function fetchActivity(limit = 5000) {
   return data || []
 }
 
+// P15 · ลบรายการประวัติ (activity log) รายแถว
+export async function deleteActivity(id) {
+  const { error } = await supabase.from('lg_activity_log').delete().eq('id', id)
+  if (error) throw error
+}
+
 // ---- Quarterly added/repealed law stats (sourced from the original F-259 Excel masterlist) ----
 export async function fetchQuarterStats() {
   if (!hasSupabase) return []

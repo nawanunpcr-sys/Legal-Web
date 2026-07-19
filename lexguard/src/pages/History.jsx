@@ -4,6 +4,8 @@ import { useState, useMemo } from 'react'
 import { Tag, thDate, TH_MONTHS } from '../lib/ui.jsx'
 import { I } from '../components/icons.jsx'
 import { buildMonthlyReport } from '../components/PdfExport.jsx'
+import { useAuth, NO_PERM } from '../lib/auth.js'
+import { confirmDialog } from '../lib/confirm.js'
 
 const ACT_META = {
   create:      { t:'เพิ่มใหม่',      c:'var(--ok)'     },
@@ -24,7 +26,7 @@ const ACT_META = {
 }
 const hhmm = s => { const d=new Date(s); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0') }
 
-function LawTimeline({ items }) {
+function LawTimeline({ items, canDelete, onDelete }) {
   return (
     <div style={{padding:'6px 8px 12px 30px'}}>
       {items.length===0 && <div style={{fontSize:12.5,color:'var(--ink-faint)'}}>ยังไม่มีประวัติสำหรับกฎหมายนี้</div>}
@@ -35,13 +37,16 @@ function LawTimeline({ items }) {
             <span className="num" style={{fontSize:11,color:'var(--ink-faint)',minWidth:96}}>{thDate(a.created_at)} {hhmm(a.created_at)}</span>
             <span style={{flex:1,fontSize:12.5}}>{a.detail||a.law_name}</span>
             {a.actor && <span className="tag" title="ผู้ทำรายการ">{a.actor}</span>}
+            {onDelete && <button className="btn btn-ghost" style={{padding:'2px 8px',fontSize:11,color:'var(--bad)'}} disabled={!canDelete} title={canDelete?'ลบรายการประวัตินี้':NO_PERM}
+              onClick={async()=>{ if(await confirmDialog('ลบรายการประวัตินี้? (ลบถาวร)',{danger:true,okLabel:'ลบ'})) onDelete(a.id) }}>ลบ</button>}
           </div>
         )})}
     </div>
   )
 }
 
-export default function History({ activity = [], laws = [], catMap = {}, settings = {}, workflowRows = [], searchLog = [] }) {
+export default function History({ activity = [], laws = [], catMap = {}, settings = {}, workflowRows = [], searchLog = [], onDeleteActivity }) {
+  const { can } = useAuth()
   const [cat, setCat] = useState('all')
   const [openId, setOpenId] = useState(null)
   const now = new Date()
@@ -112,7 +117,7 @@ export default function History({ activity = [], laws = [], catMap = {}, setting
                   <span className="pill" style={{fontSize:11,background:'var(--grayfill)',color:'var(--ink-soft)'}}>{items.length} รายการ</span>
                   <span className="sub" style={{whiteSpace:'nowrap',minWidth:80,textAlign:'right'}}>{thDate(last)}</span>
                 </div>
-                {open && <LawTimeline items={items}/>}
+                {open && <LawTimeline items={items} canDelete={can('delete')} onDelete={onDeleteActivity}/>}
               </div>
             )
           })}
