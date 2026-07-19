@@ -3,11 +3,11 @@
 // P10 วางฐาน 2-workflow (เพิ่มใหม่ / ติดตาม-ทวนสอบ); P11 เพิ่ม metric chips + aging +
 // overdue + รอบที่ N + timeline. tracker เก่า (lg_process_tracker/items) เลิกใช้แล้ว.
 import { useState, useMemo, useEffect } from 'react'
-import { WF_STAGES, WF_STATUS, fetchActivityByLaw } from '../lib/supabase.js'
+import { WF_STAGES, WF_STATUS, fetchActivityByLaw, syncReverifyOverdueNotifications } from '../lib/supabase.js'
 import AssessForm from '../components/AssessForm.jsx'
 import Attachments from '../components/Attachments.jsx'
 import { I } from '../components/icons.jsx'
-import { Tag, thDate } from '../lib/ui.jsx'
+import { Tag, thDate, TH_MONTHS } from '../lib/ui.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 
 /* 3-step stepper */
@@ -273,25 +273,43 @@ export default function ProcessTracker({ rows = [], laws = [], catMap = {}, sugg
   const [statusFilter, setStatusFilter] = useState('all')
   const [ownerFilter, setOwnerFilter] = useState('all')
   const [q, setQ] = useState('')
+  const [timeBase, setTimeBase] = useState('created_at')   // Task 4 · ฐานเวลา: created_at | reverify_date
+  const [period, setPeriod] = useState('all')              // Task 4 · 'all' | 'YYYY-M'
 
   // Task 10: คลิก badge/เมนู Process Tracker → โฟกัส "งานค้าง"
   useEffect(()=>{ if(focusSignal>0) setStatusFilter('open') }, [focusSignal])
+
+  // Task 4: แจ้งเตือน reverify เลยกำหนด — ทำครั้งแรกต่อ session เท่านั้น (กันซ้ำใน DB อีกชั้น)
+  useEffect(()=>{
+    if(!rows.length) return
+    try{ if(sessionStorage.getItem('lg_reverify_synced')==='1') return }catch{}
+    try{ sessionStorage.setItem('lg_reverify_synced','1') }catch{}
+    syncReverifyOverdueNotifications(rows)
+  },[rows.length])   // eslint-disable-line react-hooks/exhaustive-deps
 
   const lawMap = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
   // law_id ที่ยังมี case เปิดอยู่ (ใช้ตัดสิน overdue) — ดูจาก rows ทั้งหมด
   const openLawIds = useMemo(()=>new Set(rows.filter(wf=>wf.status!=='เสร็จสิ้น').map(wf=>wf.law_id)),[rows])
 
   // baseRows = ผ่าน cat + ค้นหา + ผู้รับผิดชอบ (ยังไม่กรอง status) → ใช้ทั้ง metric และ list
+  // Task 4 · ตัวเลือกเดือน/ปี (พ.ศ.) จากข้อมูลจริงตามฐานเวลาที่เลือก
+  const periodOptions = useMemo(()=>{
+    const set=new Set()
+    rows.forEach(wf=>{ const v=wf[timeBase]; if(!v) return; const d=new Date(v); if(!isNaN(d)) set.add(d.getFullYear()+'-'+d.getMonth()) })
+    return [...set].sort().reverse()
+  },[rows,timeBase])
+
   const baseRows = useMemo(()=>{
     const s=q.trim().toLowerCase()
     return rows.filter(wf=>{
       const law=lawMap[wf.law_id]; if(!law) return false
       if(catFilter!=='all' && law.cat!==catFilter) return false
       if(ownerFilter!=='all' && wf.owner_name!==ownerFilter && wf.assessor_name!==ownerFilter) return false
+      if(period!=='all'){ const v=wf[timeBase]; if(!v) return false; const d=new Date(v); if(isNaN(d)) return false; if(period!==(d.getFullYear()+'-'+d.getMonth())) return false }
       if(s && !(law.code.toLowerCase().includes(s)||(law.name||'').toLowerCase().includes(s))) return false
       return true
     })
-  },[rows,lawMap,catFilter,ownerFilter,q])
+  },[rows,lawMap,catFilter,ownerFilter,q,timeBase,period])
 
   // A1 · ตัวเลข metric — นับจาก baseRows (ไม่สน statusFilter เพื่อให้คงที่ตอนกด)
   const metrics = useMemo(()=>({
@@ -351,6 +369,15 @@ export default function ProcessTracker({ rows = [], laws = [], catMap = {}, sugg
             {owners.map(o=><option key={o} value={o}>{o}</option>)}
           </select>
         )}
+        {/* Task 4 · กรองช่วงเวลา (ฐานเวลา + เดือน/ปี พ.ศ.) */}
+        <select className="form-input" style={{maxWidth:150,margin:0}} value={timeBase} onChange={e=>{ setTimeBase(e.target.value); setPeriod('all') }} title="ฐานเวลาที่ใช้กรอง">
+          <option value="created_at">ตามวันที่สร้าง</option>
+          <option value="reverify_date">ตามวันทวนสอบ</option>
+        </select>
+        <select className="form-input" style={{maxWidth:150,margin:0}} value={period} onChange={e=>setPeriod(e.target.value)} title="เลือกเดือน/ปี">
+          <option value="all">ทุกช่วงเวลา</option>
+          {periodOptions.map(p=>{ const [y,m]=p.split('-'); return <option key={p} value={p}>{TH_MONTHS[+m]} {(+y)+543}</option> })}
+        </select>
         <button className="btn btn-primary" style={{marginLeft:'auto'}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>setShowMonitor(true)}>
           <I n="plus"/>ติดตาม/ทวนสอบกฎหมายเดิม
         </button>

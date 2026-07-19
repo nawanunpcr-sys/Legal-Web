@@ -951,6 +951,25 @@ export async function deleteWorkflowCase(id) {
   if (error) throw error
 }
 
+// P13 · Task 4 — บันทึกแจ้งเตือน "เลยกำหนดทวนสอบ" สำหรับ case ที่ยังไม่สอดคล้องและ reverify_date < วันนี้.
+// กันซ้ำ: ข้ามรายการที่มี notification (type=reverify_overdue, ref_id เดียวกัน, ยังไม่ dismiss) อยู่แล้ว.
+export async function syncReverifyOverdueNotifications(rows = []) {
+  if (!hasSupabase) return 0
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const overdue = rows.filter(wf => wf.status === 'ไม่สอดคล้อง' && wf.reverify_date && new Date(wf.reverify_date) < today)
+  if (!overdue.length) return 0
+  const ids = overdue.map(w => w.id)
+  const { data: existing } = await supabase.from('lg_notification_log')
+    .select('ref_id').eq('type', 'reverify_overdue').is('dismissed_at', null).in('ref_id', ids)
+  const have = new Set((existing || []).map(r => r.ref_id))
+  const toInsert = overdue.filter(w => !have.has(w.id)).map(w => ({
+    type: 'reverify_overdue', ref_id: w.id, ref_type: 'workflow',
+    message: `เลยกำหนดทวนสอบกฎหมาย — ครบกำหนด ${w.reverify_date}`, due_date: w.reverify_date,
+  }))
+  if (toInsert.length) { try { await supabase.from('lg_notification_log').insert(toInsert) } catch (e) { console.warn('reverify notif insert', e) } }
+  return toInsert.length
+}
+
 // ---- P10 · Task 12 · Search Log (ISO 45001 6.1.3 evidence) ----
 export async function logSearch({ searchedBy, sources, resultsCount = 0, resultSummary = null, noNewLaws = false } = {}) {
   if (!hasSupabase) return
