@@ -6,7 +6,7 @@ import { LAW_TYPES } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
-import { usePersist, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, effectiveInfo, prog, lawBEYear } from '../lib/ui.jsx'
+import { usePageFilters, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, effectiveInfo, prog, lawBEYear } from '../lib/ui.jsx'
 
 /* P13 · Task 3 — ไฮไลต์คำค้นในข้อความ (ตัดสั้น ~80 ตัวอักษรรอบคำที่เจอ) */
 function markSnippet(text, q) {
@@ -132,11 +132,10 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
 const catOrder=(a,b)=>((a==='CC')-(b==='CC'))||a.localeCompare(b)
 function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259,onAddLaw}){
   const { can }=useAuth()
-  const [cat,setCat]=usePersist('cr_reg_cat','all')
-  const [act,setAct]=usePersist('cr_reg_act','all')
-  const [reviewDue,setReviewDue]=useState(false)          // Task 3.2 · เฉพาะกฎหมายที่ถึงรอบทบทวน
-  const [sortKey,setSortKey]=useState('code')             // Task 3.1 · code | announce | pct | review
-  const [sortDir,setSortDir]=useState(1)                  // 1 = ↑, -1 = ↓
+  // Task 6.1 · จำ filter ต่อหน้า (lg_filters.registry)
+  const [f,setF,resetF,filterActive]=usePageFilters('registry',{cat:'all',act:'all',reviewDue:false,sortKey:'code',sortDir:1})
+  const {cat,act,reviewDue,sortKey,sortDir}=f
+  const setCat=v=>setF('cat',v), setAct=v=>setF('act',v)
   const [showAdd,setShowAdd]=useState(false)
   const [sel,setSel]=useState(new Set())
   const toggleSel=id=>setSel(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n })
@@ -168,7 +167,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
     if(d===0) d=a.code.localeCompare(b.code)
     return d*sortDir
   }
-  const toggleSort=k=>{ if(sortKey===k) setSortDir(x=>-x); else { setSortKey(k); setSortDir(1) } }
+  const toggleSort=k=>{ if(sortKey===k) setF('sortDir',x=>-x); else { setF('sortKey',k); setF('sortDir',1) } }
   const sortArrow=k=>sortKey===k?(sortDir===1?' ↑':' ↓'):''
   const grouped=useMemo(()=>{ const byCat={}; rows.forEach(l=>{ const c=l.cat; if(!byCat[c])byCat[c]={}; const t=l.hierarchy_level||5; if(!byCat[c][t])byCat[c][t]=[]; byCat[c][t].push(l) }); return byCat },[rows])
   const activeCats=catsList.filter(c=>cat==='all'||c===cat)
@@ -179,7 +178,8 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
       <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({laws.filter(l=>l.active!==false).length})</span>
       <span className={'chip'+(act==='inactive'?' active':'')} onClick={()=>setAct('inactive')}>ไม่ใช้แล้ว ({laws.filter(l=>l.active===false).length})</span>
       <span style={{margin:'0 4px',color:'var(--line)'}}>|</span>
-      <span className={'chip'+(reviewDue?' active':'')} onClick={()=>setReviewDue(v=>!v)} title="กฎหมายที่ถึง/ใกล้ครบรอบทบทวน (ภายใน 30 วัน)">ถึงรอบทบทวน ({reviewDueCount})</span>
+      <span className={'chip'+(reviewDue?' active':'')} onClick={()=>setF('reviewDue',v=>!v)} title="กฎหมายที่ถึง/ใกล้ครบรอบทบทวน (ภายใน 30 วัน)">ถึงรอบทบทวน ({reviewDueCount})</span>
+      {filterActive && <span className="chip" style={{marginLeft:'auto',cursor:'pointer'}} onClick={resetF} title="ล้างตัวกรองทั้งหมด">✕ ล้างตัวกรอง</span>}
     </div>
     <div className="cat-cards">
       <button type="button" className={'cat-card'+(cat==='all'?' active':'')} onClick={()=>setCat('all')}>
@@ -197,7 +197,9 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
     <div className="filterbar">
       <span className="right" style={{marginLeft:'auto'}}>พบ {rows.length} ฉบับ</span>
       {onExportF259 && <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="พิมพ์/บันทึกเป็น PDF ตามฟอร์ม F-259 (สำหรับ audit ISO 45001)" onClick={onExportF259}><I n="download"/>ส่งออกแบบ F-259</button>}
-      <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>ส่งออกที่กรอง</button>
+      {(()=>{ const hasFilter=cat!=='all'||act!=='all'||reviewDue||!!q
+        return <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>
+          {hasFilter?`Export (${rows.length} ฉบับตามตัวกรอง)`:`ส่งออกทั้งหมด (${rows.length})`}</button> })()}
       <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onAddLaw?onAddLaw():setShowAdd(true)}><I n="plus"/>เพิ่มกฎหมาย</button>
     </div>
     {sel.size>0 && (
@@ -205,7 +207,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
         <b>เลือก {sel.size} ฉบับ</b>
         <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>bulk(true)}>ทำเครื่องหมายสอดคล้องทั้งหมด</button>
         <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>bulk(false)}>ทำเครื่องหมายยังไม่สอดคล้อง</button>
-        <button className="btn btn-ghost" onClick={exportSel}>ส่งออกที่เลือก</button>
+        <button className="btn btn-ghost" onClick={exportSel}>Export ที่เลือก ({sel.size})</button>
         <button className="btn btn-ghost" style={{marginLeft:'auto'}} onClick={clearSel}>ล้างที่เลือก</button>
       </div>
     )}
@@ -254,7 +256,18 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
         ))}
       </div>
     ))}
-    {rows.length===0 && <div className="panel"><div style={{textAlign:'center',color:'var(--ink-faint)',padding:40}}>ไม่พบกฎหมายที่ตรงกับเงื่อนไข</div></div>}
+    {rows.length===0 && (()=>{
+      // Task 6.2 · ไม่เจอในหมวดที่กรอง แต่เจอในหมวดอื่น → เสนอให้ดูทุกหมวด
+      const otherCount = cat==='all' ? 0 : laws.filter(l=>l.cat!==cat
+        &&(act==='all'||(act==='active'?l.active!==false:l.active===false))
+        &&(!reviewDue||isReviewDue(l))&&matchQ(l)).length
+      return <div className="panel"><div style={{textAlign:'center',color:'var(--ink-faint)',padding:40}}>
+        {otherCount>0
+          ? <>ไม่พบใน หมวด {catMap[cat]?.name||cat} — พบ {otherCount} รายการในหมวดอื่น{' '}
+              <button className="btn btn-ghost" style={{padding:'3px 10px',fontSize:12.5,marginLeft:4}} onClick={()=>setCat('all')}>ดูทุกหมวด</button></>
+          : 'ไม่พบกฎหมายที่ตรงกับเงื่อนไข'}
+      </div></div>
+    })()}
   </div>
 }
 

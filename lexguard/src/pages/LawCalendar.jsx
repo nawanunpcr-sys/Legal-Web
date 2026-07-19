@@ -1,7 +1,7 @@
 // ปฏิทินกฎหมาย (P13 · Task 1) — รวมภาระผูกพันตามกฎหมายจาก 3 แหล่งในมุมมองรายเดือน
 // (รายงานราชการ / การสื่อสาร / ทวนสอบ). logic การคำนวณอยู่ใน lib/calendar.js (ใช้ร่วมกับ Dashboard)
 import { useMemo, useState } from 'react'
-import { TH_MONTHS, daysTo, thDate } from '../lib/ui.jsx'
+import { TH_MONTHS, daysTo, thDate, usePageFilters } from '../lib/ui.jsx'
 import { CAL_TYPES, buildObligations, filterByCat, filterByKind,
          obligationsInMonth, overdueBefore, monthCounts } from '../lib/calendar.js'
 
@@ -40,8 +40,10 @@ export default function LawCalendar({ reports = [], comms = [], workflow = [], l
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())   // 0-based
-  const [catFilter, setCatFilter] = useState('all')
-  const [kindFilter, setKindFilter] = useState('all')
+  // Task 6.1 · จำ filter ต่อหน้า (lg_filters.calendar)
+  const [f, setF, resetF, filterActive] = usePageFilters('calendar', { catFilter: 'all', kindFilter: 'all' })
+  const { catFilter, kindFilter } = f
+  const setCatFilter = v => setF('catFilter', v), setKindFilter = v => setF('kindFilter', v)
 
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
 
@@ -97,6 +99,7 @@ export default function LawCalendar({ reports = [], comms = [], workflow = [], l
       {Object.entries(CAL_TYPES).map(([k, t]) => (
         <span key={k} className={'chip' + (kindFilter === k ? ' active' : '')} onClick={() => setKindFilter(k)}>{t.label}</span>
       ))}
+      {filterActive && <span className="chip" style={{ marginLeft: 'auto', cursor: 'pointer' }} onClick={resetF} title="ล้างตัวกรอง">✕ ล้างตัวกรอง</span>}
     </div>
 
     {/* การ์ดสรุป 3 ใบ */}

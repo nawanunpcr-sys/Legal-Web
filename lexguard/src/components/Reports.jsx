@@ -5,7 +5,7 @@ import { useAuth, NO_PERM } from '../lib/auth.js'
 import Attachments from './Attachments.jsx'
 import { I } from './icons.jsx'
 import EmptyState from './EmptyState.jsx'
-import { thDate, TH_MONTHS } from '../lib/ui.jsx'
+import { thDate, TH_MONTHS, usePageFilters } from '../lib/ui.jsx'
 
 const daysTo = s => Math.ceil((new Date(s)-new Date())/86400000)
 const today  = () => new Date().toISOString().slice(0,10)
@@ -100,8 +100,10 @@ function SubmitModal({ report, onSave, onClose }){
 
 export default function Reports({ reports, onSetEvent, onSubmit }){
   const { can }=useAuth()
-  const [filter,setFilter]=useState('all')
-  const [month,setMonth]=useState('all')   // Task 5 · 'all' | 'YYYY-M' (กรองตามกำหนดส่งถัดไป)
+  // Task 6.1 · จำ filter ต่อหน้า (lg_filters.reports) — สถานะ + เดือน
+  const [f,setFF,resetF,filterActive]=usePageFilters('reports',{filter:'all',month:'all'})
+  const {filter,month}=f
+  const setFilter=v=>setFF('filter',v), setMonth=v=>setFF('month',v)
   const [eventModal,setEventModal]=useState(null)
   const [submitModal,setSubmitModal]=useState(null)
 
@@ -151,6 +153,7 @@ export default function Reports({ reports, onSetEvent, onSubmit }){
         <option value="all">ทุกเดือน</option>
         {monthOptions.map(p=>{ const [y,m]=p.split('-'); return <option key={p} value={p}>{TH_MONTHS[+m]} {(+y)+543}</option> })}
       </select>
+      {filterActive && <span className="chip" style={{cursor:'pointer'}} onClick={resetF} title="ล้างตัวกรอง">✕ ล้างตัวกรอง</span>}
     </div>
 
     <div className="panel"><div className="tablewrap"><table>

@@ -7,7 +7,7 @@ import { WF_STAGES, WF_STATUS, fetchActivityByLaw, syncReverifyOverdueNotificati
 import AssessForm from '../components/AssessForm.jsx'
 import Attachments from '../components/Attachments.jsx'
 import { I } from '../components/icons.jsx'
-import { Tag, thDate, TH_MONTHS } from '../lib/ui.jsx'
+import { Tag, thDate, TH_MONTHS, usePageFilters } from '../lib/ui.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 
 /* 3-step stepper */
@@ -269,12 +269,12 @@ export default function ProcessTracker({ rows = [], laws = [], catMap = {}, sugg
   const { can } = useAuth()
   const [showMonitor, setShowMonitor] = useState(false)
   const [openWf, setOpenWf] = useState(null)
-  const [catFilter, setCatFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [ownerFilter, setOwnerFilter] = useState('all')
   const [q, setQ] = useState('')
-  const [timeBase, setTimeBase] = useState('created_at')   // Task 4 · ฐานเวลา: created_at | reverify_date
-  const [period, setPeriod] = useState('all')              // Task 4 · 'all' | 'YYYY-M'
+  // Task 6.1 · จำ filter ต่อหน้า (lg_filters.tracker)
+  const [f, setF, resetF, filterActive] = usePageFilters('tracker', { catFilter: 'all', statusFilter: 'all', ownerFilter: 'all', timeBase: 'created_at', period: 'all' })
+  const { catFilter, statusFilter, ownerFilter, timeBase, period } = f
+  const setCatFilter = v => setF('catFilter', v), setStatusFilter = v => setF('statusFilter', v), setOwnerFilter = v => setF('ownerFilter', v)
+  const setTimeBase = v => setF('timeBase', v), setPeriod = v => setF('period', v)
 
   // Task 10: คลิก badge/เมนู Process Tracker → โฟกัส "งานค้าง"
   useEffect(()=>{ if(focusSignal>0) setStatusFilter('open') }, [focusSignal])
@@ -386,6 +386,7 @@ export default function ProcessTracker({ rows = [], laws = [], catMap = {}, sugg
         {STATUS_FILTERS.map(([k,lbl])=>(
           <span key={k} className={'chip'+(statusFilter===k?' active':'')} onClick={()=>setStatusFilter(k)}>{lbl}</span>
         ))}
+        {filterActive && <span className="chip" style={{marginLeft:'auto',cursor:'pointer'}} onClick={resetF} title="ล้างตัวกรอง">✕ ล้างตัวกรอง</span>}
       </div>
 
       {cases.length===0 && (

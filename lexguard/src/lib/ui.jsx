@@ -10,6 +10,22 @@ export function usePersist(key, def){
   return [v,setV]
 }
 
+// P13 · Task 6.1 — จำ filter ต่อหน้าไว้ใน localStorage key เดียว 'lg_filters' (object แยก per page).
+// คืน [state, set(key,val), reset, isActive] — set รับค่า/ฟังก์ชันอัปเดตได้แบบ useState.
+export function usePageFilters(page, defaults) {
+  const [state, setState] = useState(() => {
+    try { const all = JSON.parse(localStorage.getItem('lg_filters') || '{}'); return { ...defaults, ...(all[page] || {}) } }
+    catch { return { ...defaults } }
+  })
+  useEffect(() => {
+    try { const all = JSON.parse(localStorage.getItem('lg_filters') || '{}'); all[page] = state; localStorage.setItem('lg_filters', JSON.stringify(all)) } catch { /* noop */ }
+  }, [page, state])
+  const set = (k, v) => setState(s => ({ ...s, [k]: typeof v === 'function' ? v(s[k]) : v }))
+  const reset = () => setState({ ...defaults })
+  const isActive = Object.keys(defaults).some(k => state[k] !== defaults[k])
+  return [state, set, reset, isActive]
+}
+
 // Progress % of a law from its requirements (no reqs = 100%).
 export const prog = l => !l.reqs.length ? 100 : Math.round(l.reqs.filter(r => r.status === 'met').length / l.reqs.length * 100)
 
