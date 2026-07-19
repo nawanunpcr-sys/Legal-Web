@@ -5,6 +5,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { LAW_TYPES } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
+import AssessForm from '../components/AssessForm.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
 import { usePageFilters, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, effectiveInfo, prog, lawBEYear } from '../lib/ui.jsx'
 
@@ -268,7 +269,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.issue_date||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.effective_date||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:isReviewDue(l)?'var(--bad)':'var(--ink-soft)',whiteSpace:'nowrap',fontWeight:isReviewDue(l)?600:400}}>{l.review_date?thDate(l.review_date):'—'}</td>
-                    <td onClick={()=>onOpen(l)}><Pill s={l.status}/></td>
+                    <td><div style={{display:'flex',alignItems:'center',gap:8}}><span onClick={()=>onOpen(l)}><Pill s={l.status}/></span>{pending&&can('edit')&&onAssess&&<button className="btn btn-primary" style={{padding:'3px 10px',fontSize:11}} title="ประเมินความสอดคล้อง" onClick={e=>{e.stopPropagation();setAssessTarget({law:l,wf:openWf})}}>ประเมิน</button>}</div></td>
                   </tr>
                 )})}</tbody>
               </table></div>
@@ -289,7 +290,26 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
           : 'ไม่พบกฎหมายที่ตรงกับเงื่อนไข'}
       </div></div>
     })()}
+    {/* P14·T2 · popup ประเมินกลางจอ — reuse AssessForm + logic เดียวกับ Process Tracker */}
+    {assessTarget && <AssessPopup target={assessTarget} suggest={suggest} onAssess={onAssess} onClose={()=>setAssessTarget(null)}/>}
   </div>
+}
+
+/* ─────────── P14·T2 · Popup ประเมินความสอดคล้อง (กลางจอ) ─────────── */
+function AssessPopup({ target, suggest, onAssess, onClose }){
+  useEffect(()=>{ const h=e=>{ if(e.key==='Escape') onClose() }; window.addEventListener('keydown',h); return ()=>window.removeEventListener('keydown',h) },[onClose])
+  const { law, wf }=target
+  async function submit(payload){ await onAssess(wf, law, payload); onClose() }
+  return (<>
+    <div className="scrim" style={{zIndex:320}} onClick={onClose}/>
+    <div className="modal" style={{zIndex:321,width:560,maxHeight:'88vh',overflow:'auto'}}>
+      <div className="modal-head"><h3>ประเมินความสอดคล้อง · {law.code}</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
+      <div className="modal-body">
+        <div style={{fontSize:12.5,color:'var(--ink-soft)',marginBottom:10,paddingBottom:10,borderBottom:'1px solid var(--line-soft)'}}>{(law.name||'').slice(0,90)}</div>
+        <AssessForm law={law} suggest={suggest} onSubmit={submit} onCancel={onClose}/>
+      </div>
+    </div>
+  </>)
 }
 
 /* ─────────────────────────── COMPLIANCE ─────────────────────────── */
