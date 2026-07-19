@@ -1,6 +1,30 @@
 // Dashboard page — overview KPIs, category bars, NC list, quarterly chart, report deadlines.
 import { useState, useMemo } from 'react'
 import { Pill, Tag, ActiveBadge, thDate, daysTo, TH_MONTHS, QUARTER_LABEL } from '../lib/ui.jsx'
+import { buildObligations, monthCounts } from '../lib/calendar.js'
+
+/* P13 · Task 2 — การ์ด "เดือนนี้ต้องทำ" (นับจาก logic เดียวกับหน้าปฏิทินกฎหมาย) */
+function MonthDueCard({ reports, comms, workflow, lawMap, onOpenCalendar }) {
+  const now = new Date()
+  const { total, overdue } = useMemo(() => {
+    const obligations = buildObligations({ reports, comms, workflow, lawMap })
+    return monthCounts({ obligations, reports, comms, workflow }, now.getFullYear(), now.getMonth(), true)
+  }, [reports, comms, workflow, lawMap])
+  const accent = overdue > 0 ? 'var(--bad)' : total > 0 ? 'var(--review)' : 'var(--ok)'
+  return (
+    <div className="panel" style={{ marginBottom: 16, borderTop: '3px solid ' + accent, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 22 }}>🗓️</span>
+      <div style={{ flex: 1, minWidth: 220 }}>
+        <div style={{ fontSize: 15, fontWeight: 700 }}>
+          เดือนนี้มี <b className="num" style={{ color: accent }}>{total}</b> รายการต้องทำ
+          {overdue > 0 && <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--bad)' }}> (เกินกำหนด {overdue})</span>}
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--ink-faint)', marginTop: 2 }}>รายงานราชการ · การสื่อสาร · การทวนสอบ ที่ครบกำหนดในเดือน {TH_MONTHS[now.getMonth()]} {now.getFullYear() + 543}</div>
+      </div>
+      <button className="btn btn-primary" style={{ padding: '7px 16px' }} onClick={onOpenCalendar}>เปิดปฏิทิน →</button>
+    </div>
+  )
+}
 
 /* ─────────────────────────── DASHBOARD ─────────────────────────── */
 function CatBars({laws,cats}){
@@ -175,7 +199,7 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
   )
 }
 
-export default function Dashboard({laws,cats,catMap,onOpen,quarterStats=[],reports=[],onGoReports,onGoView,monthsData=[]}){
+export default function Dashboard({laws,cats,catMap,onOpen,quarterStats=[],reports=[],onGoReports,onGoView,monthsData=[],comms=[],workflow=[],lawMap={}}){
   // วันที่ตรวจสอบรายเดือนล่าสุด (เชื่อมกับการเช็คในหน้าทะเบียน & ความสอดคล้อง)
   const lastCheck = useMemo(()=>{
     const done=(monthsData||[]).filter(m=>m.checked_at && (m.status||m.checked))
@@ -204,6 +228,7 @@ export default function Dashboard({laws,cats,catMap,onOpen,quarterStats=[],repor
   ]
 
   return <div className="view">
+    <MonthDueCard reports={reports} comms={comms} workflow={workflow} lawMap={lawMap} onOpenCalendar={()=>onGoView&&onGoView('calendar')}/>
     <div className="dash-strip">
       {strip.map((s,i)=>(<div className={'dash-strip-cell'+(s.go?' stat-link':'')} key={i}
         role={s.go?'button':undefined} tabIndex={s.go?0:undefined} onClick={s.go||undefined}
