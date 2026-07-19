@@ -2265,3 +2265,9 @@ tbody tr.row-danger td:first-child { box-shadow: inset 3px 0 0 var(--bad) }
 /* P10 · Task 10 — badge งานค้างบน sidebar (accent = ปกติ, .badge เดิม = แดงเลยกำหนด) */
 .nav-item .badge.accent { background: var(--accent) }
 .nav-item.active .badge.accent { background: rgba(255,255,255,.22) }
+
+/* P14 · T1 — ไฮไลต์แถวกฎหมายที่เพิ่งเพิ่ม (พื้นเหลืองจางออกใน 2 วินาที) */
+@keyframes rowFlash { from { background: var(--review-bg); } to { background: transparent; } }
+.row-flash > td { animation: rowFlash 2s ease-out; }
+/* pill "รอประเมิน" ข้างชื่อกฎหมาย */
+.pill-pending { background: var(--review-bg); color: var(--review); font-size: 10.5px; padding: 1px 8px; font-weight: 600; }

@@ -1,7 +1,7 @@
 // Registry & Compliance page (ทะเบียน & ความสอดคล้อง).
 // Includes AddLawModal, Register, MonthlyCheckPanel, ComplianceLawRow, Compliance.
 // Moved verbatim from App.jsx (pure refactor).
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { LAW_TYPES } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
@@ -100,6 +100,7 @@ function AddLawModal({ cats, allLaws, onSave, onClose }) {
 
 /* ─────────── REGISTRY + COMPLIANCE (merged view) ─────────── */
 export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,allLaws,round,onExportF259,onAddLaw,
+    workflow=[],suggest={},onAssess,focus,
     monthsData=[],monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws}){
   const kpis=[
     {lab:'ข้อกำหนดทั้งหมด',   val:stats.req, accent:'#1C2431'},
@@ -123,20 +124,40 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
     </div>}
 
     <Register laws={regLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
-      round={round} onExportF259={onExportF259} onAddLaw={onAddLaw}/>
+      round={round} onExportF259={onExportF259} onAddLaw={onAddLaw}
+      workflow={workflow} suggest={suggest} onAssess={onAssess} focus={focus}/>
   </div>
 }
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
 // จัดลำดับหมวด: LA→LG ก่อน แล้ว CCS (CC) ท้ายสุด
 const catOrder=(a,b)=>((a==='CC')-(b==='CC'))||a.localeCompare(b)
-function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259,onAddLaw}){
+function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259,onAddLaw,
+    workflow=[],suggest={},onAssess,focus}){
   const { can }=useAuth()
   // Task 6.1 · จำ filter ต่อหน้า (lg_filters.registry)
   const [f,setF,resetF,filterActive]=usePageFilters('registry',{cat:'all',act:'all',reviewDue:false,sortKey:'code',sortDir:1})
   const {cat,act,reviewDue,sortKey,sortDir}=f
   const setCat=v=>setF('cat',v), setAct=v=>setF('act',v)
   const [showAdd,setShowAdd]=useState(false)
+  const [flashId,setFlashId]=useState(null)       // P14·T1 · แถวที่เพิ่งเพิ่ม (ไฮไลต์ 2 วิ)
+  const [assessTarget,setAssessTarget]=useState(null)   // P14·T2 · { law, wf } เปิด popup ประเมิน
+
+  // P14·T1 · workflow ที่ยังเปิดอยู่ต่อกฎหมาย (ใช้ทำ badge "รอประเมิน")
+  const openWfByLaw=useMemo(()=>{
+    const m={}
+    ;(workflow||[]).forEach(w=>{ if(w.status!=='เสร็จสิ้น' && !m[w.law_id]) m[w.law_id]=w })
+    return m
+  },[workflow])
+
+  // P14·T1 · หลังเพิ่มกฎหมาย → สลับหมวดไปที่กฎหมายใหม่ + scroll + ไฮไลต์แถว 2 วิ
+  useEffect(()=>{ if(!focus?.ts) return
+    if(focus.cat) setF('cat',focus.cat)
+    setFlashId(focus.lawId)
+    const t1=setTimeout(()=>{ document.getElementById('reg-law-'+focus.lawId)?.scrollIntoView({behavior:'smooth',block:'center'}) },140)
+    const t2=setTimeout(()=>setFlashId(null),2200)
+    return ()=>{ clearTimeout(t1); clearTimeout(t2) }
+  },[focus?.ts])   // eslint-disable-line react-hooks/exhaustive-deps
   const [sel,setSel]=useState(new Set())
   const toggleSel=id=>setSel(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n })
   const clearSel=()=>setSel(new Set())
@@ -239,17 +260,17 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
                   <th className="th-sort" style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>toggleSort('review')} title="เรียงตามรอบทบทวน">รอบทบทวน{sortArrow('review')}</th>
                   <th className="th-sort" style={{cursor:'pointer'}} onClick={()=>toggleSort('pct')} title="เรียงตาม % สอดคล้อง">สถานะ{sortArrow('pct')}</th>
                 </tr></thead>
-                <tbody>{[...grouped[c][t.level]].sort(sortCmp).map(l=>(
-                  <tr key={l.id} className={sel.has(l.id)?'row-sel':''} style={l.active===false?{opacity:.55}:null}>
+                <tbody>{[...grouped[c][t.level]].sort(sortCmp).map(l=>{ const openWf=openWfByLaw[l.id]; const pending=openWf?.status==='รอประเมิน'; return (
+                  <tr key={l.id} id={'reg-law-'+l.id} className={(sel.has(l.id)?'row-sel':'')+(flashId===l.id?' row-flash':'')} style={l.active===false?{opacity:.55}:null}>
                     <td onClick={e=>{e.stopPropagation();toggleSel(l.id)}} style={{textAlign:'center'}}><input type="checkbox" checked={sel.has(l.id)} onChange={()=>toggleSel(l.id)} onClick={e=>e.stopPropagation()}/></td>
-                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/>{(()=>{ const e=effectiveInfo(l); return e?<span className="pill" style={{fontSize:10,padding:'1px 7px',background:'var(--review-bg)',color:'var(--review)'}}>จะบังคับใช้ใน {e.days} วัน</span>:null })()}{l.source_url&&<a href={l.source_url} target="_blank" rel="noreferrer" title="เปิดตัวบท (PDF)" onClick={e=>e.stopPropagation()} style={{fontSize:13,textDecoration:'none'}}>📄</a>}</div><div className="law-title">{l.name}</div>{(()=>{ const rt=reqMatchText(l); return rt?<div style={{fontSize:11.5,color:'var(--ink-faint)',marginTop:3,lineHeight:1.4}}>↳ {markSnippet(rt,q)}</div>:null })()}</td>
+                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/>{pending&&<span className="pill pill-pending" title="มีรายการรอผู้ประเมิน">รอประเมิน</span>}{(()=>{ const e=effectiveInfo(l); return e?<span className="pill" style={{fontSize:10,padding:'1px 7px',background:'var(--review-bg)',color:'var(--review)'}}>จะบังคับใช้ใน {e.days} วัน</span>:null })()}{l.source_url&&<a href={l.source_url} target="_blank" rel="noreferrer" title="เปิดตัวบท (PDF)" onClick={e=>e.stopPropagation()} style={{fontSize:13,textDecoration:'none'}}>📄</a>}</div><div className="law-title">{l.name}</div>{(()=>{ const rt=reqMatchText(l); return rt?<div style={{fontSize:11.5,color:'var(--ink-faint)',marginTop:3,lineHeight:1.4}}>↳ {markSnippet(rt,q)}</div>:null })()}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.issue_date||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.effective_date||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:isReviewDue(l)?'var(--bad)':'var(--ink-soft)',whiteSpace:'nowrap',fontWeight:isReviewDue(l)?600:400}}>{l.review_date?thDate(l.review_date):'—'}</td>
                     <td onClick={()=>onOpen(l)}><Pill s={l.status}/></td>
                   </tr>
-                ))}</tbody>
+                )})}</tbody>
               </table></div>
             </div>
           </div>

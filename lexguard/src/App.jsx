@@ -115,6 +115,7 @@ export default function App(){
   const [showAddLaw,setShowAddLaw] = useState(false)     // Workflow A · Process 1 wizard
   const [addLawInit,setAddLawInit] = useState(null)      // P12: prefill AddLawFlow จากหน้าสรุปกฎหมาย
   const [trackerFocus,setTrackerFocus] = useState(0)     // signal: คลิก badge/เมนู tracker → โฟกัสงานค้าง
+  const [regFocus,setRegFocus]   = useState(null)        // P14·T1 signal: หลังเพิ่มกฎหมาย → สลับหมวด + highlight แถว { lawId, cat, ts }
   const [flowPopup,setFlowPopup]   = useState(null)      // { title, msg } — popup กึ่งกลางจอ (ยืนยันเพิ่ม/ประเมินเสร็จ)
   const [showNotify,setShowNotify] = useState(false)
   const [commTab,setCommTab]       = usePersist('cr_comm_tab','comm')       // comm | reports (สื่อสาร & ส่งรายงาน hub)
@@ -564,6 +565,7 @@ export default function App(){
           {view==='registry'      && <RegistryCompliance
             regLaws={activeLaws} cats={cats} catMap={catMap} stats={stats}
             search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
+            workflow={workflowRows} suggest={suggest} onAssess={handleWorkflowAssess} focus={regFocus}
             round={round} onExportF259={()=>setShowPdf(true)} onAddLaw={()=>openAddLaw()}
             monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
@@ -597,7 +599,9 @@ export default function App(){
       )}
       {showAddLaw && <AddLawFlow cats={cats} allLaws={laws} suggest={suggest} initialData={addLawInit}
         onCreate={handleCreateAddWorkflow} onClose={()=>{ setShowAddLaw(false); setAddLawInit(null) }}
-        onDone={()=>{ loadDiscovered(); setFlowPopup({ title:'เพิ่มเข้าทะเบียนแล้ว', msg:'กฎหมายถูกเพิ่มเข้าทะเบียนแล้ว (สถานะ: รอประเมิน) — ดูได้ที่ Process Tracker' }) }}/>}
+        onDone={(law)=>{ loadDiscovered()
+          if(law){ setView('registry'); setRegFocus({ lawId:law.id, cat:law.cat, ts:Date.now() }) }
+          setFlowPopup({ title:'เพิ่มเข้าทะเบียนแล้ว', msg:'กฎหมายถูกเพิ่มเข้าทะเบียนแล้ว (สถานะ: รอประเมิน) — แสดงในทะเบียนหมวด '+(law?.cat||'')+' และ Process Tracker' }) }}/>}
       {flowPopup && (
         <div className="flow-popup-overlay" style={{position:'fixed',inset:0,display:'grid',placeItems:'center',zIndex:400,background:'rgba(20,24,33,.45)'}} onClick={()=>setFlowPopup(null)}>
           <div className="panel" style={{maxWidth:380,padding:'22px 24px',textAlign:'center'}} onClick={e=>e.stopPropagation()}>
