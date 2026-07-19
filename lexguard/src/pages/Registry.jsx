@@ -6,7 +6,22 @@ import { LAW_TYPES } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
-import { usePersist, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, effectiveInfo } from '../lib/ui.jsx'
+import { usePersist, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, effectiveInfo, prog, lawBEYear } from '../lib/ui.jsx'
+
+/* P13 · Task 3 — ไฮไลต์คำค้นในข้อความ (ตัดสั้น ~80 ตัวอักษรรอบคำที่เจอ) */
+function markSnippet(text, q) {
+  if (!text) return null
+  if (!q) return text.slice(0, 80)
+  const lc = text.toLowerCase()
+  const idx = lc.indexOf(q)
+  const start = idx >= 0 ? Math.max(0, idx - 20) : 0
+  const snip = text.slice(start, start + 80)
+  const pre = start > 0 ? '…' : ''
+  const suf = start + 80 < text.length ? '…' : ''
+  const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const parts = snip.split(new RegExp('(' + esc + ')', 'ig'))
+  return <>{pre}{parts.map((s, i) => s.toLowerCase() === q ? <mark key={i}>{s}</mark> : s)}{suf}</>
+}
 
 /* ─────────────────────────── ADD LAW MODAL ───────────────────────── */
 function AddLawModal({ cats, allLaws, onSave, onClose }) {
@@ -119,6 +134,9 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   const { can }=useAuth()
   const [cat,setCat]=usePersist('cr_reg_cat','all')
   const [act,setAct]=usePersist('cr_reg_act','all')
+  const [reviewDue,setReviewDue]=useState(false)          // Task 3.2 · เฉพาะกฎหมายที่ถึงรอบทบทวน
+  const [sortKey,setSortKey]=useState('code')             // Task 3.1 · code | announce | pct | review
+  const [sortDir,setSortDir]=useState(1)                  // 1 = ↑, -1 = ↓
   const [showAdd,setShowAdd]=useState(false)
   const [sel,setSel]=useState(new Set())
   const toggleSel=id=>setSel(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n })
@@ -127,12 +145,31 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   function exportSel(){ const m=Object.fromEntries(cats.map(c=>[c.code,c])); exportLawsToExcel(laws.filter(l=>sel.has(l.id)),m); }
   const catsList=[...new Set(laws.map(l=>l.cat))].sort(catOrder)
   const q=search.toLowerCase()
-  // ค้นหา (item 7): รหัส · ชื่อกฎหมาย · กระทรวง · สาระสำคัญของข้อกำหนด · ผู้รับผิดชอบ
-  const matchQ=l=>!q||l.code.toLowerCase().includes(q)||l.name.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)
-    ||(l.reqs||[]).some(r=>(r.text||'').toLowerCase().includes(q)||(r.responsible||'').toLowerCase().includes(q))
+  // Task 3.2 · "ถึงรอบทบทวน" = review_date ≤ วันนี้ + 30 วัน
+  const reviewCutoff=useMemo(()=>{ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+30); return d },[])
+  const isReviewDue=l=>{ if(!l.review_date) return false; const d=new Date(l.review_date); return !isNaN(d)&&d<=reviewCutoff }
+  const reviewDueCount=useMemo(()=>laws.filter(isReviewDue).length,[laws,reviewCutoff])
+  // ค้นหา (item 7): รหัส · ชื่อกฎหมาย · กระทรวง (ตรงกับชื่อ/รหัส) — Task 3.3 แยกกรณี match จากข้อกำหนด
+  const nameHit=l=>l.code.toLowerCase().includes(q)||l.name.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)
+  const reqHit=l=>(l.reqs||[]).find(r=>(r.text||'').toLowerCase().includes(q)||(r.responsible||'').toLowerCase().includes(q))
+  const matchQ=l=>!q||nameHit(l)||!!reqHit(l)
+  // ข้อความข้อกำหนดที่เจอ (แสดงใต้ชื่อกฎหมาย) — เฉพาะแถวที่ match จากข้อกำหนด ไม่ใช่ชื่อ/รหัส
+  const reqMatchText=l=>{ if(!q||nameHit(l)) return null; const r=reqHit(l); return r?(r.text||r.responsible||''):null }
   const rows=laws.filter(l=>(cat==='all'||l.cat===cat)
     &&(act==='all'||(act==='active'?l.active!==false:l.active===false))
+    &&(!reviewDue||isReviewDue(l))
     &&matchQ(l))
+  // Task 3.1 · comparator ตาม sortKey/sortDir (ใช้ภายในแต่ละกลุ่มหมวด/ชั้น)
+  const sortCmp=(a,b)=>{
+    let d=0
+    if(sortKey==='announce')  d=(lawBEYear(a.issue_date)||0)-(lawBEYear(b.issue_date)||0)
+    else if(sortKey==='pct')  d=prog(a)-prog(b)
+    else if(sortKey==='review') d=(a.review_date?new Date(a.review_date).getTime():Infinity)-(b.review_date?new Date(b.review_date).getTime():Infinity)
+    if(d===0) d=a.code.localeCompare(b.code)
+    return d*sortDir
+  }
+  const toggleSort=k=>{ if(sortKey===k) setSortDir(x=>-x); else { setSortKey(k); setSortDir(1) } }
+  const sortArrow=k=>sortKey===k?(sortDir===1?' ↑':' ↓'):''
   const grouped=useMemo(()=>{ const byCat={}; rows.forEach(l=>{ const c=l.cat; if(!byCat[c])byCat[c]={}; const t=l.hierarchy_level||5; if(!byCat[c][t])byCat[c][t]=[]; byCat[c][t].push(l) }); return byCat },[rows])
   const activeCats=catsList.filter(c=>cat==='all'||c===cat)
   return <div className="view">
@@ -141,6 +178,8 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
       <span className={'chip'+(act==='all'?' active':'')} onClick={()=>setAct('all')}>ทั้งหมด</span>
       <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({laws.filter(l=>l.active!==false).length})</span>
       <span className={'chip'+(act==='inactive'?' active':'')} onClick={()=>setAct('inactive')}>ไม่ใช้แล้ว ({laws.filter(l=>l.active===false).length})</span>
+      <span style={{margin:'0 4px',color:'var(--line)'}}>|</span>
+      <span className={'chip'+(reviewDue?' active':'')} onClick={()=>setReviewDue(v=>!v)} title="กฎหมายที่ถึง/ใกล้ครบรอบทบทวน (ภายใน 30 วัน)">ถึงรอบทบทวน ({reviewDueCount})</span>
     </div>
     <div className="cat-cards">
       <button type="button" className={'cat-card'+(cat==='all'?' active':'')} onClick={()=>setCat('all')}>
@@ -189,15 +228,23 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
             <div className="hier-tier-label"><span className="tier-badge">ชั้น {t.level}</span>{t.label}</div>
             <div className="panel" style={{marginTop:0,borderTopLeftRadius:0,borderTopRightRadius:0}}>
               <div className="tablewrap"><table>
-                <thead><tr><th style={{width:34}}></th><th>รหัส / ชื่อกฎหมาย</th><th>กระทรวง</th><th>วันที่ประกาศ</th><th>วันที่บังคับใช้</th><th>สถานะ</th></tr></thead>
-                {/* เรียง: สอดคล้อง/รอประเมินก่อน — ไม่สอดคล้อง (NC) ท้ายสุด (ยังคง badge แดง) */}
-                <tbody>{[...grouped[c][t.level]].sort((a,b)=>((a.status==='bad')-(b.status==='bad'))||a.code.localeCompare(b.code)).map(l=>(
+                <thead><tr>
+                  <th style={{width:34}}></th>
+                  <th className="th-sort" style={{cursor:'pointer'}} onClick={()=>toggleSort('code')} title="เรียงตามรหัส">รหัส / ชื่อกฎหมาย{sortArrow('code')}</th>
+                  <th>กระทรวง</th>
+                  <th className="th-sort" style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>toggleSort('announce')} title="เรียงตามวันที่ประกาศ">วันที่ประกาศ{sortArrow('announce')}</th>
+                  <th>วันที่บังคับใช้</th>
+                  <th className="th-sort" style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>toggleSort('review')} title="เรียงตามรอบทบทวน">รอบทบทวน{sortArrow('review')}</th>
+                  <th className="th-sort" style={{cursor:'pointer'}} onClick={()=>toggleSort('pct')} title="เรียงตาม % สอดคล้อง">สถานะ{sortArrow('pct')}</th>
+                </tr></thead>
+                <tbody>{[...grouped[c][t.level]].sort(sortCmp).map(l=>(
                   <tr key={l.id} className={sel.has(l.id)?'row-sel':''} style={l.active===false?{opacity:.55}:null}>
                     <td onClick={e=>{e.stopPropagation();toggleSel(l.id)}} style={{textAlign:'center'}}><input type="checkbox" checked={sel.has(l.id)} onChange={()=>toggleSel(l.id)} onClick={e=>e.stopPropagation()}/></td>
-                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/>{(()=>{ const e=effectiveInfo(l); return e?<span className="pill" style={{fontSize:10,padding:'1px 7px',background:'var(--review-bg)',color:'var(--review)'}}>จะบังคับใช้ใน {e.days} วัน</span>:null })()}{l.source_url&&<a href={l.source_url} target="_blank" rel="noreferrer" title="เปิดตัวบท (PDF)" onClick={e=>e.stopPropagation()} style={{fontSize:13,textDecoration:'none'}}>📄</a>}</div><div className="law-title">{l.name}</div></td>
+                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/>{(()=>{ const e=effectiveInfo(l); return e?<span className="pill" style={{fontSize:10,padding:'1px 7px',background:'var(--review-bg)',color:'var(--review)'}}>จะบังคับใช้ใน {e.days} วัน</span>:null })()}{l.source_url&&<a href={l.source_url} target="_blank" rel="noreferrer" title="เปิดตัวบท (PDF)" onClick={e=>e.stopPropagation()} style={{fontSize:13,textDecoration:'none'}}>📄</a>}</div><div className="law-title">{l.name}</div>{(()=>{ const rt=reqMatchText(l); return rt?<div style={{fontSize:11.5,color:'var(--ink-faint)',marginTop:3,lineHeight:1.4}}>↳ {markSnippet(rt,q)}</div>:null })()}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.issue_date||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.effective_date||'—'}</td>
+                    <td onClick={()=>onOpen(l)} style={{fontSize:12,color:isReviewDue(l)?'var(--bad)':'var(--ink-soft)',whiteSpace:'nowrap',fontWeight:isReviewDue(l)?600:400}}>{l.review_date?thDate(l.review_date):'—'}</td>
                     <td onClick={()=>onOpen(l)}><Pill s={l.status}/></td>
                   </tr>
                 ))}</tbody>
