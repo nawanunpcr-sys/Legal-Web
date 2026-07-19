@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, hasSupabase, fetchAll,
          setRequirementStatus, recomputeLawStatus, bulkSetCompliance, setLawActive,
-         repealLaw, restoreLaw, createLaw, createLawFull,
+         repealLaw, restoreLaw, createLaw, createLawFull, deleteLaw,
          markCommSent, updateCommSchedule,
          fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
          logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
@@ -295,6 +295,22 @@ export default function App(){
       fetchActivity().then(setActivity); fetchQuarterStats().then(setQuarterStats)
     }
     catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
+  }
+
+  // P14 · Task 3 — ลบกฎหมายถาวร (admin) · optimistic + rollback
+  async function handleDeleteLaw(law){
+    const prevLaws=laws, prevWf=workflowRows
+    setLaws(prev=>prev.filter(l=>l.id!==law.id))
+    setWorkflowRows(prev=>prev.filter(w=>w.law_id!==law.id))
+    setOpenLaw(null)
+    try{
+      await deleteLaw(law.id, { code:law.code, name:law.name })
+      fetchActivity().then(setActivity); fetchQuarterStats().then(setQuarterStats)
+      toast(`ลบ ${law.code} แล้ว`,'success')
+    }catch(e){
+      setLaws(prevLaws); setWorkflowRows(prevWf)
+      toast('ลบไม่สำเร็จ: '+e.message,'error')
+    }
   }
 
   async function handleBulkCompliance(ids, met){
@@ -594,7 +610,7 @@ export default function App(){
 
       {openLaw && (
         <LawDrawer law={openLaw} catMap={catMap} onClose={()=>setOpenLaw(null)}
-          onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive}
+          onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive} onDelete={handleDeleteLaw}
           prog={prog} thDate={thDate}/>
       )}
       {showAddLaw && <AddLawFlow cats={cats} allLaws={laws} suggest={suggest} initialData={addLawInit}

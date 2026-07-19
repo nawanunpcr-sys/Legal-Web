@@ -197,6 +197,47 @@ export async function repealLaw(lawId, { repeal_date, repeal_reason, replaced_by
   await bumpQuarterStat(law?.cat, 'repealed', 1)
 }
 
+// P14 · Task 3 — ลบกฎหมายถาวร (hard delete) สำหรับกรณีเพิ่มผิด/ซ้ำเท่านั้น.
+// ลบ child ตามลำดับก่อน parent; FK ที่เป็น CASCADE (requirements/workflow/plans/review_log/
+// assessment_flow/process_tracker) ถูกลบอัตโนมัติตอนลบ lg_laws — แต่ต้องเคลียร์เอง:
+//   · lg_attachments + ไฟล์ใน storage (ไม่มี FK) · lg_notification_log (ไม่มี FK)
+//   · lg_reports.law_id (NO ACTION → set null) · lg_ai_discovered_laws.registered_law_id (NO ACTION → set null)
+//   · lg_activity_log ของกฎหมายนี้ (เก็บ audit log ระดับ global ที่ law_id=null ไว้)
+export async function deleteLaw(lawId, { code, name } = {}) {
+  if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  // 1. รวบรวม id ลูก (ref_id ของ notification/attachment เป็น bigint: law + requirements + plans)
+  const [{ data: reqs }, { data: plans }] = await Promise.all([
+    supabase.from('lg_requirements').select('id').eq('law_id', lawId),
+    supabase.from('lg_improvement_plans').select('id').eq('law_id', lawId),
+  ])
+  const refIds = [lawId, ...(reqs || []).map(r => r.id), ...(plans || []).map(p => p.id)]
+
+  // 2. attachments — ลบไฟล์ใน storage (best-effort) แล้วลบแถว DB (strict)
+  const { data: atts, error: attFetchErr } = await supabase.from('lg_attachments').select('id,file_url').in('ref_id', refIds)
+  if (attFetchErr) throw attFetchErr
+  if (atts && atts.length) {
+    const paths = atts.map(a => { const m = (a.file_url || '').split('/law-docs/'); return m[1] ? decodeURIComponent(m[1]) : null }).filter(Boolean)
+    if (paths.length) { try { await supabase.storage.from('law-docs').remove(paths) } catch (e) { console.warn('deleteLaw: storage remove failed (orphan ok)', e) } }
+    const { error } = await supabase.from('lg_attachments').delete().in('ref_id', refIds); if (error) throw error
+  }
+
+  // 3. notifications ที่อ้างถึงกฎหมาย/แผน (ref_id bigint)
+  { const { error } = await supabase.from('lg_notification_log').delete().in('ref_id', refIds); if (error) throw error }
+
+  // 4. เคลียร์ FK แบบ NO ACTION ก่อน ไม่งั้นลบ lg_laws ไม่ได้
+  { const { error } = await supabase.from('lg_reports').update({ law_id: null }).eq('law_id', lawId); if (error) throw error }
+  { const { error } = await supabase.from('lg_ai_discovered_laws').update({ registered_law_id: null }).eq('registered_law_id', lawId); if (error) throw error }
+
+  // 5. ลบ activity log ของกฎหมายนี้
+  { const { error } = await supabase.from('lg_activity_log').delete().eq('law_id', lawId); if (error) throw error }
+
+  // 6. audit trail ระดับ global (law_id = null → รอดจากการลบ activity ด้านบน)
+  await logActivity({ action: 'delete', law_id: null, law_code: code || '', law_name: name || '', detail: `ลบกฎหมายถาวร ${code || ''} ${name || ''}`.trim() })
+
+  // 7. ลบแถวหลัก → CASCADE เก็บกวาด requirements/workflow/plans/review_log/assessment_flow/process_tracker
+  { const { error } = await supabase.from('lg_laws').delete().eq('id', lawId); if (error) throw error }
+}
+
 export async function createLaw({ code, cat, name, hierarchy_level, ministry, announce_date, effective_date, doc_list, responsible, review_date }) {
   const { data, error } = await supabase.from('lg_laws').insert({
     code,

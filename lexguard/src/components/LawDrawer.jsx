@@ -88,10 +88,41 @@ function RepealModal({ law, onConfirm, onClose }){
   )
 }
 
-export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, onRestore, onDuplicate, onToggleActive, prog, thDate }){
+// P14 · Task 3 — ยืนยันลบถาวร (ต้องพิมพ์รหัสกฎหมายให้ตรงก่อนปุ่มลบจะ active)
+function DeleteLawModal({ law, onConfirm, onClose }){
+  const [typed, setTyped] = useState('')
+  const ok = typed.trim() === law.code
+  return (
+    <>
+      <div className="scrim" style={{zIndex:400}} onClick={onClose}/>
+      <div className="modal" style={{zIndex:401,width:460}}>
+        <div className="modal-head">
+          <h3 style={{color:'var(--bad)'}}>ลบกฎหมายถาวร?</h3>
+          <button className="close" onClick={onClose}><I n="x"/></button>
+        </div>
+        <div className="modal-body">
+          <div className="ai-box" style={{borderColor:'var(--bad)',background:'var(--bad-bg)',marginBottom:14}}>
+            <span className="ai-tag" style={{color:'var(--bad)'}}>คำเตือน</span>
+            <p style={{marginBottom:0,fontSize:13}}>กำลังจะลบ <b>{law.code}</b> — {(law.name||'').slice(0,80)}<br/>
+              ข้อมูลข้อกำหนด การประเมิน และประวัติทั้งหมดของกฎหมายนี้จะถูกลบถาวร <b>กู้คืนไม่ได้</b> — หากกฎหมายถูกยกเลิกโดยราชการ ให้ใช้ “ยกเลิกใช้” แทนเพื่อเก็บประวัติตาม ISO 45001</p>
+          </div>
+          <label className="form-label">พิมพ์รหัสกฎหมาย <b>{law.code}</b> เพื่อยืนยัน</label>
+          <input className="form-input" type="text" placeholder={law.code} value={typed} onChange={e=>setTyped(e.target.value)} autoFocus/>
+        </div>
+        <div className="modal-foot">
+          <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
+          <button className="btn btn-danger" disabled={!ok} title={ok?'':'พิมพ์รหัสให้ตรงก่อน'} onClick={onConfirm}><I n="ban"/>ลบถาวร</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, onRestore, onDuplicate, onToggleActive, onDelete, prog, thDate }){
   const { can } = useAuth()
   const inactive = law.active === false
   const [showRepealModal, setShowRepealModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [reviews, setReviews] = useState([])
   const [evOverrides, setEvOverrides] = useState({})   // { reqId: {evidence_url, evidence_label} } — fresh uploads
@@ -352,8 +383,10 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
             <>
               {onToggleActive && <button className="btn btn-ghost" style={{flex:1}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onToggleActive(law)}>{inactive?'ทำให้ใช้อยู่':'ทำเป็นไม่ใช้แล้ว'}</button>}
               {onDuplicate && <button className="btn btn-ghost" style={{flex:1}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onDuplicate(law)}>ทำซ้ำ</button>}
-              {/* ยกเลิก (ลบออกจากทะเบียน) = admin เท่านั้น */}
-              <button className="btn btn-danger" style={{flex:1}} disabled={!can('delete')} title={can('delete')?'':NO_PERM} onClick={()=>setShowRepealModal(true)}>ยกเลิก</button>
+              {/* ยกเลิกใช้ (repeal — เก็บประวัติ) = admin เท่านั้น */}
+              <button className="btn btn-danger" style={{flex:1}} disabled={!can('delete')} title={can('delete')?'':NO_PERM} onClick={()=>setShowRepealModal(true)}>ยกเลิกใช้</button>
+              {/* ลบถาวร (hard delete) = admin เท่านั้น */}
+              {onDelete && <button className="btn btn-danger" style={{flex:'0 0 auto',padding:'0 12px'}} disabled={!can('delete')} title={can('delete')?'ลบกฎหมายถาวร (กู้คืนไม่ได้)':NO_PERM} onClick={()=>setShowDeleteModal(true)}><I n="ban"/>ลบ</button>}
               <button className="btn btn-primary" style={{flex:1}} onClick={()=>window.print()}>PDF</button>
             </>
           )}
@@ -365,6 +398,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
 
       {showRepealModal && <RepealModal law={law} onConfirm={handleRepealConfirm} onClose={()=>setShowRepealModal(false)}/>}
       {showReviewModal && <ReviewModal law={law} onSave={handleSaveReview} onClose={()=>setShowReviewModal(false)}/>}
+      {showDeleteModal && <DeleteLawModal law={law} onConfirm={()=>{ setShowDeleteModal(false); onDelete(law) }} onClose={()=>setShowDeleteModal(false)}/>}
     </>
   )
 }
