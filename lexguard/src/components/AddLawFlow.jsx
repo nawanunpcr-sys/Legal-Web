@@ -121,7 +121,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
       <div className="scrim" style={{zIndex:300}} onClick={onClose}/>
       <div className="modal" style={{zIndex:301,width:620,maxHeight:'88vh',overflow:'auto'}}>
         <div className="modal-head">
-          <h3>{step===1 ? 'เพิ่มกฎหมายเข้าทะเบียน · ผู้ตรวจสอบ' : 'แนบไฟล์กฎหมาย'}</h3>
+          <h3>{step===1 ? 'เพิ่มกฎหมายเข้าทะเบียน · ผู้รับผิดชอบ' : 'แนบไฟล์กฎหมาย'}</h3>
           <button className="close" onClick={onClose}><I n="x"/></button>
         </div>
 
@@ -129,11 +129,11 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
           <div className="modal-body">
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
               <div>
-                <label className="form-label">ผู้ตรวจ <span style={{color:'var(--bad)'}}>*</span></label>
-                <input className="form-input" placeholder="พิมพ์ชื่อผู้ตรวจ…" value={owner} onChange={e=>setOwner(e.target.value)}/>
+                <label className="form-label">ผู้รับผิดชอบ / ผู้ติดตาม <span style={{color:'var(--bad)'}}>*</span></label>
+                <input className="form-input" placeholder="พิมพ์ชื่อผู้รับผิดชอบ/ผู้ติดตาม…" value={owner} onChange={e=>setOwner(e.target.value)}/>
               </div>
               <div>
-                <label className="form-label">วันที่ตรวจ</label>
+                <label className="form-label">วันที่บันทึก</label>
                 <input className="form-input" type="text" value={nowLabel} readOnly disabled title="บันทึกเวลาจริงอัตโนมัติ"/>
               </div>
             </div>

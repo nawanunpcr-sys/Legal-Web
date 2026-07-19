@@ -103,12 +103,12 @@ function MonitorModal({ laws, catMap, suggest, openCaseByLaw = {}, onStart, onCl
   return (<>
     <div className="scrim" style={{zIndex:300}} onClick={onClose}/>
     <div className="modal" style={{zIndex:301,width:560}}>
-      <div className="modal-head"><h3>ติดตาม / ทวนสอบกฎหมายเดิม · ผู้ตรวจสอบ</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
+      <div className="modal-head"><h3>ติดตาม / ทวนสอบกฎหมายเดิม · ผู้รับผิดชอบ</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
       <div className="modal-body">
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
           <div>
-            <label className="form-label">ผู้ตรวจ <span style={{color:'var(--bad)'}}>*</span></label>
-            <input className="form-input" placeholder="พิมพ์ชื่อผู้รับผิดชอบ…" value={owner} onChange={e=>setOwner(e.target.value)}/>
+            <label className="form-label">ผู้รับผิดชอบ / ผู้ติดตาม <span style={{color:'var(--bad)'}}>*</span></label>
+            <input className="form-input" placeholder="พิมพ์ชื่อผู้รับผิดชอบ/ผู้ติดตาม…" value={owner} onChange={e=>setOwner(e.target.value)}/>
           </div>
           <div><label className="form-label">วันที่</label><input className="form-input" value={nowLabel} readOnly disabled/></div>
         </div>
@@ -419,7 +419,8 @@ export default function ProcessTracker({ rows = [], laws = [], catMap = {}, sugg
                     <I n="clock"/>ค้างขั้นนี้ {aging} วัน
                   </span>
                 )}
-                {meta && <span><b>ค้างที่:</b> {meta.at}{meta.from?` · ส่งต่อโดย ${meta.from}`:''}</span>}
+                {wf.owner_name && <span><b>ผู้รับผิดชอบ/ผู้ติดตาม:</b> {wf.owner_name}</span>}
+                {meta && <span><b>ค้างที่:</b> {meta.at}</span>}
                 {done && wf.assessor_name && <span><b>ประเมินโดย:</b> {wf.assessor_name}{wf.assessed_at?` · ${thDate(wf.assessed_at)}`:''}</span>}
                 {done && wf.reverify_date && <span><b>ทวนสอบถัดไป:</b> {thDate(wf.reverify_date)}</span>}
               </div>
