@@ -137,8 +137,8 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
     workflow=[],suggest={},onAssess,focus}){
   const { can }=useAuth()
   // Task 6.1 · จำ filter ต่อหน้า (lg_filters.registry)
-  const [f,setF,resetF,filterActive]=usePageFilters('registry',{cat:'all',act:'all',reviewDue:false,sortKey:'code',sortDir:1})
-  const {cat,act,reviewDue,sortKey,sortDir}=f
+  const [f,setF,resetF,filterActive]=usePageFilters('registry',{cat:'all',act:'all',sortKey:'code',sortDir:1})
+  const {cat,act,sortKey,sortDir}=f
   const setCat=v=>setF('cat',v), setAct=v=>setF('act',v)
   const [showAdd,setShowAdd]=useState(false)
   const [flashId,setFlashId]=useState(null)       // P14·T1 · แถวที่เพิ่งเพิ่ม (ไฮไลต์ 2 วิ)
@@ -166,10 +166,6 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   function exportSel(){ const m=Object.fromEntries(cats.map(c=>[c.code,c])); exportLawsToExcel(laws.filter(l=>sel.has(l.id)),m); }
   const catsList=[...new Set(laws.map(l=>l.cat))].sort(catOrder)
   const q=search.toLowerCase()
-  // Task 3.2 · "ถึงรอบทบทวน" = review_date ≤ วันนี้ + 30 วัน
-  const reviewCutoff=useMemo(()=>{ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+30); return d },[])
-  const isReviewDue=l=>{ if(!l.review_date) return false; const d=new Date(l.review_date); return !isNaN(d)&&d<=reviewCutoff }
-  const reviewDueCount=useMemo(()=>laws.filter(isReviewDue).length,[laws,reviewCutoff])
   // ค้นหา (item 7): รหัส · ชื่อกฎหมาย · กระทรวง (ตรงกับชื่อ/รหัส) — Task 3.3 แยกกรณี match จากข้อกำหนด
   const nameHit=l=>l.code.toLowerCase().includes(q)||l.name.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)
   const reqHit=l=>(l.reqs||[]).find(r=>(r.text||'').toLowerCase().includes(q)||(r.responsible||'').toLowerCase().includes(q))
@@ -178,14 +174,12 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   const reqMatchText=l=>{ if(!q||nameHit(l)) return null; const r=reqHit(l); return r?(r.text||r.responsible||''):null }
   const rows=laws.filter(l=>(cat==='all'||l.cat===cat)
     &&(act==='all'||(act==='active'?l.active!==false:l.active===false))
-    &&(!reviewDue||isReviewDue(l))
     &&matchQ(l))
   // Task 3.1 · comparator ตาม sortKey/sortDir (ใช้ภายในแต่ละกลุ่มหมวด/ชั้น)
   const sortCmp=(a,b)=>{
     let d=0
     if(sortKey==='announce')  d=(lawBEYear(a.issue_date)||0)-(lawBEYear(b.issue_date)||0)
     else if(sortKey==='pct')  d=prog(a)-prog(b)
-    else if(sortKey==='review') d=(a.review_date?new Date(a.review_date).getTime():Infinity)-(b.review_date?new Date(b.review_date).getTime():Infinity)
     if(d===0) d=a.code.localeCompare(b.code)
     return d*sortDir
   }
@@ -199,8 +193,6 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
       <span className={'chip'+(act==='all'?' active':'')} onClick={()=>setAct('all')}>ทั้งหมด</span>
       <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({laws.filter(l=>l.active!==false).length})</span>
       <span className={'chip'+(act==='inactive'?' active':'')} onClick={()=>setAct('inactive')}>ไม่ใช้แล้ว ({laws.filter(l=>l.active===false).length})</span>
-      <span style={{margin:'0 4px',color:'var(--line)'}}>|</span>
-      <span className={'chip'+(reviewDue?' active':'')} onClick={()=>setF('reviewDue',v=>!v)} title="กฎหมายที่ถึง/ใกล้ครบรอบทบทวน (ภายใน 30 วัน)">ถึงรอบทบทวน ({reviewDueCount})</span>
       {filterActive && <span className="chip" style={{marginLeft:'auto',cursor:'pointer'}} onClick={resetF} title="ล้างตัวกรองทั้งหมด">✕ ล้างตัวกรอง</span>}
     </div>
     <div className="cat-cards">
@@ -219,7 +211,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
     <div className="filterbar">
       <span className="right" style={{marginLeft:'auto'}}>พบ {rows.length} ฉบับ</span>
       {onExportF259 && <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="พิมพ์/บันทึกเป็น PDF ตามฟอร์ม F-259 (สำหรับ audit ISO 45001)" onClick={onExportF259}><I n="download"/>ส่งออกแบบ F-259</button>}
-      {(()=>{ const hasFilter=cat!=='all'||act!=='all'||reviewDue||!!q
+      {(()=>{ const hasFilter=cat!=='all'||act!=='all'||!!q
         return <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>
           {hasFilter?`Export (${rows.length} ฉบับตามตัวกรอง)`:`ส่งออกทั้งหมด (${rows.length})`}</button> })()}
       <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onAddLaw?onAddLaw():setShowAdd(true)}><I n="plus"/>เพิ่มกฎหมาย</button>
@@ -258,7 +250,6 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
                   <th>กระทรวง</th>
                   <th className="th-sort" style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>toggleSort('announce')} title="เรียงตามวันที่ประกาศ">วันที่ประกาศ{sortArrow('announce')}</th>
                   <th>วันที่บังคับใช้</th>
-                  <th className="th-sort" style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>toggleSort('review')} title="เรียงตามรอบทบทวน">รอบทบทวน{sortArrow('review')}</th>
                   <th className="th-sort" style={{cursor:'pointer'}} onClick={()=>toggleSort('pct')} title="เรียงตาม % สอดคล้อง">สถานะ{sortArrow('pct')}</th>
                 </tr></thead>
                 <tbody>{[...grouped[c][t.level]].sort(sortCmp).map(l=>{ const openWf=openWfByLaw[l.id]; const pending=openWf?.status==='รอประเมิน'; return (
@@ -268,7 +259,6 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
                     <td onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.issue_date||'—'}</td>
                     <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.effective_date||'—'}</td>
-                    <td onClick={()=>onOpen(l)} style={{fontSize:12,color:isReviewDue(l)?'var(--bad)':'var(--ink-soft)',whiteSpace:'nowrap',fontWeight:isReviewDue(l)?600:400}}>{l.review_date?thDate(l.review_date):'—'}</td>
                     <td><div style={{display:'flex',alignItems:'center',gap:8}}><span onClick={()=>onOpen(l)}><Pill s={l.status}/></span>{pending&&can('edit')&&onAssess&&<button className="btn btn-primary" style={{padding:'3px 10px',fontSize:11}} title="ประเมินความสอดคล้อง" onClick={e=>{e.stopPropagation();setAssessTarget({law:l,wf:openWf})}}>ประเมิน</button>}</div></td>
                   </tr>
                 )})}</tbody>
@@ -282,7 +272,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
       // Task 6.2 · ไม่เจอในหมวดที่กรอง แต่เจอในหมวดอื่น → เสนอให้ดูทุกหมวด
       const otherCount = cat==='all' ? 0 : laws.filter(l=>l.cat!==cat
         &&(act==='all'||(act==='active'?l.active!==false:l.active===false))
-        &&(!reviewDue||isReviewDue(l))&&matchQ(l)).length
+        &&matchQ(l)).length
       return <div className="panel"><div style={{textAlign:'center',color:'var(--ink-faint)',padding:40}}>
         {otherCount>0
           ? <>ไม่พบใน หมวด {catMap[cat]?.name||cat} — พบ {otherCount} รายการในหมวดอื่น{' '}
