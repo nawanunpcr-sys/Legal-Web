@@ -4,6 +4,8 @@ import { useState, useMemo } from 'react'
 import { Tag, thDate, TH_MONTHS } from '../lib/ui.jsx'
 import { I } from '../components/icons.jsx'
 import { buildMonthlyReport } from '../components/PdfExport.jsx'
+import DeleteLawModal from '../components/DeleteLawModal.jsx'
+import { useAuth, NO_PERM } from '../lib/auth.js'
 
 const ACT_META = {
   create:      { t:'เพิ่มใหม่',      c:'var(--ok)'     },
@@ -41,9 +43,11 @@ function LawTimeline({ items }) {
   )
 }
 
-export default function History({ activity = [], laws = [], catMap = {}, settings = {}, workflowRows = [], searchLog = [] }) {
+export default function History({ activity = [], laws = [], catMap = {}, settings = {}, workflowRows = [], searchLog = [], onDeleteLaw }) {
+  const { can } = useAuth()
   const [cat, setCat] = useState('all')
   const [openId, setOpenId] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)   // ลบกฎหมายทั้งฉบับจากหน้าประวัติ (admin)
   const now = new Date()
   const [pmonth, setPmonth] = useState(now.getMonth() + 1)
   const [pyear, setPyear] = useState(now.getFullYear())
@@ -111,6 +115,7 @@ export default function History({ activity = [], laws = [], catMap = {}, setting
                   <span style={{flex:1,fontSize:13}}>{(law.name||'').slice(0,66)}</span>
                   <span className="pill" style={{fontSize:11,background:'var(--grayfill)',color:'var(--ink-soft)'}}>{items.length} รายการ</span>
                   <span className="sub" style={{whiteSpace:'nowrap',minWidth:80,textAlign:'right'}}>{thDate(last)}</span>
+                  {onDeleteLaw && can('delete') && <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11,color:'var(--bad)'}} title="ลบกฎหมายฉบับนี้ถาวร" onClick={e=>{e.stopPropagation();setDeleteTarget(law)}}><I n="ban"/></button>}
                 </div>
                 {open && <LawTimeline items={items}/>}
               </div>
@@ -118,6 +123,7 @@ export default function History({ activity = [], laws = [], catMap = {}, setting
           })}
         </div>
       </div>
+      {deleteTarget && <DeleteLawModal law={deleteTarget} onConfirm={()=>{ const l=deleteTarget; setDeleteTarget(null); onDeleteLaw(l) }} onClose={()=>setDeleteTarget(null)}/>}
     </div>
   )
 }

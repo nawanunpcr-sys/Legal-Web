@@ -587,7 +587,7 @@ export default function App(){
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
           {view==='summary'       && <LawSummary laws={activeLaws} cats={cats} catMap={catMap} discovered={discovered} suggest={suggest}
             onReloadDiscovered={loadDiscovered} onReloadLaws={loadLaws} onOpenLaw={setOpenLaw} onAddToRegistry={init=>openAddLaw(init)}/>}
-          {view==='history'       && <History activity={activity} laws={laws} catMap={catMap} settings={settings} workflowRows={workflowRows} searchLog={searchLog}/>}
+          {view==='history'       && <History activity={activity} laws={laws} catMap={catMap} settings={settings} workflowRows={workflowRows} searchLog={searchLog} onDeleteLaw={handleDeleteLaw}/>}
           {view==='tracker'       && <ProcessTracker rows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest} focusSignal={trackerFocus}
             onStartMonitor={handleStartMonitor} onAssess={handleWorkflowAssess} onClosePlan={handleClosePlan} onOpenLaw={setOpenLaw}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
