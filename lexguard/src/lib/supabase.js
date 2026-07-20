@@ -205,6 +205,8 @@ export async function repealLaw(lawId, { repeal_date, repeal_reason, replaced_by
 //   · lg_activity_log ของกฎหมายนี้ (เก็บ audit log ระดับ global ที่ law_id=null ไว้)
 export async function deleteLaw(lawId, { code, name } = {}) {
   if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  // 0. อ่าน meta ของกฎหมายไว้ก่อน (ใช้หักสถิติรายไตรมาสคืนหลังลบ — กัน Dashboard เพี้ยน)
+  const { data: lawMeta } = await supabase.from('lg_laws').select('cat,created_at,status,repeal_date').eq('id', lawId).maybeSingle()
   // 1. รวบรวม id ลูก (ref_id ของ notification/attachment เป็น bigint: law + requirements + plans)
   const [{ data: reqs }, { data: plans }] = await Promise.all([
     supabase.from('lg_requirements').select('id').eq('law_id', lawId),
@@ -236,6 +238,12 @@ export async function deleteLaw(lawId, { code, name } = {}) {
 
   // 7. ลบแถวหลัก → CASCADE เก็บกวาด requirements/workflow/plans/review_log/assessment_flow/process_tracker
   { const { error } = await supabase.from('lg_laws').delete().eq('id', lawId); if (error) throw error }
+
+  // 8. หักสถิติรายไตรมาสคืน (ตอนสร้างบวก 'added', ตอน repeal บวก 'repealed') → บัคเก็ตตามวันที่เกิดจริง
+  if (lawMeta?.cat) {
+    await bumpQuarterStat(lawMeta.cat, 'added', -1, lawMeta.created_at)
+    if (lawMeta.status === 'repealed' && lawMeta.repeal_date) await bumpQuarterStat(lawMeta.cat, 'repealed', -1, lawMeta.repeal_date)
+  }
 }
 
 export async function createLaw({ code, cat, name, hierarchy_level, ministry, announce_date, effective_date, doc_list, responsible, review_date }) {
@@ -440,12 +448,6 @@ export async function fetchActivity(limit = 5000) {
   if (!hasSupabase) return []
   const { data } = await supabase.from('lg_activity_log').select('*').order('created_at', { ascending: false }).limit(limit)
   return data || []
-}
-
-// P15 · ลบรายการประวัติ (activity log) รายแถว
-export async function deleteActivity(id) {
-  const { error } = await supabase.from('lg_activity_log').delete().eq('id', id)
-  if (error) throw error
 }
 
 // ---- Quarterly added/repealed law stats (sourced from the original F-259 Excel masterlist) ----
