@@ -394,7 +394,7 @@ export default function App(){
       setFlowPopup({ title:'ประเมินเสร็จสิ้น', msg: payload.result==='สอดคล้อง'
         ? `${law?.code||''} ประเมินแล้ว: สอดคล้อง — ปิดรายการ`
         : `${law?.code||''} ประเมินแล้ว: ไม่สอดคล้อง — มีแผนปรับปรุงรอปิด` })
-    }catch(e){ toast('บันทึกผลประเมินไม่สำเร็จ: '+e.message) }
+    }catch(e){ toast('บันทึกผลประเมินไม่สำเร็จ: '+e.message); throw e }   // P15·T2 · โยนต่อเพื่อไม่ให้ popup/drawer ปิด (ข้อมูลที่พิมพ์ไม่หาย)
   }
   // Process 3 · ปิดแผนปรับปรุง
   async function handleClosePlan(wf, law){

@@ -432,7 +432,7 @@ export default function ProcessTracker({ rows = [], laws = [], catMap = {}, sugg
       {showMonitor && <MonitorModal laws={laws} catMap={catMap} suggest={suggest} openCaseByLaw={openCaseByLaw} onStart={onStartMonitor} onClose={()=>setShowMonitor(false)}/>}
       {openWf && <CaseDrawer wf={openWf} law={openLawObj} catMap={catMap} suggest={suggest}
         allCases={rows} onOpenRound={setOpenWf}
-        onAssess={async(...a)=>{ await onAssess(...a); setOpenWf(null) }}
+        onAssess={async(...a)=>{ try{ await onAssess(...a); setOpenWf(null) }catch{ /* P15·T2 · save พัง → คง drawer ไว้ (toast แจ้งแล้วใน App) */ } }}
         onClosePlan={async(...a)=>{ await onClosePlan(...a); setOpenWf(null) }}
         onOpenLaw={onOpenLaw} onClose={()=>setOpenWf(null)}/>}
     </div>

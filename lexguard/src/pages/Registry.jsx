@@ -293,7 +293,8 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
 function AssessPopup({ target, suggest, onAssess, onClose }){
   useEffect(()=>{ const h=e=>{ if(e.key==='Escape') onClose() }; window.addEventListener('keydown',h); return ()=>window.removeEventListener('keydown',h) },[onClose])
   const { law, wf }=target
-  async function submit(payload){ await onAssess(wf, law, payload); onClose() }
+  // P15·T2 · ถ้า onAssess โยน error (save พัง) → ไม่ปิด popup (คงข้อมูลที่พิมพ์) · toast แจ้งแล้วใน App
+  async function submit(payload){ try{ await onAssess(wf, law, payload); onClose() }catch{ /* คง popup ไว้ให้แก้/ลองใหม่ */ } }
   return (<>
     <div className="scrim" style={{zIndex:320}} onClick={onClose}/>
     <div className="modal" style={{zIndex:321,width:560,maxHeight:'88vh',overflow:'auto'}}>
