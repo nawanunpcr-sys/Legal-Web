@@ -1,5 +1,5 @@
 // Registry & Compliance page (ทะเบียน & ความสอดคล้อง).
-// Includes AddLawModal, Register, MonthlyCheckPanel, ComplianceLawRow, Compliance.
+// Includes Register, MonthlyCheckPanel, ComplianceLawRow, Compliance.
 // Moved verbatim from App.jsx (pure refactor).
 import { useState, useMemo, useEffect } from 'react'
 import { LAW_TYPES } from '../lib/supabase.js'
@@ -8,7 +8,7 @@ import { I } from '../components/icons.jsx'
 import AssessForm from '../components/AssessForm.jsx'
 import DeleteLawModal from '../components/DeleteLawModal.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
-import { usePageFilters, Pill, ActiveBadge, thDate, TH_MONTHS, nextCode, effectiveInfo, prog, lawBEYear } from '../lib/ui.jsx'
+import { usePageFilters, Pill, ActiveBadge, thDate, TH_MONTHS, effectiveInfo, prog, lawBEYear } from '../lib/ui.jsx'
 
 /* P13 · Task 3 — ไฮไลต์คำค้นในข้อความ (ตัดสั้น ~80 ตัวอักษรรอบคำที่เจอ) */
 function markSnippet(text, q) {
@@ -23,81 +23,6 @@ function markSnippet(text, q) {
   const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const parts = snip.split(new RegExp('(' + esc + ')', 'ig'))
   return <>{pre}{parts.map((s, i) => s.toLowerCase() === q ? <mark key={i}>{s}</mark> : s)}{suf}</>
-}
-
-/* ─────────────────────────── ADD LAW MODAL ───────────────────────── */
-function AddLawModal({ cats, allLaws, onSave, onClose }) {
-  const { can } = useAuth()
-  const [catCode, setCatCode] = useState(cats[0]?.code || '')
-  const [level, setLevel] = useState('1')
-  const [name, setName] = useState('')
-  const [ministry, setMinistry] = useState('')
-  const [announceDate, setAnnounceDate] = useState('')
-  const [effectiveDate, setEffectiveDate] = useState('')
-  const [docList, setDocList] = useState('')
-  const [responsible, setResponsible] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  const previewCode = catCode ? nextCode(allLaws, catCode) : '—'
-  const valid = catCode && name.trim()
-
-  async function save() {
-    if (!valid) return
-    setSaving(true)
-    await onSave({ code: previewCode, cat: catCode, name: name.trim(), hierarchy_level: level, ministry, announce_date: announceDate, effective_date: effectiveDate, doc_list: docList, responsible, review_date: '' })
-    setSaving(false)
-    onClose()
-  }
-
-  return (
-    <><div className="scrim" style={{zIndex:300}} onClick={onClose}/>
-    <div className="modal" style={{zIndex:301,width:540}}>
-      <div className="modal-head">
-        <h3>เพิ่มกฎหมายใหม่</h3>
-        <button className="close" onClick={onClose}><I n="x"/></button>
-      </div>
-      <div className="modal-body">
-        {/* code preview */}
-        <div style={{background:'var(--brand-tint)',border:'1px solid var(--brand)',borderRadius:9,padding:'10px 16px',marginBottom:8,display:'flex',alignItems:'center',gap:12}}>
-          <span style={{fontSize:12,color:'var(--brand)',fontWeight:600}}>รหัสกฎหมายที่จะได้รับ</span>
-          <span className="num" style={{fontSize:22,fontWeight:700,color:'var(--brand)',letterSpacing:-1,marginLeft:'auto'}}>{previewCode}</span>
-        </div>
-
-        <label className="form-label">หมวดกฎหมาย <span style={{color:'var(--bad)'}}>*</span></label>
-        <select className="form-input" value={catCode} onChange={e=>setCatCode(e.target.value)}>
-          {cats.map(c=><option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
-        </select>
-
-        <label className="form-label">ลำดับชั้น <span style={{color:'var(--bad)'}}>*</span></label>
-        <select className="form-input" value={level} onChange={e=>setLevel(e.target.value)}>
-          {LAW_TYPES.map(t=><option key={t.level} value={t.level}>ชั้น {t.level} — {t.label}</option>)}
-        </select>
-
-        <label className="form-label">ชื่อกฎหมาย <span style={{color:'var(--bad)'}}>*</span></label>
-        <textarea className="form-input" rows={3} placeholder="ชื่อกฎหมายฉบับเต็ม…" value={name} onChange={e=>setName(e.target.value)}/>
-
-        <label className="form-label">กระทรวง / หน่วยงาน</label>
-        <input className="form-input" type="text" placeholder="เช่น กระทรวงแรงงาน" value={ministry} onChange={e=>setMinistry(e.target.value)}/>
-
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-          <div><label className="form-label">วันที่ประกาศ</label><input className="form-input" type="text" placeholder="เช่น 17 ม.ค. 2554" value={announceDate} onChange={e=>setAnnounceDate(e.target.value)}/></div>
-          <div><label className="form-label">วันที่บังคับใช้</label><input className="form-input" type="text" placeholder="เช่น 18 ม.ค. 2554" value={effectiveDate} onChange={e=>setEffectiveDate(e.target.value)}/></div>
-        </div>
-
-        <label className="form-label">เอกสารที่เกี่ยวข้อง / ที่ใช้</label>
-        <input className="form-input" type="text" placeholder="เช่น แบบ จป., รายงานการประชุม คปอ." value={docList} onChange={e=>setDocList(e.target.value)}/>
-
-        <label className="form-label">หน่วยงานที่รับผิดชอบ</label>
-        <input className="form-input" type="text" placeholder="เช่น จป.วิชาชีพ / ฝ่ายความปลอดภัย" value={responsible} onChange={e=>setResponsible(e.target.value)}/>
-      </div>
-      <div className="modal-foot">
-        <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
-        <button className="btn btn-primary" disabled={!valid||saving||!can('edit')} title={can('edit')?'':NO_PERM} onClick={save}>
-          {saving ? 'กำลังบันทึก…' : `บันทึก ${previewCode}`}
-        </button>
-      </div>
-    </div></>
-  )
 }
 
 /* ─────────── REGISTRY + COMPLIANCE (merged view) ─────────── */
@@ -141,7 +66,6 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   const [f,setF,resetF,filterActive]=usePageFilters('registry',{cat:'all',act:'all',sortKey:'code',sortDir:1})
   const {cat,act,sortKey,sortDir}=f
   const setCat=v=>setF('cat',v), setAct=v=>setF('act',v)
-  const [showAdd,setShowAdd]=useState(false)
   const [flashId,setFlashId]=useState(null)       // P14·T1 · แถวที่เพิ่งเพิ่ม (ไฮไลต์ 2 วิ)
   const [assessTarget,setAssessTarget]=useState(null)   // P14·T2 · { law, wf } เปิด popup ประเมิน
   const [deleteTarget,setDeleteTarget]=useState(null)   // ลบกฎหมายจากแถวทะเบียน (admin)
@@ -190,7 +114,6 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   const grouped=useMemo(()=>{ const byCat={}; rows.forEach(l=>{ const c=l.cat; if(!byCat[c])byCat[c]={}; const t=l.hierarchy_level||5; if(!byCat[c][t])byCat[c][t]=[]; byCat[c][t].push(l) }); return byCat },[rows])
   const activeCats=catsList.filter(c=>cat==='all'||c===cat)
   return <div className="view">
-    {showAdd && <AddLawModal cats={cats} allLaws={allLaws} onSave={onCreate} onClose={()=>setShowAdd(false)}/>}
     <div className="filterbar">
       <span className={'chip'+(act==='all'?' active':'')} onClick={()=>setAct('all')}>ทั้งหมด</span>
       <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({laws.filter(l=>l.active!==false).length})</span>
@@ -216,7 +139,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
       {(()=>{ const hasFilter=cat!=='all'||act!=='all'||!!q
         return <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>
           {hasFilter?`Export (${rows.length} ฉบับตามตัวกรอง)`:`ส่งออกทั้งหมด (${rows.length})`}</button> })()}
-      <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onAddLaw?onAddLaw():setShowAdd(true)}><I n="plus"/>เพิ่มกฎหมาย</button>
+      <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')||!onAddLaw} title={can('edit')?'':NO_PERM} onClick={()=>onAddLaw&&onAddLaw()}><I n="plus"/>เพิ่มกฎหมาย</button>
     </div>
     {sel.size>0 && (
       <div className="bulkbar">
