@@ -909,7 +909,7 @@ export function subscribeLaws(onChange) {
 // ── Workflow A · Process 1 — เพิ่มกฎหมายใหม่เข้าทะเบียน (ผู้ตรวจสอบ) ────────────
 // สร้าง lg_laws (+requirements) แล้วเปิด tracker case ที่ stage 2 (รอประเมิน).
 // discovered = แถวจาก lg_ai_discovered_laws (ถ้าเลือกมา) → mark 'registered'.
-export async function createAddWorkflow({ lawFields, reqs = [], ownerName, discovered = null }) {
+export async function createAddWorkflow({ lawFields, reqs = [], ownerName, discovered = null, verifiedFromAI = false }) {
   const law = await createLawFull(lawFields, reqs)
   const now = new Date().toISOString()
   const { data: wf, error } = await supabase.from('lg_law_workflow').insert({
@@ -923,7 +923,7 @@ export async function createAddWorkflow({ lawFields, reqs = [], ownerName, disco
       .update({ status: 'registered', registered_law_id: law.id }).eq('id', discovered.id)
   }
   await logActivity({ action: 'register', law_id: law.id, law_code: law.code, law_name: law.name,
-    detail: `เพิ่มเข้าทะเบียน (ผู้ตรวจสอบ: ${ownerName || currentUserName()})` })
+    detail: `เพิ่มเข้าทะเบียน (ผู้ตรวจสอบ: ${ownerName || currentUserName()})` + (verifiedFromAI ? ' (จาก AI สรุป — ผู้ใช้ตรวจทานแล้ว)' : '') })
   return { law, workflow: wf }
 }
 

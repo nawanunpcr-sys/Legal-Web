@@ -44,6 +44,10 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const [newLaw, setNewLaw] = useState(null)
   const [dup, setDup] = useState(null)               // Task 9: { type:'exact'|'amendment'|'fuzzy', law, sim, blocked? }
   const [dupConfirmed, setDupConfirmed] = useState(false)
+  // P15·T1 · โหมด prefill (มาจาก AI สรุปกฎหมาย) → บังคับตรวจทานกับต้นฉบับก่อนบันทึก
+  const isPrefill = !!initialData
+  const srcUrl = initialData?.law?.source_url || initialData?.source_url || ''
+  const [verified, setVerified] = useState(false)
 
   // ชื่อเปลี่ยน → ล้างสถานะการเตือนซ้ำ เพื่อเช็คใหม่
   function changeName(v) { setName(v); setDup(null); setDupConfirmed(false) }
@@ -79,7 +83,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
     catch (e) { toast('ลบไม่สำเร็จ: ' + e.message) }
   }
 
-  const valid = owner.trim() && selId && cat && name.trim()
+  const valid = owner.trim() && selId && cat && name.trim() && (!isPrefill || verified)   // P15·T1 · prefill ต้องติ๊กยืนยันตรวจทานก่อน
 
   async function submit(force = false) {
     if (!valid || saving) return
@@ -104,7 +108,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
       const { law } = await onCreate({
         lawFields: { code: previewCode, cat, name: name.trim(), hierarchy_level: level, ministry,
           announce_date: announce, effective_date: effective, doc_list: docList },
-        reqs, ownerName: owner.trim(), discovered: disc,
+        reqs, ownerName: owner.trim(), discovered: disc, verifiedFromAI: isPrefill,
       })
       // บันทึกการยืนยันเพิ่มทั้งที่ระบบเตือน
       if (dup && dup.type !== 'exact') {
@@ -127,6 +131,25 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
 
         {step===1 && (
           <div className="modal-body">
+            {/* P15·T1 · แบนเนอร์เตือนตรวจกับต้นฉบับ — เฉพาะโหมด prefill (มาจาก AI สรุปกฎหมาย) */}
+            {isPrefill && (
+              <div style={{background:'var(--review-bg)',color:'var(--review)',borderRadius:9,padding:'11px 14px',marginBottom:12,fontSize:12.5,lineHeight:1.5,display:'flex',gap:8,alignItems:'flex-start'}}>
+                <span style={{fontSize:16,lineHeight:1}}>⚠️</span>
+                <div style={{flex:1}}>
+                  <b>ตรวจกับต้นฉบับก่อนบันทึก</b>
+                  <div style={{marginTop:2}}>ข้อมูลชุดนี้มาจาก AI สรุปกฎหมาย — โปรดตรวจทานชื่อ เลขประกาศ วันที่ และข้อกำหนด กับราชกิจจานุเบกษาต้นฉบับก่อนบันทึกเข้าทะเบียน</div>
+                  <div style={{marginTop:8}}>
+                    {srcUrl
+                      ? <button type="button" className="btn btn-ghost" style={{padding:'4px 10px',fontSize:12}} onClick={()=>window.open(srcUrl,'_blank','noopener')}>เปิดต้นฉบับ (PDF) ↗</button>
+                      : <span style={{opacity:.75,fontStyle:'italic'}}>ไม่มีลิงก์ต้นฉบับแนบมา — ค้นราชกิจจาฯ ด้วยชื่อกฎหมายก่อนบันทึก</span>}
+                  </div>
+                  <label style={{display:'flex',gap:8,alignItems:'center',marginTop:10,cursor:'pointer',fontWeight:500}}>
+                    <input type="checkbox" checked={verified} onChange={e=>setVerified(e.target.checked)}/>
+                    ฉันได้ตรวจทานข้อมูลกับต้นฉบับแล้ว
+                  </label>
+                </div>
+              </div>
+            )}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
               <div>
                 <label className="form-label">ผู้รับผิดชอบ / ผู้ติดตาม <span style={{color:'var(--bad)'}}>*</span></label>
@@ -138,11 +161,6 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
               </div>
             </div>
 
-            {initialData && (
-              <div style={{marginTop:12,padding:'9px 12px',border:'1px solid var(--brand)',borderRadius:8,background:'var(--brand-tint)',fontSize:12.5,color:'var(--brand)'}}>
-                <b>ข้อมูลจากสรุป AI</b> — ตรวจ/แก้ไขด้านล่างแล้วกด “เพิ่มเข้าทะเบียน” ได้เลย (ไม่ต้องคัดลอก)
-              </div>
-            )}
             {!initialData && (<>
             <label className="form-label" style={{marginTop:12}}>กฎหมายที่ค้นหา/สรุปมาแล้ว</label>
             {loadingDisc && <div style={{fontSize:12.5,color:'var(--ink-faint)',padding:'8px 0'}}>กำลังโหลด…</div>}
