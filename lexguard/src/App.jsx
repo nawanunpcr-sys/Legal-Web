@@ -43,8 +43,8 @@ import SettingsPage from './pages/Settings.jsx'
 const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
-    { id:'calendar',      label:'ปฏิทินกฎหมาย',          icon:'calendar'},
     { id:'registry',      label:'ทะเบียน & ความสอดคล้อง', icon:'book'    },
+    { id:'calendar',      label:'ปฏิทินกฎหมาย',          icon:'calendar'},
     { id:'summary',       label:'สรุปกฎหมาย',            icon:'spark'   },
     { id:'tracker',       label:'Process Tracker',        icon:'update'  },
   ]},
