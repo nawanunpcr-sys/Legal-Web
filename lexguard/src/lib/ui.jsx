@@ -62,11 +62,24 @@ export function jorporReportDeadlines(now = new Date()) {
     { key: 'jorpor-jan', label: 'ส่งรายงาน จป.ว (ครึ่งปีหลัง) — ภายใน 30 ม.ค.', due: jan, days: Math.ceil((jan - now) / 86400000) },
   ]
 }
+// แปลงวันที่รูปแบบไทย "วว/ดด/ปปปป" (ปี พ.ศ.) เป็น Date — คืน null ถ้าไม่เข้ารูปแบบ
+// (ปี > 2400 ถือเป็น พ.ศ. แปลงเป็น ค.ศ.; อย่างอื่น fallback ให้ Date เดิม)
+function parseBEDate(s) {
+  if (!s) return null
+  const m = String(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{3,4})$/)
+  if (m) {
+    let [, d, mo, y] = m
+    y = +y; if (y > 2400) y -= 543
+    const dt = new Date(y, +mo - 1, +d)
+    return isNaN(dt) ? null : dt
+  }
+  const dt = new Date(s)
+  return isNaN(dt) ? null : dt
+}
 // กฎหมายที่ "ประกาศแล้วแต่ยังไม่ถึงวันบังคับใช้" — คืน { days } ถ้า effective_date เป็นวันในอนาคต (ข้าม freeform)
 export function effectiveInfo(law, now = new Date()) {
-  if (!law?.effective_date) return null
-  const d = new Date(law.effective_date)
-  if (isNaN(d)) return null
+  const d = parseBEDate(law?.effective_date)
+  if (!d) return null
   const days = Math.ceil((d - now) / 86400000)
   return days > 0 ? { days } : null
 }

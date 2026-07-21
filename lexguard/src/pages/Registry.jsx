@@ -8,7 +8,7 @@ import { I } from '../components/icons.jsx'
 import AssessForm from '../components/AssessForm.jsx'
 import DeleteLawModal from '../components/DeleteLawModal.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
-import { usePageFilters, Pill, ActiveBadge, thDate, TH_MONTHS, effectiveInfo, prog, lawBEYear } from '../lib/ui.jsx'
+import { usePageFilters, Pill, ActiveBadge, thDate, TH_MONTHS, prog, lawBEYear } from '../lib/ui.jsx'
 
 /* P13 · Task 3 — ไฮไลต์คำค้นในข้อความ (ตัดสั้น ~80 ตัวอักษรรอบคำที่เจอ) */
 function markSnippet(text, q) {
@@ -23,6 +23,62 @@ function markSnippet(text, q) {
   const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const parts = snip.split(new RegExp('(' + esc + ')', 'ig'))
   return <>{pre}{parts.map((s, i) => s.toLowerCase() === q ? <mark key={i}>{s}</mark> : s)}{suf}</>
+}
+
+/* แยกวันที่ประกาศ / วันที่บังคับใช้ ที่ถูกยัดรวมในช่องเดียว (issue_date)
+   ข้อมูลนำเข้ามีหลายรูปแบบ: มี \n, มีเลขไทย, บางอันไม่มีตัวคั่น เช่น
+   "วันที่ประกาศใช้ : 09/01/2568\nวันที่บังคับใช้ : 10/01/2568"
+   "ประกาศ: 27 กันยายน 2554บังคับใช้ : 28 กันยายน 2554"
+   วิธี: ตัดที่คำว่า "บังคับใช้" — ส่วนหน้า = วันประกาศ, ส่วนหลัง = วันบังคับใช้ */
+function cleanDatePart(t){
+  return String(t||'')
+    .replace(/​/g,'')                                  // ตัด zero-width space
+    .replace(/วันที่ประกาศใช้|ประกาศใช้|ประกาศ|วันที่บังคับใช้|มีผลใช้บังคับ|มีผลบังคับใช้|มีผลบังคับ|บังคับใช้|ใช้บังคับ|มีผล|บังคับ|ตั้งแต่วันที่|วันที่/g,'')
+    .replace(/[\s:.\-–—]+$/g,'').replace(/^[\s:.\-–—]+/g,'') // ตัดตัวคั่นหัว-ท้าย
+    .replace(/\s+/g,' ')
+    .trim()
+}
+
+// แปลงวันที่ทุกรูปแบบให้เป็นแบบเดียว → "วว/ดด/ปปปป" (พ.ศ.)
+// รองรับ: เลขไทย, ชื่อเดือนเต็ม/ย่อ, มี "พ.ศ.", มีชื่อวัน, ปี 2 หลัก, และรูปแบบ dd/mm/yyyy อยู่แล้ว
+const TH_MONTH_NUM={
+  มกราคม:1,กุมภาพันธ์:2,มีนาคม:3,เมษายน:4,พฤษภาคม:5,มิถุนายน:6,
+  กรกฎาคม:7,สิงหาคม:8,กันยายน:9,ตุลาคม:10,พฤศจิกายน:11,ธันวาคม:12,
+}
+const TH_MONTH_ABBR={มค:1,กพ:2,มีค:3,เมย:4,พค:5,มิย:6,กค:7,สค:8,กย:9,ตค:10,พย:11,ธค:12}
+function thMonthNum(tok){
+  const t=String(tok||'').replace(/[.\s]/g,'')
+  for(const k in TH_MONTH_NUM) if(t.indexOf(k)>=0) return TH_MONTH_NUM[k]
+  if(TH_MONTH_ABBR[t]) return TH_MONTH_ABBR[t]
+  for(const k in TH_MONTH_ABBR) if(t.indexOf(k)>=0) return TH_MONTH_ABBR[k]
+  return 0
+}
+function fmtDate(d,mo,y){
+  if(y<100) y+=2500                                   // ปี 2 หลัก → พ.ศ. (65 → 2565)
+  const pad=n=>String(n).padStart(2,'0')
+  return pad(d)+'/'+pad(mo)+'/'+y
+}
+function normThaiDate(raw){
+  if(!raw) return ''
+  let s=String(raw).replace(/[๐-๙]/g,d=>'๐๑๒๓๔๕๖๗๘๙'.indexOf(d)) // เลขไทย → อารบิก
+    .replace(/พ\.?\s?ศ\.?/g,' ').replace(/\s+/g,' ').trim()      // ตัด "พ.ศ."
+  let m=s.match(/(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{2,4})/)    // รูปแบบ dd/mm/yyyy
+  if(m) return fmtDate(+m[1],+m[2],+m[3])
+  m=s.match(/^\D*?(\d{1,2})\s*([^\d]+?)\s*(\d{2,4})\s*$/)         // วัน ชื่อเดือน ปี
+  if(m){ const mo=thMonthNum(m[2]); if(mo) return fmtDate(+m[1],mo,+m[3]) }
+  return String(raw).trim()                                       // แปลงไม่ได้ → คงข้อความเดิม
+}
+function splitLawDates(law){
+  const raw=String(law?.issue_date||'').replace(/​/g,'')
+  const idx=raw.search(/มีผล|บังคับ/)   // จุดตัด: มีผลใช้บังคับ / บังคับใช้ / บังคับ / มีผล
+  if(idx===-1){
+    // ไม่มีวันบังคับใช้ฝังอยู่ — ใช้ค่าตามฟิลด์เดิม
+    return { announce:normThaiDate(cleanDatePart(raw))||(law?.issue_date||''), effective:normThaiDate(law?.effective_date) }
+  }
+  const announce=normThaiDate(cleanDatePart(raw.slice(0,idx)))
+  const embedded=cleanDatePart(raw.slice(idx))
+  // ถ้ามี effective_date จริงในฟิลด์อยู่แล้ว ให้ค่านั้นชนะ
+  return { announce, effective:normThaiDate(law?.effective_date||embedded) }
 }
 
 /* ─────────── REGISTRY + COMPLIANCE (merged view) ─────────── */
@@ -168,22 +224,33 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
           <div key={t.level} style={{marginBottom:8}}>
             <div className="hier-tier-label"><span className="tier-badge">ชั้น {t.level}</span>{t.label}</div>
             <div className="panel" style={{marginTop:0,borderTopLeftRadius:0,borderTopRightRadius:0}}>
-              <div className="tablewrap"><table>
+              <div className="tablewrap"><table style={{tableLayout:'fixed'}}>
+                {/* คอลัมน์กว้างเท่ากันทุกตาราง (ทุกหมวด/ทุกชั้น) เพื่อให้แถวตรงกัน */}
+                <colgroup>
+                  <col style={{width:40}}/>
+                  <col/>
+                  <col style={{width:200}}/>
+                  <col style={{width:120}}/>
+                  <col style={{width:120}}/>
+                  <col style={{width:160}}/>
+                </colgroup>
                 <thead><tr>
-                  <th style={{width:34}}></th>
+                  <th></th>
                   <th className="th-sort" style={{cursor:'pointer'}} onClick={()=>toggleSort('code')} title="เรียงตามรหัส">รหัส / ชื่อกฎหมาย{sortArrow('code')}</th>
                   <th>กระทรวง</th>
                   <th className="th-sort" style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>toggleSort('announce')} title="เรียงตามวันที่ประกาศ">วันที่ประกาศ{sortArrow('announce')}</th>
-                  <th>วันที่บังคับใช้</th>
-                  <th className="th-sort" style={{cursor:'pointer'}} onClick={()=>toggleSort('pct')} title="เรียงตาม % สอดคล้อง">สถานะ{sortArrow('pct')}</th>
+                  <th style={{whiteSpace:'nowrap'}}>วันที่บังคับใช้</th>
+                  <th className="th-sort" style={{cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>toggleSort('pct')} title="เรียงตาม % สอดคล้อง">สถานะ{sortArrow('pct')}</th>
                 </tr></thead>
                 <tbody>{[...grouped[c][t.level]].sort(sortCmp).map(l=>{ const openWf=openWfByLaw[l.id]; const pending=openWf?.status==='รอประเมิน'; return (
                   <tr key={l.id} id={'reg-law-'+l.id} className={(sel.has(l.id)?'row-sel':'')+(flashId===l.id?' row-flash':'')} style={l.active===false?{opacity:.55}:null}>
                     <td onClick={e=>{e.stopPropagation();toggleSel(l.id)}} style={{textAlign:'center'}}><input type="checkbox" checked={sel.has(l.id)} onChange={()=>toggleSel(l.id)} onClick={e=>e.stopPropagation()}/></td>
-                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/>{(()=>{ const e=effectiveInfo(l); return e?<span className="pill" style={{fontSize:10,padding:'1px 7px',background:'var(--review-bg)',color:'var(--review)'}}>จะบังคับใช้ใน {e.days} วัน</span>:null })()}{l.source_url&&<a href={l.source_url} target="_blank" rel="noreferrer" title="เปิดตัวบท (PDF)" onClick={e=>e.stopPropagation()} style={{fontSize:13,textDecoration:'none'}}>📄</a>}</div><div className="law-title">{l.name}</div>{(()=>{ const rt=reqMatchText(l); return rt?<div style={{fontSize:11.5,color:'var(--ink-faint)',marginTop:3,lineHeight:1.4}}>↳ {markSnippet(rt,q)}</div>:null })()}</td>
-                    <td onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.ministry||'—'}</td>
-                    <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.issue_date||'—'}</td>
-                    <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',whiteSpace:'nowrap'}}>{l.effective_date||'—'}</td>
+                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/>{l.source_url&&<a href={l.source_url} target="_blank" rel="noreferrer" title="เปิดตัวบท (PDF)" onClick={e=>e.stopPropagation()} style={{fontSize:13,textDecoration:'none'}}>📄</a>}</div><div className="law-title">{l.name}</div>{(()=>{ const rt=reqMatchText(l); return rt?<div style={{fontSize:11.5,color:'var(--ink-faint)',marginTop:3,lineHeight:1.4}}>↳ {markSnippet(rt,q)}</div>:null })()}</td>
+                    <td onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)',lineHeight:1.5}}>{l.ministry||'—'}</td>
+                    {(()=>{ const d=splitLawDates(l); return <>
+                    <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',lineHeight:1.5}}>{d.announce||'—'}</td>
+                    <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',lineHeight:1.5}}>{d.effective||'—'}</td>
+                    </> })()}
                     <td><div style={{display:'flex',alignItems:'center',gap:8}}><span onClick={()=>onOpen(l)}>{pending?<span className="pill pill-pending" title="ยังไม่ได้ประเมิน — รอผู้ประเมิน">รอประเมิน</span>:<Pill s={l.status}/>}</span>{pending&&can('edit')&&onAssess&&<button className="btn btn-primary" style={{padding:'3px 10px',fontSize:11}} title="ประเมินความสอดคล้อง" onClick={e=>{e.stopPropagation();setAssessTarget({law:l,wf:openWf})}}>ประเมิน</button>}{onDelete&&can('delete')&&<button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11,color:'var(--bad)'}} title="ลบกฎหมายถาวร" onClick={e=>{e.stopPropagation();setDeleteTarget(l)}}><I n="ban"/></button>}</div></td>
                   </tr>
                 )})}</tbody>
