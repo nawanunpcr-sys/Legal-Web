@@ -224,7 +224,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
           <div key={t.level} style={{marginBottom:8}}>
             <div className="hier-tier-label"><span className="tier-badge">ชั้น {t.level}</span>{t.label}</div>
             <div className="panel" style={{marginTop:0,borderTopLeftRadius:0,borderTopRightRadius:0}}>
-              <div className="tablewrap"><table style={{tableLayout:'fixed'}}>
+              <div className="tablewrap"><table className="reg-table" style={{tableLayout:'fixed'}}>
                 {/* คอลัมน์กว้างเท่ากันทุกตาราง (ทุกหมวด/ทุกชั้น) เพื่อให้แถวตรงกัน */}
                 <colgroup>
                   <col style={{width:40}}/>
@@ -246,12 +246,12 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
                   <tr key={l.id} id={'reg-law-'+l.id} className={(sel.has(l.id)?'row-sel':'')+(flashId===l.id?' row-flash':'')} style={l.active===false?{opacity:.55}:null}>
                     <td onClick={e=>{e.stopPropagation();toggleSel(l.id)}} style={{textAlign:'center'}}><input type="checkbox" checked={sel.has(l.id)} onChange={()=>toggleSel(l.id)} onClick={e=>e.stopPropagation()}/></td>
                     <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/>{l.source_url&&<a href={l.source_url} target="_blank" rel="noreferrer" title="เปิดตัวบท (PDF)" onClick={e=>e.stopPropagation()} style={{fontSize:13,textDecoration:'none'}}>📄</a>}</div><div className="law-title">{l.name}</div>{(()=>{ const rt=reqMatchText(l); return rt?<div style={{fontSize:11.5,color:'var(--ink-faint)',marginTop:3,lineHeight:1.4}}>↳ {markSnippet(rt,q)}</div>:null })()}</td>
-                    <td onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)',lineHeight:1.5}}>{l.ministry||'—'}</td>
+                    <td data-lb="กระทรวง" onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)',lineHeight:1.5}}>{l.ministry||'—'}</td>
                     {(()=>{ const d=splitLawDates(l); return <>
-                    <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',lineHeight:1.5}}>{d.announce||'—'}</td>
-                    <td onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',lineHeight:1.5}}>{d.effective||'—'}</td>
+                    <td data-lb="วันที่ประกาศ" onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',lineHeight:1.5}}>{d.announce||'—'}</td>
+                    <td data-lb="วันที่บังคับใช้" onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',lineHeight:1.5}}>{d.effective||'—'}</td>
                     </> })()}
-                    <td><div style={{display:'flex',alignItems:'center',gap:8}}><span onClick={()=>onOpen(l)}>{pending?<span className="pill pill-pending" title="ยังไม่ได้ประเมิน — รอผู้ประเมิน">รอประเมิน</span>:<Pill s={l.status}/>}</span>{pending&&can('edit')&&onAssess&&<button className="btn btn-primary" style={{padding:'3px 10px',fontSize:11}} title="ประเมินความสอดคล้อง" onClick={e=>{e.stopPropagation();setAssessTarget({law:l,wf:openWf})}}>ประเมิน</button>}{onDelete&&can('delete')&&<button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11,color:'var(--bad)'}} title="ลบกฎหมายถาวร" onClick={e=>{e.stopPropagation();setDeleteTarget(l)}}><I n="ban"/></button>}</div></td>
+                    <td data-lb="สถานะ"><div style={{display:'flex',alignItems:'center',gap:8}}><span onClick={()=>onOpen(l)}>{pending?<span className="pill pill-pending" title="ยังไม่ได้ประเมิน — รอผู้ประเมิน">รอประเมิน</span>:<Pill s={l.status}/>}</span>{pending&&can('edit')&&onAssess&&<button className="btn btn-primary" style={{padding:'3px 10px',fontSize:11}} title="ประเมินความสอดคล้อง" onClick={e=>{e.stopPropagation();setAssessTarget({law:l,wf:openWf})}}>ประเมิน</button>}{onDelete&&can('delete')&&<button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11,color:'var(--bad)'}} title="ลบกฎหมายถาวร" onClick={e=>{e.stopPropagation();setDeleteTarget(l)}}><I n="ban"/></button>}</div></td>
                   </tr>
                 )})}</tbody>
               </table></div>
