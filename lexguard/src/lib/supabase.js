@@ -432,6 +432,27 @@ export async function updateCommSchedule(commId, patch) {
   if (error) throw error
 }
 
+export async function addComm(comm) {
+  const { data, error } = await supabase.from('lg_communications').insert({
+    scope: comm.scope || 'internal',
+    topic: comm.topic,
+    sender: comm.sender || null,
+    receiver: comm.receiver || null,
+    recurrence_type: comm.recurrence_type || 'annually',
+    scheduled_date: comm.scheduled_date || null,
+    next_scheduled_date: comm.scheduled_date || null,
+    notify_days_before: comm.notify_days_before || 7,
+    assigned_to: comm.assigned_to || null,
+  }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteComm(commId) {
+  const { error } = await supabase.from('lg_communications').delete().eq('id', commId)
+  if (error) throw error
+}
+
 // ---- Notifications ----
 export async function dismissNotification(id) {
   await supabase.from('lg_notification_log').update({ dismissed_at: new Date().toISOString() }).eq('id', id)

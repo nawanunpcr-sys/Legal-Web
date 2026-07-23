@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase, hasSupabase, fetchAll,
          setRequirementStatus, recomputeLawStatus, bulkSetCompliance, setLawActive,
          repealLaw, restoreLaw, createLaw, createLawFull, deleteLaw,
-         markCommSent, updateCommSchedule,
+         markCommSent, updateCommSchedule, addComm, deleteComm,
          fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
          logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
          fetchReports, setReportEvent, markReportSubmitted,
@@ -410,6 +410,15 @@ export default function App(){
     catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
 
+  async function handleCommAdd(comm){
+    try{ const row=await addComm(comm); if(row) setComms(prev=>[...prev,row]); toast('เพิ่มหัวข้อเรียบร้อย') }
+    catch(e){ toast('เพิ่มหัวข้อไม่สำเร็จ: '+e.message) }
+  }
+  async function handleCommDelete(commId){
+    try{ await deleteComm(commId); setComms(prev=>prev.filter(c=>c.id!==commId)); toast('ลบหัวข้อเรียบร้อย') }
+    catch(e){ toast('ลบไม่สำเร็จ: '+e.message) }
+  }
+
   async function handleReportSetEvent(id, eventDate, offsetDays){
     try{ await setReportEvent(id, eventDate, offsetDays); await loadReports() }
     catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
@@ -597,7 +606,7 @@ export default function App(){
               <button className={'seg-btn'+(commTab==='comm'?' active':'')} onClick={()=>setCommTab('comm')}>ตารางการสื่อสาร</button>
               <button className={'seg-btn'+(commTab==='reports'?' active':'')} onClick={()=>setCommTab('reports')}>ส่งรายงานราชการ</button>
             </div>
-            {commTab==='comm'    && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate}/>}
+            {commTab==='comm'    && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate} onAdd={handleCommAdd} onDelete={handleCommDelete}/>}
             {commTab==='reports' && <Reports reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
           </div>)}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={goView}/>}

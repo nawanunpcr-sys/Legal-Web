@@ -55,7 +55,19 @@
       "Bash(git ls-files *)",
       "Bash(git rm *)",
       "Bash(git commit -q -m 'chore: remove one-off App.jsx refactor helper scripts *)",
-      "Bash(python3 -c \"import subprocess\")"
+      "Bash(python3 -c \"import subprocess\")",
+      "mcp__af06e899-92ee-4fa7-a906-18a39b683cd1__apply_migration",
+      "Bash(git restore *)",
+      "Bash(git reset *)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(npx vercel *)",
+      "Bash(echo \"exit:$?\")",
+      "mcp__af06e899-92ee-4fa7-a906-18a39b683cd1__list_projects",
+      "Bash(node normalize_dates.mjs)",
+      "Read(//tmp/**)",
+      "Bash(rm -f /Users/nawanunlakornrach/Desktop/Web/normalize_dates.mjs /tmp/dates_update.sql /tmp/dates_flags.txt && echo \"cleaned\")",
+      "Bash(node -e \"try{require.resolve\\('pdf-parse'\\);console.log\\('pdf-parse ok'\\)}catch\\(e\\){console.log\\('no pdf-parse'\\)}\")",
+      "Bash(pip3 install *)"
     ]
   }
 }

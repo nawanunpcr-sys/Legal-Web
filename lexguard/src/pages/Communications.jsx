@@ -55,13 +55,54 @@ function MarkSentModal({comm,onSave,onClose}){
       </div>
     </div></>)
 }
-export default function Communication({comms,onMarkSent,onScheduleUpdate}){
+function AddCommModal({scope,onSave,onClose}){
+  const [topic,setTopic]=useState('')
+  const [sender,setSender]=useState('')
+  const [receiver,setReceiver]=useState('')
+  const [rec,setRec]=useState('annually')
+  const [date,setDate]=useState('')
+  const [notifyDays,setNotifyDays]=useState(7)
+  const [assignedTo,setAssignedTo]=useState('')
+  function save(){
+    if(!topic.trim()) return
+    onSave({scope,topic:topic.trim(),sender:sender||null,receiver:receiver||null,recurrence_type:rec,scheduled_date:date||null,notify_days_before:Number(notifyDays),assigned_to:assignedTo||null})
+    onClose()
+  }
+  return (<><div className="scrim" onClick={onClose}/>
+    <div className="modal">
+      <div className="modal-head"><h3>เพิ่มหัวข้อการสื่อสาร ({scope==='internal'?'ภายในองค์กร':'ภายนอกองค์กร'})</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
+      <div className="modal-body">
+        <label className="form-label">หัวข้อ / ประเภทข้อมูล *</label>
+        <input className="form-input" type="text" placeholder="ระบุหัวข้อการสื่อสาร…" value={topic} onChange={e=>setTopic(e.target.value)} autoFocus/>
+        <label className="form-label">ผู้สื่อสาร</label>
+        <input className="form-input" type="text" placeholder="ผู้ส่งสาร…" value={sender} onChange={e=>setSender(e.target.value)}/>
+        <label className="form-label">ผู้รับสาร</label>
+        <input className="form-input" type="text" placeholder="ผู้รับสาร…" value={receiver} onChange={e=>setReceiver(e.target.value)}/>
+        <label className="form-label">ความถี่</label>
+        <select className="form-input" value={rec} onChange={e=>setRec(e.target.value)}>
+          {Object.entries(RECURRENCE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+        </select>
+        <label className="form-label">วันที่กำหนด (ครั้งแรก)</label>
+        <input className="form-input" type="date" value={date} onChange={e=>setDate(e.target.value)}/>
+        <label className="form-label">แจ้งเตือนล่วงหน้า (วัน)</label>
+        <input className="form-input" type="number" min="1" max="90" value={notifyDays} onChange={e=>setNotifyDays(e.target.value)}/>
+        <label className="form-label">ผู้รับผิดชอบ</label>
+        <input className="form-input" type="text" placeholder="ชื่อผู้รับผิดชอบ…" value={assignedTo} onChange={e=>setAssignedTo(e.target.value)}/>
+      </div>
+      <div className="modal-foot">
+        <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
+        <button className="btn btn-primary" disabled={!topic.trim()} onClick={save}>เพิ่มหัวข้อ</button>
+      </div>
+    </div></>)
+}
+export default function Communication({comms,onMarkSent,onScheduleUpdate,onAdd,onDelete}){
   const { can }=useAuth()
   const [scope,setScope]=useState('internal')
   const [filter,setFilter]=useState('all')
   const [month,setMonth]=useState('all')   // Task 5 · 'all' | 'YYYY-M' (กรองตามวันกำหนดถัดไป)
   const [schedModal,setSchedModal]=useState(null)
   const [sentModal,setSentModal]=useState(null)
+  const [addModal,setAddModal]=useState(false)
   const monthOptions=useMemo(()=>{
     const set=new Set()
     comms.forEach(c=>{ if(!c.next_scheduled_date) return; const d=new Date(c.next_scheduled_date); if(!isNaN(d)) set.add(d.getFullYear()+'-'+d.getMonth()) })
@@ -86,6 +127,7 @@ export default function Communication({comms,onMarkSent,onScheduleUpdate}){
   return <div className="view">
     {schedModal && <CommScheduleModal comm={schedModal} onSave={onScheduleUpdate} onClose={()=>setSchedModal(null)}/>}
     {sentModal  && <MarkSentModal    comm={sentModal}  onSave={onMarkSent}       onClose={()=>setSentModal(null)}/>}
+    {addModal   && <AddCommModal     scope={scope}     onSave={onAdd}            onClose={()=>setAddModal(false)}/>}
     <div className="filterbar">
       <span className={'chip'+(scope==='internal'?' active':'')} onClick={()=>setScope('internal')}>ภายในองค์กร ({comms.filter(c=>c.scope==='internal').length})</span>
       <span className={'chip'+(scope==='external'?' active':'')} onClick={()=>setScope('external')}>ภายนอกองค์กร ({comms.filter(c=>c.scope==='external').length})</span>
@@ -93,7 +135,8 @@ export default function Communication({comms,onMarkSent,onScheduleUpdate}){
       <span className={'chip'+(filter==='all'?' active':'')} onClick={()=>setFilter('all')}>ทั้งหมด</span>
       <span className={'chip'+(filter==='upcoming'?' active':'')} onClick={()=>setFilter('upcoming')}>ครบกำหนดเร็วๆ นี้</span>
       <span className={'chip'+(filter==='overdue'?' active':'')} onClick={()=>setFilter('overdue')}>เกินกำหนด</span>
-      <select className="form-input" style={{maxWidth:150,margin:0,marginLeft:'auto'}} value={month} onChange={e=>setMonth(e.target.value)} title="กรองตามเดือนกำหนดถัดไป">
+      <button className="btn btn-primary" style={{padding:'4px 12px',fontSize:12,marginLeft:'auto'}} disabled={!can('edit')} onClick={()=>setAddModal(true)} title={can('edit')?'เพิ่มหัวข้อ':NO_PERM}><I n="plus"/> เพิ่มหัวข้อ</button>
+      <select className="form-input" style={{maxWidth:150,margin:0}} value={month} onChange={e=>setMonth(e.target.value)} title="กรองตามเดือนกำหนดถัดไป">
         <option value="all">ทุกเดือน</option>
         {monthOptions.map(p=>{ const [y,m]=p.split('-'); return <option key={p} value={p}>{TH_MONTHS[+m]} {(+y)+543}</option> })}
       </select>
@@ -118,6 +161,7 @@ export default function Communication({comms,onMarkSent,onScheduleUpdate}){
           <td><div style={{display:'flex',gap:4}}>
             <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11}} disabled={!can('edit')} onClick={()=>setSchedModal(c)} title={can('edit')?'ตั้งค่าตาราง':NO_PERM}>ตาราง</button>
             <button className="btn btn-primary" style={{padding:'3px 8px',fontSize:11}} disabled={!can('edit')} onClick={()=>setSentModal(c)} title={can('edit')?'บันทึกการส่ง':NO_PERM}>บันทึก</button>
+            <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11,color:'var(--bad)'}} disabled={!can('delete')} onClick={()=>{ if(window.confirm('ลบหัวข้อ "'+c.topic+'" ?')) onDelete(c.id) }} title={can('delete')?'ลบหัวข้อ':NO_PERM}>ลบ</button>
           </div></td>
         </tr>
       ))}
