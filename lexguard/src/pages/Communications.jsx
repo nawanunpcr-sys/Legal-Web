@@ -68,26 +68,33 @@ function AddCommModal({scope,onSave,onClose}){
     onSave({scope,topic:topic.trim(),sender:sender||null,receiver:receiver||null,recurrence_type:rec,scheduled_date:date||null,notify_days_before:Number(notifyDays),assigned_to:assignedTo||null})
     onClose()
   }
+  const col2={display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}
   return (<><div className="scrim" onClick={onClose}/>
-    <div className="modal">
+    <div className="modal" style={{width:560}}>
       <div className="modal-head"><h3>เพิ่มหัวข้อการสื่อสาร ({scope==='internal'?'ภายในองค์กร':'ภายนอกองค์กร'})</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
       <div className="modal-body">
-        <label className="form-label">หัวข้อ / ประเภทข้อมูล *</label>
-        <input className="form-input" type="text" placeholder="ระบุหัวข้อการสื่อสาร…" value={topic} onChange={e=>setTopic(e.target.value)} autoFocus/>
-        <label className="form-label">ผู้สื่อสาร</label>
-        <input className="form-input" type="text" placeholder="ผู้ส่งสาร…" value={sender} onChange={e=>setSender(e.target.value)}/>
-        <label className="form-label">ผู้รับสาร</label>
-        <input className="form-input" type="text" placeholder="ผู้รับสาร…" value={receiver} onChange={e=>setReceiver(e.target.value)}/>
-        <label className="form-label">ความถี่</label>
-        <select className="form-input" value={rec} onChange={e=>setRec(e.target.value)}>
-          {Object.entries(RECURRENCE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
-        </select>
-        <label className="form-label">วันที่กำหนด (ครั้งแรก)</label>
-        <input className="form-input" type="date" value={date} onChange={e=>setDate(e.target.value)}/>
-        <label className="form-label">แจ้งเตือนล่วงหน้า (วัน)</label>
-        <input className="form-input" type="number" min="1" max="90" value={notifyDays} onChange={e=>setNotifyDays(e.target.value)}/>
-        <label className="form-label">ผู้รับผิดชอบ</label>
-        <input className="form-input" type="text" placeholder="ชื่อผู้รับผิดชอบ…" value={assignedTo} onChange={e=>setAssignedTo(e.target.value)}/>
+        <div><label className="form-label">หัวข้อ / ประเภทข้อมูล *</label>
+        <input className="form-input" type="text" placeholder="ระบุหัวข้อการสื่อสาร…" value={topic} onChange={e=>setTopic(e.target.value)} autoFocus/></div>
+        <div style={col2}>
+          <div><label className="form-label">ผู้สื่อสาร</label>
+          <input className="form-input" type="text" placeholder="ผู้ส่งสาร…" value={sender} onChange={e=>setSender(e.target.value)}/></div>
+          <div><label className="form-label">ผู้รับสาร</label>
+          <input className="form-input" type="text" placeholder="ผู้รับสาร…" value={receiver} onChange={e=>setReceiver(e.target.value)}/></div>
+        </div>
+        <div style={col2}>
+          <div><label className="form-label">ความถี่</label>
+          <select className="form-input" value={rec} onChange={e=>setRec(e.target.value)}>
+            {Object.entries(RECURRENCE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+          </select></div>
+          <div><label className="form-label">วันที่กำหนด (ครั้งแรก)</label>
+          <input className="form-input" type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+        </div>
+        <div style={col2}>
+          <div><label className="form-label">แจ้งเตือนล่วงหน้า (วัน)</label>
+          <input className="form-input" type="number" min="1" max="90" value={notifyDays} onChange={e=>setNotifyDays(e.target.value)}/></div>
+          <div><label className="form-label">ผู้รับผิดชอบ</label>
+          <input className="form-input" type="text" placeholder="ชื่อผู้รับผิดชอบ…" value={assignedTo} onChange={e=>setAssignedTo(e.target.value)}/></div>
+        </div>
       </div>
       <div className="modal-foot">
         <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
