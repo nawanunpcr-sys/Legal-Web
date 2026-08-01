@@ -31,7 +31,7 @@ export default function PlanModal({ req, law, departments = [], defaultDeptName,
         {(law || req) && (
           <div style={{ fontSize: 13, marginBottom: 10, padding: 10, background: 'var(--surface-2)', borderRadius: 8 }}>
             {law && <div><b className="law-code">{law.code}</b> {(law.name || '').slice(0, 70)}</div>}
-            {req && <div style={{ color: 'var(--ink-soft)', marginTop: 4 }}>ข้อกำหนด: {(req.text || '').slice(0, 130)}</div>}
+            {req && <div style={{ color: 'var(--ink-soft)', marginTop: 4 }}>ข้อปฏิบัติ: {(req.text || '').slice(0, 130)}</div>}
           </div>
         )}
         {forNC && <div style={{ fontSize: 12, color: 'var(--bad)', marginBottom: 10 }}>ข้อนี้ประเมินเป็น “ไม่สอดคล้อง (NC)” — ต้องมีแผนปรับปรุงก่อนจึงจะบันทึกได้</div>}

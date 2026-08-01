@@ -11,7 +11,7 @@ const sheetName = s => String(s || 'Sheet').replace(/[:\\/?*\[\]]/g, '-').slice(
 // real separate sheets, correct Thai encoding, no dependency.
 export function exportLawsToExcel(laws, catMap = {}) {
   // Official F-259 columns, one row per requirement, one sheet per category
-  const HEAD = ['ลำดับ', 'เอกสารสนับสนุน', 'กระทรวง', 'ชื่อกฎหมายและข้อกำหนด',
+  const HEAD = ['ลำดับ', 'เอกสารสนับสนุน', 'กระทรวง', 'ชื่อกฎหมายและข้อปฏิบัติ',
     'สรุปสาระสำคัญและหัวข้อควบคุมเอกสาร', 'วันที่ประกาศใช้', 'หน่วยงานรับผิดชอบ',
     'C', 'NC', 'การรายงานผล', 'ความถี่ของการตรวจสอบ', 'เอกสารที่เกี่ยวข้อง']
   const WIDTHS = [42, 90, 110, 200, 320, 90, 110, 32, 32, 110, 120, 140]
@@ -69,7 +69,7 @@ export function exportLawsToExcel(laws, catMap = {}) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `LexRegistry_${today.toISOString().slice(0, 10)}.xls`
+  a.download = `ComplyRegister_${today.toISOString().slice(0, 10)}.xls`
   document.body.appendChild(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

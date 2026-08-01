@@ -1,15 +1,16 @@
 // Dashboard page — overview KPIs, category bars, NC list, quarterly chart, report deadlines.
 import { useState, useMemo } from 'react'
-import { Pill, Tag, ActiveBadge, thDate, daysTo, TH_MONTHS, QUARTER_LABEL } from '../lib/ui.jsx'
-import { buildObligations, monthCounts } from '../lib/calendar.js'
+import { Pill, Tag, ActiveBadge, thDate, daysTo, TH_MONTHS, monthlyByAnnounce, announceYears, announceMonth } from '../lib/ui.jsx'
 
-/* P13 · Task 2 — การ์ด "เดือนนี้ต้องทำ" (นับจาก logic เดียวกับหน้าปฏิทินกฎหมาย) */
-function MonthDueCard({ reports, comms, workflow, lawMap, onOpenCalendar }) {
+/* P17 · การ์ด "เดือนนี้ต้องทำ" — นับจาก view lg_tasks (overdue + todo ที่ครบกำหนดในเดือนนี้) */
+function MonthDueCard({ taskRows = [], onOpenTasks }) {
   const now = new Date()
   const { total, overdue } = useMemo(() => {
-    const obligations = buildObligations({ reports, comms, workflow, lawMap })
-    return monthCounts({ obligations, reports, comms, workflow }, now.getFullYear(), now.getMonth(), true)
-  }, [reports, comms, workflow, lawMap])
+    const inMonth = d => { if (!d) return false; const x = new Date(d); return !isNaN(x) && x.getFullYear() === now.getFullYear() && x.getMonth() === now.getMonth() }
+    const od = taskRows.filter(t => t.state === 'overdue').length
+    const dueThis = taskRows.filter(t => t.state === 'todo' && inMonth(t.due_date)).length
+    return { total: od + dueThis, overdue: od }
+  }, [taskRows])   // eslint-disable-line react-hooks/exhaustive-deps
   const accent = overdue > 0 ? 'var(--bad)' : total > 0 ? 'var(--review)' : 'var(--ok)'
   return (
     <div className="panel" style={{ marginBottom: 16, borderTop: '3px solid ' + accent, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
@@ -21,7 +22,7 @@ function MonthDueCard({ reports, comms, workflow, lawMap, onOpenCalendar }) {
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--ink-faint)', marginTop: 2 }}>รายงานราชการ · การสื่อสาร · การทวนสอบ ที่ครบกำหนดในเดือน {TH_MONTHS[now.getMonth()]} {now.getFullYear() + 543}</div>
       </div>
-      <button className="btn btn-primary" style={{ padding: '7px 16px' }} onClick={onOpenCalendar}>เปิดปฏิทิน →</button>
+      <button className="btn btn-primary" style={{ padding: '7px 16px' }} onClick={onOpenTasks}>ดูรายการที่ต้องทำ →</button>
     </div>
   )
 }
@@ -94,25 +95,23 @@ function ReportDeadlinesPanel({reports=[],onGoReports,danger=false}){
   )
 }
 
-function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
+function MonthlyAddRepealChart({laws,cats,catMap}){
   const toBE = y => y + 543
-  const yearOptions = useMemo(()=>{
-    const ys = new Set([...quarterStats.map(s=>s.year), new Date().getFullYear()])
-    return [...ys].sort((a,b)=>b-a)
-  },[quarterStats])
+  const yearOptions = useMemo(()=>announceYears(laws),[laws])
   const [year,setYear] = useState(yearOptions[0] || new Date().getFullYear())
 
-  const {added,repealed,byCat} = useMemo(()=>{
-    const added=Array(4).fill(0), repealed=Array(4).fill(0)
-    const byCat = {}
-    quarterStats.forEach(s=>{
-      if(s.year!==year) return
-      added[s.quarter-1]+=s.added; repealed[s.quarter-1]+=s.repealed
-      const c = byCat[s.cat] = byCat[s.cat] || {added:Array(4).fill(0), repealed:Array(4).fill(0)}
-      c.added[s.quarter-1]+=s.added; c.repealed[s.quarter-1]+=s.repealed
-    })
-    return {added,repealed,byCat}
-  },[quarterStats,year])
+  // นับรายเดือน (12) จากวันที่ประกาศใช้ (มาใหม่) และ repeal_date (ยกเลิก)
+  const {added,repealed} = useMemo(()=>monthlyByAnnounce(laws,year),[laws,year])
+  // แยกตามหมวด: มาใหม่รายเดือน (ตามวันประกาศใช้) + รวมยกเลิกทั้งปี
+  const byCat = useMemo(()=>{
+    const m={}
+    for(const l of (laws||[])){
+      const a=announceMonth(l)
+      if(a && a.gy===year){ const c=m[l.cat]=m[l.cat]||{added:Array(12).fill(0),repealed:0}; c.added[a.m]++ }
+      if(l.repeal_date){ const x=new Date(l.repeal_date); if(!isNaN(x)&&x.getFullYear()===year){ const c=m[l.cat]=m[l.cat]||{added:Array(12).fill(0),repealed:0}; c.repealed++ } }
+    }
+    return m
+  },[laws,year])
 
   const max = Math.max(1, ...added, ...repealed)
   const totalAdded = added.reduce((a,b)=>a+b,0)
@@ -122,7 +121,7 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
   return (
     <div className="panel q-compact" style={{marginTop:16}}>
       <div className="panel-h">
-        <h3>กฎหมายที่เพิ่ม / ยกเลิก รายไตรมาส</h3>
+        <h3>กฎหมายที่เพิ่ม / ยกเลิก รายเดือน</h3>
         <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
           <button className="month-yr-btn" onClick={()=>setYear(y=>y-1)}>‹</button>
           <span style={{fontSize:13,fontWeight:600,minWidth:60,textAlign:'center'}} className="num">ปี {toBE(year)}</span>
@@ -130,13 +129,13 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
         </div>
       </div>
       <div className="panel-b">
-        <div style={{display:'flex',gap:18,marginBottom:16,fontSize:12.5}}>
+        <div style={{display:'flex',gap:18,marginBottom:16,fontSize:12.5,flexWrap:'wrap'}}>
           <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--chart-add)',display:'inline-block'}}/>เพิ่ม <b className="num" style={{fontSize:15,fontWeight:800,color:'var(--chart-add)'}}>{totalAdded}</b> ฉบับ</span>
           <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--chart-rep)',display:'inline-block'}}/>ยกเลิก <b className="num" style={{fontSize:15,fontWeight:800,color:'var(--chart-rep)'}}>{totalRepealed}</b> ฉบับ</span>
-          <span style={{color:'var(--ink-faint)',marginLeft:'auto'}}>ข้อมูลจากทะเบียน F-259 (Excel) — รายไตรมาส</span>
+          <span style={{color:'var(--ink-faint)',marginLeft:'auto'}}>นับตามวันที่ประกาศใช้ — รายเดือน</span>
         </div>
-        <div className="mchart qchart" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
-          {QUARTER_LABEL.map((q,i)=>(
+        <div className="mchart" style={{gridTemplateColumns:'repeat(12,1fr)'}}>
+          {TH_MONTHS.map((mo,i)=>(
             <div className="mchart-col" key={i}>
               <div className="qbar-vals">
                 <span className={'qbar-val qbar-val-add'+(added[i]?'':' qbar-val-zero')}>{added[i]}</span>
@@ -146,19 +145,7 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
                 <div className="mchart-bar mchart-bar-add" style={{height:(added[i]/max*100)+'%'}} title={`เพิ่ม ${added[i]} ฉบับ`}/>
                 <div className="mchart-bar mchart-bar-rep" style={{height:(repealed[i]/max*100)+'%'}} title={`ยกเลิก ${repealed[i]} ฉบับ`}/>
               </div>
-              <div className="mchart-lab">{q}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="qsum-grid">
-          {QUARTER_LABEL.map((q,i)=>(
-            <div className={'qsum-card'+(added[i]||repealed[i]?'':' qsum-card--empty')} key={i}>
-              <div className="qsum-q">{q}</div>
-              <div className="qsum-pills">
-                <span className="qsum-pill qsum-pill--add"><b className="num">{added[i]}</b><small>เพิ่ม</small></span>
-                <span className="qsum-pill qsum-pill--rep"><b className="num">{repealed[i]}</b><small>ยกเลิก</small></span>
-              </div>
+              <div className="mchart-lab">{mo}</div>
             </div>
           ))}
         </div>
@@ -169,24 +156,21 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
               <thead>
                 <tr>
                   <th rowSpan={2}>หมวด</th>
-                  <th colSpan={4} style={{textAlign:'center'}}>ยกเลิก (รายไตรมาส)</th>
-                  <th colSpan={4} style={{textAlign:'center'}}>มาใหม่ (รายไตรมาส)</th>
-                  <th rowSpan={2} style={{textAlign:'center'}}>รวมยกเลิก</th>
+                  <th colSpan={12} style={{textAlign:'center'}}>มาใหม่ (รายเดือน) — ตามวันที่ประกาศใช้</th>
                   <th rowSpan={2} style={{textAlign:'center'}}>รวมมาใหม่</th>
+                  <th rowSpan={2} style={{textAlign:'center'}}>รวมยกเลิก</th>
                 </tr>
                 <tr>
-                  {QUARTER_LABEL.map(q=><th key={'r'+q} style={{textAlign:'center',fontSize:11}}>{q}</th>)}
-                  {QUARTER_LABEL.map(q=><th key={'a'+q} style={{textAlign:'center',fontSize:11}}>{q}</th>)}
+                  {TH_MONTHS.map(mo=><th key={'a'+mo} style={{textAlign:'center',fontSize:11}}>{mo}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {catRows.map(({c,added,repealed})=>(
                   <tr key={c.code}>
                     <td><Tag c={c.code} color={catMap[c.code]?.color}/></td>
-                    {repealed.map((n,i)=><td key={'r'+i} style={{textAlign:'center',fontWeight:n?700:400,color:n?'var(--bad)':'var(--ink-faint)'}} className="num">{n||'—'}</td>)}
                     {added.map((n,i)=><td key={'a'+i} style={{textAlign:'center',fontWeight:n?700:400,color:n?'var(--ok)':'var(--ink-faint)'}} className="num">{n||'—'}</td>)}
-                    <td style={{textAlign:'center',fontWeight:800,fontSize:14,color:'var(--bad)'}} className="num">{repealed.reduce((a,b)=>a+b,0)}</td>
                     <td style={{textAlign:'center',fontWeight:800,fontSize:14,color:'var(--ok)'}} className="num">{added.reduce((a,b)=>a+b,0)}</td>
+                    <td style={{textAlign:'center',fontWeight:800,fontSize:14,color:repealed?'var(--bad)':'var(--ink-faint)'}} className="num">{repealed||'—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -199,7 +183,7 @@ function QuarterlyAddRepealChart({quarterStats,cats,catMap}){
   )
 }
 
-export default function Dashboard({laws,cats,catMap,onOpen,quarterStats=[],reports=[],onGoReports,onGoView,monthsData=[],comms=[],workflow=[],lawMap={}}){
+export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],reports=[],onGoReports,onGoView,monthsData=[],comms=[],workflow=[],lawMap={}}){
   // วันที่ตรวจสอบรายเดือนล่าสุด (เชื่อมกับการเช็คในหน้าทะเบียน & ความสอดคล้อง)
   const lastCheck = useMemo(()=>{
     const done=(monthsData||[]).filter(m=>m.checked_at && (m.status||m.checked))
@@ -222,13 +206,13 @@ export default function Dashboard({laws,cats,catMap,onOpen,quarterStats=[],repor
   const strip=[
     {val:(active.length+inactive.length).toLocaleString('en-US'), lab:'กฎหมายในทะเบียน (ฉบับ)'},
     {val:String(cats.length),                 lab:'หมวด (LA–LG)'},
-    {val:stats.req.toLocaleString('en-US'),   lab:'ข้อกำหนดรายข้อ'},
+    {val:stats.req.toLocaleString('en-US'),   lab:'ข้อปฏิบัติรายข้อ'},
     {val:stats.nc.toLocaleString('en-US'),    lab:'ยังไม่สอดคล้อง (ข้อ)', bad:true, go:()=>goRegistry('compliance')},
     {val:stats.pct.toFixed(1)+'%',            lab:'ความสอดคล้อง ('+stats.met+'/'+stats.req+')', accent:true},
   ]
 
   return <div className="view">
-    <MonthDueCard reports={reports} comms={comms} workflow={workflow} lawMap={lawMap} onOpenCalendar={()=>onGoView&&onGoView('calendar')}/>
+    <MonthDueCard taskRows={taskRows} onOpenTasks={()=>onGoView&&onGoView('tasks')}/>
     <div className="dash-strip">
       {strip.map((s,i)=>(<div className={'dash-strip-cell'+(s.go?' stat-link':'')} key={i}
         role={s.go?'button':undefined} tabIndex={s.go?0:undefined} onClick={s.go||undefined}
@@ -258,8 +242,8 @@ export default function Dashboard({laws,cats,catMap,onOpen,quarterStats=[],repor
     </div>
 
     <div style={{marginTop:36}}>
-      <div className="dash-sec-h">ภาพรวมรายไตรมาส</div>
-      <QuarterlyAddRepealChart quarterStats={quarterStats} cats={cats} catMap={catMap}/>
+      <div className="dash-sec-h">ภาพรวมรายเดือน</div>
+      <MonthlyAddRepealChart laws={laws} cats={cats} catMap={catMap}/>
     </div>
 
     <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports} danger/>
@@ -268,7 +252,7 @@ export default function Dashboard({laws,cats,catMap,onOpen,quarterStats=[],repor
     <div className="panel" style={{marginTop:16}}>
       <div className="panel-h"><h3>รายการที่ยังไม่สอดคล้อง — ต้องติดตาม</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกเพื่อดูรายละเอียด</span></div>
       <div className="tablewrap"><table><thead><tr><th>รหัส / ชื่อกฎหมาย</th><th>หมวด</th><th>กระทรวง</th><th>สถานะ</th></tr></thead><tbody>
-        {bad.length===0 && <tr><td colSpan="4" style={{textAlign:'center',color:'var(--ok)',fontWeight:600,padding:30}}>ทุกข้อกำหนดสอดคล้องครบถ้วน ✓</td></tr>}
+        {bad.length===0 && <tr><td colSpan="4" style={{textAlign:'center',color:'var(--ok)',fontWeight:600,padding:30}}>ทุกข้อปฏิบัติสอดคล้องครบถ้วน ✓</td></tr>}
         {bad.map(l=>(<tr key={l.id} onClick={()=>onOpen(l)}>
           <td><div className="law-code" style={{display:'flex',alignItems:'center',gap:8}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/></div><div className="law-title" style={{fontSize:13}}>{l.name.slice(0,70)}{l.name.length>70?'…':''}</div></td>
           <td><Tag c={l.cat} color={catMap[l.cat]?.color}/></td>

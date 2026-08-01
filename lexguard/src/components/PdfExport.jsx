@@ -31,7 +31,7 @@ const COLS = [
 // ── P10 Task 11 · สรุปประจำเดือน (A4 แนวตั้ง, ฟอนต์ไทยเดิม) — reuse #print-report ──
 const TH_MONTHS_FULL = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 const ACT_LABEL = { create:'เพิ่มใหม่', register:'เพิ่มเข้าทะเบียน', import:'นำเข้า (AI)', monitor:'เปิดทวนสอบ', assess:'ประเมิน', plan:'สร้างแผน', plan_close:'ปิดแผน', repeal:'ยกเลิก', restore:'กู้คืน', requirement:'แก้สถานะ', verify:'ตรวจทาน', verify_edit:'แก้ผลสรุป AI', duplicate_override:'ยืนยันเพิ่มซ้ำ', finalize:'ยืนยันสมบูรณ์', screen:'คัดกรอง', assign:'มอบหมาย' }
-const catOrderKey = c => (c === 'CC' ? 1 : 0) + '_' + c
+const catOrderKey = c => c
 
 export function buildMonthlyReport({ month, year, settings = {}, activity = [], workflowRows = [], searchLog = [], laws = [], catName = {}, issuer = '' }) {
   const el = document.getElementById('print-report'); if (!el) return
@@ -232,7 +232,7 @@ export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' })
       <tr>
         <td class="conf" style="width:22%">ใช้ภายใน</td>
         <td class="title">
-          <div class="th1">ทะเบียนกฎหมายและแบบประเมินความสอดคล้องและข้อกำหนดอื่นๆ</div>
+          <div class="th1">ทะเบียนกฎหมายและแบบประเมินความสอดคล้องและข้อปฏิบัติอื่นๆ</div>
           <div class="en">REGISTER OF LEGAL AND REQUIREMENT</div>
         </td>
         <td class="form" style="width:22%">

@@ -103,6 +103,45 @@ export function monthlyCounts(laws, beYear) {
   return { added, repealed }
 }
 
+// ── ภาพรวมรายเดือน: นับ "มาใหม่" ตามวันที่ประกาศใช้ (issue_date free-text) ──
+const _THMON = {
+  มกราคม:1,กุมภาพันธ์:2,มีนาคม:3,เมษายน:4,พฤษภาคม:5,มิถุนายน:6,
+  กรกฎาคม:7,สิงหาคม:8,กันยายน:9,ตุลาคม:10,พฤศจิกายน:11,ธันวาคม:12,
+  มค:1,กพ:2,มีค:3,เมย:4,พค:5,มิย:6,กค:7,สค:8,กย:9,ตค:10,พย:11,ธค:12,
+}
+const _thMon = tok => { const t = String(tok||'').replace(/[.\s]/g,''); for (const k in _THMON) if (t.indexOf(k) >= 0) return _THMON[k]; return 0 }
+const _beToGy = y => { y = +y; if (y < 100) y += 2500; return y > 2400 ? y - 543 : y }
+// แยกเดือน(0-11)/ปี ค.ศ. จากช่อง "วันที่ประกาศใช้" — คืน {m, gy} หรือ null
+export function announceMonth(law) {
+  let s = String(law?.issue_date || '').replace(/[๐-๙]/g, d => '๐๑๒๓๔๕๖๗๘๙'.indexOf(d))
+  const cut = s.search(/มีผล|บังคับ/); if (cut > 0) s = s.slice(0, cut)   // เอาเฉพาะช่วงวันประกาศ ตัดวันบังคับใช้ทิ้ง
+  s = s.replace(/พ\.?\s?ศ\.?/g, ' ')
+  let m = s.match(/(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{2,4})/)   // วว/ดด/ปปปป
+  if (m) return { m: Math.min(11, Math.max(0, +m[2] - 1)), gy: _beToGy(m[3]) }
+  m = s.match(/(\d{1,2})\s*([ก-๙][ก-๙.]*?)\s*(\d{2,4})/)          // วัน ชื่อเดือน ปี
+  if (m) { const mo = _thMon(m[2]); if (mo) return { m: mo - 1, gy: _beToGy(m[3]) } }
+  return null
+}
+// นับมาใหม่ (ตามวันประกาศใช้) / ยกเลิก (ตาม repeal_date) รายเดือน (12) ของปี ค.ศ. gYear
+export function monthlyByAnnounce(laws, gYear) {
+  const added = Array(12).fill(0), repealed = Array(12).fill(0)
+  for (const l of (laws || [])) {
+    const a = announceMonth(l); if (a && a.gy === gYear) added[a.m]++
+    if (l.repeal_date) { const x = new Date(l.repeal_date); if (!isNaN(x) && x.getFullYear() === gYear) repealed[x.getMonth()]++ }
+  }
+  return { added, repealed }
+}
+// ปี ค.ศ. ที่มีข้อมูล (จากวันประกาศใช้ + วันยกเลิก) เรียงใหม่→เก่า รวมปีปัจจุบันเสมอ
+export function announceYears(laws) {
+  const s = new Set()
+  for (const l of (laws || [])) {
+    const a = announceMonth(l); if (a) s.add(a.gy)
+    if (l.repeal_date) { const x = new Date(l.repeal_date); if (!isNaN(x)) s.add(x.getFullYear()) }
+  }
+  s.add(new Date().getFullYear())
+  return [...s].sort((a, b) => b - a)
+}
+
 // นับกฎหมายที่ "มาใหม่/ยกเลิก" ในรอบ (q, beYear) จาก created_at / repeal_date ของ laws
 export function roundCounts(laws, q, beYear) {
   const gYear = beYear - 543

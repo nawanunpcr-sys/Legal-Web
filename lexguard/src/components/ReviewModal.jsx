@@ -96,14 +96,14 @@ export default function ReviewModal({ batch, cats = [], onClose, onSaveEdits, on
             <label className="form-label">เอกสาร/แบบฟอร์มที่เกี่ยวข้อง</label>
             <input className="form-input" value={law.doc_list} onChange={e => setL('doc_list', e.target.value)} />
 
-            <div className="sec-t" style={{ margin: '14px 0 8px' }}>ข้อกำหนดรายข้อ ({reqs.length})</div>
+            <div className="sec-t" style={{ margin: '14px 0 8px' }}>ข้อปฏิบัติรายข้อ ({reqs.length})</div>
             {reqs.map((r, i) => (
               <div key={r.id} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: 10, marginBottom: 8 }}>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                   <span className="num" style={{ color: 'var(--ink-faint)' }}>{i + 1}.</span>
                   <input className="form-input" style={{ marginTop: 0, width: 130 }} value={r.section_ref} onChange={e => setR(i, 'section_ref', e.target.value)} placeholder="มาตรา/ข้อ" />
                 </div>
-                <textarea className="form-input" rows={2} style={{ marginTop: 0 }} value={r.req_text} onChange={e => setR(i, 'req_text', e.target.value)} placeholder="เนื้อหาข้อกำหนด" />
+                <textarea className="form-input" rows={2} style={{ marginTop: 0 }} value={r.req_text} onChange={e => setR(i, 'req_text', e.target.value)} placeholder="เนื้อหาข้อปฏิบัติ" />
                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                   <input className="form-input" style={{ marginTop: 0 }} value={r.responsible} onChange={e => setR(i, 'responsible', e.target.value)} placeholder="ผู้รับผิดชอบ" />
                   <input className="form-input" style={{ marginTop: 0 }} value={r.frequency} onChange={e => setR(i, 'frequency', e.target.value)} placeholder="ความถี่" />

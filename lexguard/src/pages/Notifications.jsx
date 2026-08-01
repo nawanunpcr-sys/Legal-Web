@@ -30,7 +30,7 @@ export default function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
       <div className="panel notif-empty">
         <div className="notif-empty-ic" style={{fontSize:22}}>✓</div>
         <div style={{fontSize:16,fontWeight:600,marginBottom:6}}>ไม่มีการแจ้งเตือน</div>
-        <div style={{fontSize:13,color:'var(--ink-faint)'}}>ระบบจะแจ้งเตือนเมื่อมีข้อกำหนดที่ต้องติดตามหรือกำหนดการที่ใกล้ครบ</div>
+        <div style={{fontSize:13,color:'var(--ink-faint)'}}>ระบบจะแจ้งเตือนเมื่อมีข้อปฏิบัติที่ต้องติดตามหรือกำหนดการที่ใกล้ครบ</div>
       </div>
     </div>
   )
@@ -62,7 +62,7 @@ export default function NotificationsPage({ notifs, onOpenLaw, onGoToView }) {
                 <div className="notif-sub">{n.sub}</div>
                 {n.type==='review'&&n.days!==undefined&&<div style={{marginTop:4,fontSize:11.5,color:'var(--review)',fontWeight:600}}>เหลือเวลา {n.days} วัน</div>}
                 {n.type==='report_law'&&n.days!==undefined&&<div style={{marginTop:4,fontSize:11.5,color:n.days<15?'var(--bad)':'var(--review)',fontWeight:600}}>เหลืออีก {n.days} วัน</div>}
-                {n.type==='bad'&&<div style={{marginTop:4,fontSize:11.5,color:'var(--bad)',fontWeight:600}}>คลิกเพื่อดูข้อกำหนดและแก้ไข →</div>}
+                {n.type==='bad'&&<div style={{marginTop:4,fontSize:11.5,color:'var(--bad)',fontWeight:600}}>คลิกเพื่อดูข้อปฏิบัติและแก้ไข →</div>}
               </div>
               <span className="notif-badge" style={{background:m.bg,color:m.fg}}>{m.label}</span>
             </div>

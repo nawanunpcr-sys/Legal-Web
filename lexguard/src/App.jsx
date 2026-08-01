@@ -5,7 +5,7 @@ import { supabase, hasSupabase, fetchAll,
          markCommSent, updateCommSchedule, addComm, deleteComm,
          fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
          logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
-         fetchReports, setReportEvent, markReportSubmitted,
+         fetchReports, setReportEvent, markReportSubmitted, fetchTasks,
          fetchWorkflow, subscribeWorkflow, subscribeLaws, createAddWorkflow, createMonitorWorkflow,
          submitWorkflowAssessment, closeWorkflowPlan, fetchDiscoveredLaws, fetchSearchLog,
          fetchSettings, saveSettings, DEFAULT_SETTINGS } from './lib/supabase.js'
@@ -27,8 +27,7 @@ import { exportLawsToExcel } from './lib/integrations.js'
 import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, currentRound,
          jorporReportDeadlines, effectiveInfo, trainingStatus } from './lib/ui.jsx'
 import Dashboard from './pages/Dashboard.jsx'
-import LawCalendar from './pages/LawCalendar.jsx'
-import ProcessTracker from './pages/ProcessTracker.jsx'
+import Tasks from './pages/Tasks.jsx'
 import LawSummary from './pages/LawSummary.jsx'
 import History from './pages/History.jsx'
 import AddLawFlow from './components/AddLawFlow.jsx'
@@ -44,9 +43,8 @@ const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
     { id:'registry',      label:'ทะเบียน & ความสอดคล้อง', icon:'book'    },
-    { id:'calendar',      label:'ปฏิทินกฎหมาย',          icon:'calendar'},
+    { id:'tasks',         label:'รายการที่ต้องทำ',        icon:'update'  },
     { id:'summary',       label:'สรุปกฎหมาย',            icon:'spark'   },
-    { id:'tracker',       label:'Process Tracker',        icon:'update'  },
   ]},
   { label: 'ประเมิน & สื่อสาร', items: [
     { id:'comm',          label:'สื่อสาร & ส่งรายงาน',    icon:'chat'    },
@@ -61,15 +59,14 @@ const NAV_GROUPS = [
 
 const TITLES = {
   dashboard:     ['Dashboard',             'สรุปสถานะความสอดคล้องตามกฎหมาย SHE'],
-  calendar:      ['ปฏิทินกฎหมาย',          'รวมกำหนดรายงานราชการ · การสื่อสาร · การทวนสอบ ในมุมมองรายเดือน'],
-  registry:      ['ทะเบียน & ความสอดคล้อง','ทะเบียนกฎหมายพร้อมสถานะความสอดคล้องรายข้อกำหนด'],
+  tasks:         ['รายการที่ต้องทำ',        'งานที่ต้องดำเนินการทั้งหมด — ทวนสอบกฎหมาย · รายงานราชการ · การสื่อสาร'],
+  registry:      ['ทะเบียน & ความสอดคล้อง','ทะเบียนกฎหมายพร้อมสถานะความสอดคล้องรายข้อปฏิบัติ'],
   register:      ['ทะเบียนกฎหมาย',         'กฎหมายที่เกี่ยวข้องและสถานะการปฏิบัติ'],
-  compliance:    ['ติดตามความสอดคล้อง',    'สถานะรายข้อกำหนดแยกตามหมวดและลำดับชั้น'],
+  compliance:    ['ติดตามความสอดคล้อง',    'สถานะรายข้อปฏิบัติแยกตามหมวดและลำดับชั้น'],
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
   repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
   comm:          ['สื่อสาร & ส่งรายงาน',   'ตารางการสื่อสาร (ISD-86) และการส่งรายงานราชการในหน้าเดียว'],
   summary:       ['สรุปกฎหมาย',            'สรุปกฎหมายด้วย AI + คลังสรุป + ส่งต่อเข้าทะเบียน'],
-  tracker:       ['Process Tracker',        'ติดตามการเพิ่มกฎหมายใหม่ และการทวนสอบกฎหมายเดิม รายฉบับ'],
   history:       ['ประวัติการทำรายการ',     'ไทม์ไลน์การกระทำต่อกฎหมายแต่ละฉบับ แยกตามหมวด LA–LG'],
   notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
   settings:      ['ตั้งค่า',                'ข้อมูลองค์กรและการแสดงผลของระบบ'],
@@ -81,9 +78,8 @@ export default function App(){
   const [view,setView]     = useState(()=>{ try{ const v=localStorage.getItem('cr_view')||'dashboard';
     // backward-compat: the old split 'register'/'compliance' views are now one 'registry' view
     if(v==='register'||v==='compliance'){ try{ localStorage.setItem('cr_registry_mode', JSON.stringify(v==='compliance'?'compliance':'register')) }catch{} return 'registry' }
-    // P10: the old free-form process/staging/assessment/plans/updates views were removed
-    // (note: 'tracker' is now the NEW per-law Process Tracker — keep it)
-    if(v==='process'||v==='staging'||v==='assessment'||v==='plans'||v==='updates') return 'tracker'
+    // P17: ปฏิทินกฎหมาย + Process Tracker ยุบเป็นหน้าเดียว 'tasks' (รายการที่ต้องทำ)
+    if(v==='process'||v==='staging'||v==='assessment'||v==='plans'||v==='updates'||v==='tracker'||v==='calendar') return 'tasks'
     if(v==='discovery'||v==='analysis') return 'summary'   // P12: รวมเป็นหน้า "สรุปกฎหมาย"
     if(v==='reports') return 'comm'       // P10: merged into สื่อสาร & ส่งรายงาน hub
     return v }catch{ return 'dashboard' } })
@@ -106,10 +102,11 @@ export default function App(){
   const [training,setTraining] = usePersist('lex_training', { hours:0, target:12, year:new Date().getFullYear()+543 })  // อบรม จป. 12 ชม./ปี
   const [months,setMonths]   = useState([])
   const [activity,setActivity] = useState([])
-  const [quarterStats,setQuarterStats] = useState([])
+  const [,setQuarterStats] = useState([])   // lg_law_quarter_stats: ยังอัปเดตไว้ (ใช้ maintainance) แต่ไม่แสดงผลแล้ว (P17)
   const [settings,setSettings] = useState(DEFAULT_SETTINGS)
   const [reports,setReports] = useState([])
   const [workflowRows,setWorkflowRows] = useState([])   // lg_law_workflow — Process Tracker รายกฎหมาย (P10)
+  const [taskRows,setTaskRows] = useState([])           // view lg_tasks — หน้า "รายการที่ต้องทำ" (P16/P17)
   const [discovered,setDiscovered] = useState([])        // lg_ai_discovered_laws (หน้าค้นหากฎหมาย AI)
   const [searchLog,setSearchLog] = useState([])          // lg_search_log (หลักฐานการติดตามกฎหมาย)
   const [showAddLaw,setShowAddLaw] = useState(false)     // Workflow A · Process 1 wizard
@@ -144,6 +141,7 @@ export default function App(){
 
   async function loadReports(){ try{ setReports(await fetchReports()) }catch(e){ console.warn('reports reload',e) } }
   async function loadWorkflow(){ try{ setWorkflowRows(await fetchWorkflow()) }catch(e){ console.warn('workflow reload',e) } }
+  async function loadTasks(){ try{ setTaskRows(await fetchTasks()) }catch(e){ console.warn('tasks reload',e) } }
   async function loadDiscovered(){ try{ setDiscovered(await fetchDiscoveredLaws()) }catch(e){ console.warn('discovered reload',e) } }
   async function loadLaws(){ try{ const d=await fetchAll(); setLaws(d.laws) }catch(e){ console.warn('laws reload',e) } }
   function openAddLaw(init=null){ setAddLawInit(init); setShowAddLaw(true) }   // P12
@@ -160,9 +158,9 @@ export default function App(){
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, a, qs, rp, st, wf, disc, slog] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchQuarterStats(), fetchReports(), fetchSettings(), fetchWorkflow(), fetchDiscoveredLaws(), fetchSearchLog()])
+      const [d, mData, a, rp, st, wf, disc, slog, tk] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchReports(), fetchSettings(), fetchWorkflow(), fetchDiscoveredLaws(), fetchSearchLog(), fetchTasks()])
       setCats(withCatColors(d.cats)); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setCurMonthRows(mData); setActivity(a); setQuarterStats(qs); setReports(rp); setSettings(st); setWorkflowRows(wf); setDiscovered(disc); setSearchLog(slog)
+      setMonths(mData); setCurMonthRows(mData); setActivity(a); setReports(rp); setSettings(st); setWorkflowRows(wf); setDiscovered(disc); setSearchLog(slog); setTaskRows(tk)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -203,9 +201,9 @@ export default function App(){
     return out.slice(0,12)
   },[search,activeLaws,reports,catMap])
 
-  // Task 10 · งานค้างในกระบวนการ (จาก workflowRows ที่ subscribe realtime อยู่แล้ว)
-  const openWorkCount = useMemo(()=>workflowRows.filter(w=>w.status!=='เสร็จสิ้น').length,[workflowRows])
-  const trackerUrgent = useMemo(()=>workflowRows.some(w=>w.status==='ไม่สอดคล้อง' && !w.plan_closed_at && w.reverify_date && daysTo(w.reverify_date)<0),[workflowRows])
+  // P17 · badge เมนู "รายการที่ต้องทำ" = งานที่ state ต้องทำ (overdue/todo) จาก view lg_tasks
+  const openWorkCount = useMemo(()=>taskRows.filter(t=>t.state==='overdue'||t.state==='todo').length,[taskRows])
+  const trackerUrgent = useMemo(()=>taskRows.some(t=>t.state==='overdue'),[taskRows])
 
   const inForceLaws = useMemo(()=>activeLaws.filter(l=>l.active!==false),[activeLaws])
   const stats = useMemo(()=>{
@@ -492,20 +490,20 @@ export default function App(){
           onClick={()=>setView('dashboard')}
           onKeyDown={e=>{ if(e.key==='Enter'||e.key===' ') setView('dashboard') }}>
           <div className="brand-mark">{settings.brand_mark||'CR'}</div>
-          <h1>{settings.company_name||'ComplyRegister'}</h1>
-          <span>{settings.subtitle||'ทะเบียนกฎหมาย SHE'}</span>
+          <h1>{settings.company_name||'Comply Register'}</h1>
+          <span>{settings.subtitle||'ทะเบียนกฎหมาย SHE และกฎหมายอื่นๆ ที่เกี่ยวข้อง'}</span>
         </div>
 
         {NAV_GROUPS.map((group,gi)=>(
           <div key={gi} className="nav-group">
             {group.label && <div className="nav-label">{group.label}</div>}
             {group.items.filter(n=>n.id!=='settings'||can(role,'delete')).map(n=>{
-              // Task 10: badge งานค้างบน Process Tracker (รอประเมิน + แผนค้าง) — สีแดงถ้ามีเลยกำหนด
-              const badge = n.id==='tracker' ? (openWorkCount||null) : null
-              const urgent = n.id==='tracker' && trackerUrgent
+              // P17: badge งานต้องทำบนเมนู "รายการที่ต้องทำ" — สีแดงถ้ามีเลยกำหนด
+              const badge = n.id==='tasks' ? (openWorkCount||null) : null
+              const urgent = n.id==='tasks' && trackerUrgent
               return (
                 <button key={n.id} className={'nav-item'+(view===n.id?' active':'')}
-                  onClick={()=>{ setView(n.id); if(n.id==='tracker') setTrackerFocus(f=>f+1) }} title={n.label}>
+                  onClick={()=>{ setView(n.id); if(n.id==='tasks') setTrackerFocus(f=>f+1) }} title={n.label}>
                   <span className="nav-ic"><I n={n.icon}/></span>
                   <span className="label">{n.label}</span>
                   {badge ? <span className={'badge'+(urgent?'':' accent')} title={urgent?'มีรายการเลยกำหนดทวนสอบ':'งานค้างในกระบวนการ'}>{badge}</span> : null}
@@ -584,9 +582,15 @@ export default function App(){
             </div>
           </div>
           <div className="view-swap" key={view}>
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} activity={activity} quarterStats={quarterStats} reports={reports} onGoReports={()=>goView('reports')} onGoView={goView}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} activity={activity} taskRows={taskRows} reports={reports} onGoReports={()=>goView('reports')} onGoView={goView}
             monthsData={months} comms={comms} workflow={workflowRows} lawMap={lawMap}/>}
-          {view==='calendar'      && <LawCalendar   reports={reports} comms={comms} workflow={workflowRows} lawMap={lawMap} cats={cats} onGoView={goView}/>}
+          {view==='tasks'         && <Tasks taskRows={taskRows} workflowRows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest} focusSignal={trackerFocus}
+            onStartMonitor={async(...a)=>{ await handleStartMonitor(...a); loadTasks() }}
+            onAssess={async(...a)=>{ await handleWorkflowAssess(...a); loadTasks() }}
+            onClosePlan={async(...a)=>{ await handleClosePlan(...a); loadTasks() }}
+            onReportSubmit={async(id)=>{ await handleReportSubmit(id); loadTasks() }}
+            onCommSent={async(id)=>{ await handleMarkSent(id); loadTasks() }}
+            onOpenLaw={setOpenLaw}/>}
           {view==='registry'      && <RegistryCompliance
             regLaws={activeLaws} cats={cats} catMap={catMap} stats={stats}
             search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
@@ -597,8 +601,6 @@ export default function App(){
           {view==='summary'       && <LawSummary laws={activeLaws} cats={cats} catMap={catMap} discovered={discovered} suggest={suggest}
             onReloadDiscovered={loadDiscovered} onReloadLaws={loadLaws} onOpenLaw={setOpenLaw} onAddToRegistry={init=>openAddLaw(init)}/>}
           {view==='history'       && <History activity={activity} laws={laws} catMap={catMap} settings={settings} workflowRows={workflowRows} searchLog={searchLog} onDeleteLaw={handleDeleteLaw}/>}
-          {view==='tracker'       && <ProcessTracker rows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest} focusSignal={trackerFocus}
-            onStartMonitor={handleStartMonitor} onAssess={handleWorkflowAssess} onClosePlan={handleClosePlan} onOpenLaw={setOpenLaw}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
           {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={searchDebounced} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && (<div className="view">

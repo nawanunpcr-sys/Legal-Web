@@ -18,7 +18,7 @@ export default function DeleteLawModal({ law, onConfirm, onClose }) {
           <div className="ai-box" style={{ borderColor: 'var(--bad)', background: 'var(--bad-bg)', marginBottom: 14 }}>
             <span className="ai-tag" style={{ color: 'var(--bad)' }}>คำเตือน</span>
             <p style={{ marginBottom: 0, fontSize: 13 }}>กำลังจะลบ <b>{law.code}</b> — {(law.name || '').slice(0, 80)}<br />
-              ข้อมูลข้อกำหนด การประเมิน และประวัติทั้งหมดของกฎหมายนี้จะถูกลบถาวร <b>กู้คืนไม่ได้</b> — หากกฎหมายถูกยกเลิกโดยราชการ ให้ใช้ “ยกเลิกใช้” แทนเพื่อเก็บประวัติตาม ISO 45001</p>
+              ข้อมูลข้อปฏิบัติ การประเมิน และประวัติทั้งหมดของกฎหมายนี้จะถูกลบถาวร <b>กู้คืนไม่ได้</b> — หากกฎหมายถูกยกเลิกโดยราชการ ให้ใช้ “ยกเลิกใช้” แทนเพื่อเก็บประวัติตาม ISO 45001</p>
           </div>
           <label className="form-label">พิมพ์รหัสกฎหมาย <b>{law.code}</b> เพื่อยืนยัน</label>
           <input className="form-input" type="text" placeholder={law.code} value={typed} onChange={e => setTyped(e.target.value)} autoFocus />

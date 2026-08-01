@@ -78,12 +78,12 @@ export default function Landing({ onEnter }) {
   const stats = [
     { val: fmt(m.total), lab: 'กฎหมายในทะเบียน (ฉบับ)', color: INK },
     { val: String(m.catCount), lab: 'หมวด (LA–LG)', color: INK },
-    { val: fmt(m.req), lab: 'ข้อกำหนดรายข้อ', color: INK },
+    { val: fmt(m.req), lab: 'ข้อปฏิบัติรายข้อ', color: INK },
     { val: m.pct.toFixed(1) + '%', lab: `ความสอดคล้อง (${m.met}/${m.req})`, color: ACCENT },
   ]
   const kpis = [
     { lab: 'กฎหมายทั้งหมด', val: fmt(m.total), unit: 'ฉบับ', delta: m.catCount + ' หมวด', accent: '#1C2431' },
-    { lab: 'ยังไม่สอดคล้อง', val: String(m.nc), unit: 'ข้อ', delta: 'จาก ' + m.req + ' ข้อกำหนด', accent: '#B4553F' },
+    { lab: 'ยังไม่สอดคล้อง', val: String(m.nc), unit: 'ข้อ', delta: 'จาก ' + m.req + ' ข้อปฏิบัติ', accent: '#B4553F' },
     { lab: 'การสื่อสาร ISD-86', val: String(m.comms.length), unit: 'รายการ', delta: 'ภายใน / ภายนอกองค์กร', accent: '#B58A3C' },
     { lab: 'สอดคล้อง', val: m.pct.toFixed(1) + '%', unit: '', delta: m.met + ' / ' + m.req + ' ข้อ', accent: '#5F7A61' },
   ]
@@ -100,7 +100,7 @@ export default function Landing({ onEnter }) {
           {logoOk
             ? <img src="/jastel-logo.png" alt="JasTel Network" onError={() => setLogoOk(false)} />
             : <span className="lgl-brand-mark">SHE</span>}
-          <span className="lgl-brand-name">LexGuard</span>
+          <span className="lgl-brand-name">Comply Register</span>
         </div>
         <nav className="lgl-links">
           {nav.map((n, i) => (
@@ -188,7 +188,7 @@ export default function Landing({ onEnter }) {
         <div className="lgl-card">
           <div className="lgl-card-head">
             <span className="lgl-card-title">หมวดกฎหมายทั้ง {m.catCount} หมวด (LA–LG)</span>
-            <span className="lgl-card-sub">รวม {fmt(m.total)} ฉบับ · {fmt(m.req)} ข้อกำหนด</span>
+            <span className="lgl-card-sub">รวม {fmt(m.total)} ฉบับ · {fmt(m.req)} ข้อปฏิบัติ</span>
           </div>
           <div className="lgl-cats">
             {m.catRows.map(c => (
@@ -218,7 +218,7 @@ export default function Landing({ onEnter }) {
               </div>
             ))}
             {m.loaded && m.ncItems.length === 0 && (
-              <div className="lgl-nc-ok">ทุกข้อกำหนดสอดคล้องครบถ้วน ✓</div>
+              <div className="lgl-nc-ok">ทุกข้อปฏิบัติสอดคล้องครบถ้วน ✓</div>
             )}
           </div>
           <div className="lgl-nc-foot">
@@ -229,7 +229,7 @@ export default function Landing({ onEnter }) {
       </section>
 
       <footer className="lgl-foot">
-        <span>LexGuard · ทะเบียนกฎหมาย SHE</span>
+        <span>Comply Register · ทะเบียนกฎหมาย SHE และกฎหมายอื่นๆ ที่เกี่ยวข้อง</span>
         <span>© {new Date().getFullYear() + 543} Jastel Network Co., Ltd.</span>
       </footer>
     </div>

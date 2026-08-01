@@ -40,7 +40,7 @@ export default function AssessForm({ law, suggest = {}, onSubmit, onCancel }) {
         </div>
       </div>
 
-      <label className="form-label" style={{marginTop:10}}>ผลการทวนสอบต่อข้อกำหนด <span style={{color:'var(--bad)'}}>*</span></label>
+      <label className="form-label" style={{marginTop:10}}>ผลการทวนสอบต่อข้อปฏิบัติ <span style={{color:'var(--bad)'}}>*</span></label>
       <div style={{display:'flex',gap:10}}>
         {['สอดคล้อง','ไม่สอดคล้อง'].map(r=>(
           <button key={r} type="button" onClick={()=>setResult(r)}

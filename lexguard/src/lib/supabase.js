@@ -44,7 +44,7 @@ export function advanceByRecurrence(baseDate, recurrence) {
 }
 
 // ---- Settings ----
-export const DEFAULT_SETTINGS = { company_name:'ComplyRegister', subtitle:'ทะเบียนกฎหมาย SHE', org_name:'จัสเทล เน็ทเวิร์ค', user_name:'จป. วิชาชีพ', brand_mark:'CR' }
+export const DEFAULT_SETTINGS = { company_name:'Comply Register', subtitle:'ทะเบียนกฎหมาย SHE และกฎหมายอื่นๆ ที่เกี่ยวข้อง', org_name:'จัสเทล เน็ทเวิร์ค', user_name:'จป. วิชาชีพ', brand_mark:'CR' }
 export async function fetchSettings() {
   if (!hasSupabase) return { ...DEFAULT_SETTINGS }
   const { data } = await supabase.from('lg_settings').select('*').eq('id', 1).maybeSingle()
@@ -520,7 +520,7 @@ export async function addStagedLaw(rows) {
   const { data: allReq } = await supabase.from('lg_requirements').select('status').eq('law_id', law.id)
   await recomputeLawStatus(law.id, allReq || [])
   await supabase.from('lg_import_staging').update({ status: 'added' }).in('id', rows.map(r => r.id))
-  await logActivity({ action: 'import', law_id: law.id, law_code: first.law_code, law_name: first.law_name || first.law_code, detail: `นำเข้าจาก AI · ${rows.length} ข้อกำหนด` })
+  await logActivity({ action: 'import', law_id: law.id, law_code: first.law_code, law_name: first.law_name || first.law_code, detail: `นำเข้าจาก AI · ${rows.length} ข้อปฏิบัติ` })
   return law   // { id } — used to kick off a tracker case after approval
 }
 export async function dismissStaged(ids) {
@@ -745,7 +745,7 @@ export async function screenBatch({ cat, law_code, law_name }, { relevant, note 
 }
 
 // ── ขั้น 2 · มอบหมายให้หน่วยงาน (ผู้ประเมิน) — แตกเป็นงานย่อยต่อหน่วยงาน ─────────
-// depts = [{ id, name }]; ขึ้นทะเบียนจริง (สร้าง law + requirements) เพื่อให้มีข้อกำหนดให้ประเมิน
+// depts = [{ id, name }]; ขึ้นทะเบียนจริง (สร้าง law + requirements) เพื่อให้มีข้อปฏิบัติให้ประเมิน
 export async function assignBatch(batch, rows, depts, { dueDate, by: byArg } = {}) {
   const by = byArg || currentUserName()   // TODO(auth): map เป็น auth.users id เมื่อทำบัญชีผู้ใช้รายคน
   const law = await addStagedLaw(rows)   // สร้าง lg_laws + lg_requirements, set staging 'added', log 'import'
@@ -774,7 +774,7 @@ export async function assignBatch(batch, rows, depts, { dueDate, by: byArg } = {
   return law
 }
 
-// ── ขั้น 3 · ประเมินรายข้อกำหนด (C = met / NC = unmet) — บังคับชื่อผู้ประเมิน ──────
+// ── ขั้น 3 · ประเมินรายข้อปฏิบัติ (C = met / NC = unmet) — บังคับชื่อผู้ประเมิน ──────
 export async function assessRequirement(req, law, status, assessorName) {
   const { error } = await supabase.from('lg_requirements')
     .update({ status, evaluated_at: new Date().toISOString(), evaluated_by: assessorName }).eq('id', req.id)
@@ -829,7 +829,7 @@ export async function closeImprovementPlan(plan, { evidence }) {
   }
   await supabase.from('lg_notification_log').insert({
     type: 'plan_closed', ref_id: plan.id, ref_type: 'plan',
-    message: 'ปิดแผนปรับปรุงแล้ว — พลิกข้อกำหนดเป็นสอดคล้อง (C)', due_date: null,
+    message: 'ปิดแผนปรับปรุงแล้ว — พลิกข้อปฏิบัติเป็นสอดคล้อง (C)', due_date: null,
   })
   await logActivity({ action: 'plan_close', law_id: plan.law_id || null,
     detail: 'ปิดแผนปรับปรุง + พลิก NC→C: ' + (plan.plan_text || '').slice(0, 60) })
@@ -908,6 +908,12 @@ export async function deleteDiscoveredLaw(id) {
 export async function fetchWorkflow() {
   if (!hasSupabase) return []
   const { data } = await supabase.from('lg_law_workflow').select('*').order('created_at', { ascending: false })
+  return data || []
+}
+// P16 · รวมงานที่ต้องทำจาก 3 แหล่ง (view lg_tasks) — อ่านสำหรับหน้า "รายการที่ต้องทำ"
+export async function fetchTasks() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_tasks').select('*').order('due_date', { ascending: true, nullsFirst: false })
   return data || []
 }
 export function subscribeWorkflow(onChange) {

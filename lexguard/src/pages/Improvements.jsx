@@ -11,7 +11,7 @@ export default function Improvements({ laws, catMap, onOpen }) {
         <div style={{width:56,height:56,borderRadius:12,background:'var(--ok-bg)',color:'var(--ok)',display:'grid',placeItems:'center',margin:'0 auto 16px',fontSize:24}}>
           ✓
         </div>
-        <div style={{fontSize:18,fontWeight:700}}>ทุกข้อกำหนดสอดคล้องครบถ้วน</div>
+        <div style={{fontSize:18,fontWeight:700}}>ทุกข้อปฏิบัติสอดคล้องครบถ้วน</div>
         <div style={{fontSize:13,color:'var(--ink-faint)',marginTop:6}}>ไม่มีรายการที่ต้องปรับปรุงในขณะนี้</div>
       </div>
     </div>
@@ -21,7 +21,7 @@ export default function Improvements({ laws, catMap, onOpen }) {
     <div className="view">
       <div className="ai-box" style={{marginBottom:16,borderLeftColor:'var(--warn)'}}>
         <span className="ai-tag" style={{color:'var(--warn)'}}>แผนปรับปรุง / ปิด NC — อ้างอิง PD-05</span>
-        <p style={{marginBottom:0}}>รายการข้อกำหนดที่ยังไม่สอดคล้อง <b>{totalNc} ข้อ</b> จาก <b>{ncLaws.length} กฎหมาย</b> — คลิกที่รายการเพื่อเปิดรายละเอียดและอัปเดตสถานะ</p>
+        <p style={{marginBottom:0}}>รายการข้อปฏิบัติที่ยังไม่สอดคล้อง <b>{totalNc} ข้อ</b> จาก <b>{ncLaws.length} กฎหมาย</b> — คลิกที่รายการเพื่อเปิดรายละเอียดและอัปเดตสถานะ</p>
       </div>
       {ncLaws.map(l=>{
         const ncReqs=l.reqs.filter(r=>r.status==='unmet')

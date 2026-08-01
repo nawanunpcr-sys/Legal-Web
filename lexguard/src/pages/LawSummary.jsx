@@ -68,7 +68,7 @@ const reqRowsToLines = rows => rows
   .map(r => `${r.section_ref ? r.section_ref + ': ' : ''}${r.req_text || ''}`.trim())
   .filter(Boolean)
 
-/* ── แถวข้อกำหนดแบบแก้ไขได้ ── */
+/* ── แถวข้อปฏิบัติแบบแก้ไขได้ ── */
 function ReqRow({ r, i, onChange, onRemove, suggest }) {
   const set = (k, v) => onChange(i, { ...r, [k]: v })
   return (
@@ -76,7 +76,7 @@ function ReqRow({ r, i, onChange, onRemove, suggest }) {
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
         <span className="num" style={{ paddingTop: 9, minWidth: 22, color: 'var(--ink-faint)' }}>{i + 1}.</span>
         <input className="form-input" style={{ marginTop: 0, maxWidth: 130 }} value={r.section_ref} onChange={e => set('section_ref', e.target.value)} placeholder="มาตรา/ข้อ" />
-        <textarea className="form-input" rows={1} style={{ marginTop: 0 }} value={r.req_text} onChange={e => set('req_text', e.target.value)} placeholder="เนื้อหาข้อกำหนด…" />
+        <textarea className="form-input" rows={1} style={{ marginTop: 0 }} value={r.req_text} onChange={e => set('req_text', e.target.value)} placeholder="เนื้อหาข้อปฏิบัติ…" />
         <button className="btn btn-ghost" style={{ padding: '7px 9px' }} onClick={() => onRemove(i)}><I n="x" /></button>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 6, marginLeft: 30 }}>
@@ -200,7 +200,7 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
           <label className="form-label" style={{ marginTop: 8 }}>เอกสาร/แบบฟอร์มที่เกี่ยวข้อง</label>
           <input className="form-input" style={{ marginTop: 0 }} value={law.documents || ''} onChange={e => setLawField('documents', e.target.value)} />
 
-          <div className="sec-t" style={{ marginTop: 14, display: 'flex' }}>ข้อกำหนด ({reqs.length})
+          <div className="sec-t" style={{ marginTop: 14, display: 'flex' }}>ข้อปฏิบัติ ({reqs.length})
             <button className="btn btn-ghost" style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 12 }} onClick={() => setReqs(p => [...p, { section_ref: '', req_text: '', responsible: '', frequency: '', documents: '' }])}><I n="plus" />เพิ่มข้อ</button>
           </div>
           {reqs.map((r, i) => <ReqRow key={i} r={r} i={i} onChange={setReq} onRemove={rmReq} suggest={suggest} />)}
@@ -256,7 +256,7 @@ function QueueBar({ discovered, onReload, onAddToRegistry }) {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{d.law_name}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 2 }}>
-                    {d.ministry || '—'}{d.announced_date ? ' · ประกาศ ' + thDate(d.announced_date) : ''} · {summ.length} ข้อกำหนด</div>
+                    {d.ministry || '—'}{d.announced_date ? ' · ประกาศ ' + thDate(d.announced_date) : ''} · {summ.length} ข้อปฏิบัติ</div>
                   {summ[0] && <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 3 }}>{summ[0].slice(0, 90)}{summ[0].length > 90 ? '…' : ''}</div>}
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -348,7 +348,7 @@ function LibraryZone({ laws, cats, catMap, onOpenLaw, onReloadLaws, onAddToRegis
     <div style={{ marginTop: 22 }}>
       <div className="sec-t" style={{ margin: '0 0 10px' }}>คลังสรุปกฎหมาย ({laws.length})</div>
       <div className="filterbar" style={{ alignItems: 'center' }}>
-        <input className="form-input" style={{ maxWidth: 260, margin: 0 }} placeholder="ค้นหารหัส/ชื่อ/เนื้อหาข้อกำหนด…" value={q} onChange={e => setQ(e.target.value)} />
+        <input className="form-input" style={{ maxWidth: 260, margin: 0 }} placeholder="ค้นหารหัส/ชื่อ/เนื้อหาข้อปฏิบัติ…" value={q} onChange={e => setQ(e.target.value)} />
         <span className={'chip' + (cat === 'all' ? ' active' : '')} onClick={() => setCat('all')}>ทุกหมวด</span>
         {usedCats.map(c => <span key={c} className={'chip' + (cat === c ? ' active' : '')} onClick={() => setCat(c)}>{c}</span>)}
       </div>

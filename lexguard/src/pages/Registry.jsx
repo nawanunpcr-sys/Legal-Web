@@ -86,7 +86,7 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
     workflow=[],suggest={},onAssess,focus,onDelete,
     monthsData=[],monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws}){
   const kpis=[
-    {lab:'ข้อกำหนดทั้งหมด',   val:stats.req, accent:'#1C2431'},
+    {lab:'ข้อปฏิบัติทั้งหมด',   val:stats.req, accent:'#1C2431'},
     {lab:'ผ่านการประเมิน (C)', val:stats.met, accent:'#5F7A61'},
     {lab:'ยังไม่สอดคล้อง (NC)', val:stats.nc, accent:'#B4553F'},
   ]
@@ -113,8 +113,8 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
 }
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
-// จัดลำดับหมวด: LA→LG ก่อน แล้ว CCS (CC) ท้ายสุด
-const catOrder=(a,b)=>((a==='CC')-(b==='CC'))||a.localeCompare(b)
+// จัดลำดับหมวด: LA→LG
+const catOrder=(a,b)=>a.localeCompare(b)
 function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259,onAddLaw,
     workflow=[],suggest={},onAssess,focus,onDelete}){
   const { can }=useAuth()
@@ -148,11 +148,11 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   function exportSel(){ const m=Object.fromEntries(cats.map(c=>[c.code,c])); exportLawsToExcel(laws.filter(l=>sel.has(l.id)),m); }
   const catsList=[...new Set(laws.map(l=>l.cat))].sort(catOrder)
   const q=search.toLowerCase()
-  // ค้นหา (item 7): รหัส · ชื่อกฎหมาย · กระทรวง (ตรงกับชื่อ/รหัส) — Task 3.3 แยกกรณี match จากข้อกำหนด
+  // ค้นหา (item 7): รหัส · ชื่อกฎหมาย · กระทรวง (ตรงกับชื่อ/รหัส) — Task 3.3 แยกกรณี match จากข้อปฏิบัติ
   const nameHit=l=>l.code.toLowerCase().includes(q)||l.name.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)
   const reqHit=l=>(l.reqs||[]).find(r=>(r.text||'').toLowerCase().includes(q)||(r.responsible||'').toLowerCase().includes(q))
   const matchQ=l=>!q||nameHit(l)||!!reqHit(l)
-  // ข้อความข้อกำหนดที่เจอ (แสดงใต้ชื่อกฎหมาย) — เฉพาะแถวที่ match จากข้อกำหนด ไม่ใช่ชื่อ/รหัส
+  // ข้อความข้อปฏิบัติที่เจอ (แสดงใต้ชื่อกฎหมาย) — เฉพาะแถวที่ match จากข้อปฏิบัติ ไม่ใช่ชื่อ/รหัส
   const reqMatchText=l=>{ if(!q||nameHit(l)) return null; const r=reqHit(l); return r?(r.text||r.responsible||''):null }
   const rows=laws.filter(l=>(cat==='all'||l.cat===cat)
     &&(act==='all'||(act==='active'?l.active!==false:l.active===false))
@@ -351,7 +351,7 @@ function ComplianceLawRow({l,onToggle,onOpen}){
   return (
     <div style={{borderBottom:'1px solid var(--line-soft)'}}>
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',paddingLeft:8}}>
-        <button onClick={()=>setOpen(o=>!o)} title="กางข้อกำหนด" style={{border:'none',background:'none',cursor:'pointer',color:'var(--ink-faint)',width:18}}>{open?'▾':'▸'}</button>
+        <button onClick={()=>setOpen(o=>!o)} title="กางข้อปฏิบัติ" style={{border:'none',background:'none',cursor:'pointer',color:'var(--ink-faint)',width:18}}>{open?'▾':'▸'}</button>
         <span className="law-code">{l.code}</span>
         <span style={{fontSize:13,flex:1,cursor:'pointer'}} onClick={()=>setOpen(o=>!o)}>{l.name.slice(0,60)}{l.name.length>60?'…':''}</span>
         <span style={{fontSize:12,color:'var(--ink-faint)'}} className="num">{met}/{l.reqs.length} ข้อ</span>
@@ -360,7 +360,7 @@ function ComplianceLawRow({l,onToggle,onOpen}){
       </div>
       {open && (
         <div style={{paddingLeft:34,paddingBottom:10}}>
-          {l.reqs.length===0 && <div style={{fontSize:12,color:'var(--ink-faint)',padding:'4px 0'}}>ไม่มีข้อกำหนด</div>}
+          {l.reqs.length===0 && <div style={{fontSize:12,color:'var(--ink-faint)',padding:'4px 0'}}>ไม่มีข้อปฏิบัติ</div>}
           {l.reqs.map(r=>(
             <div key={r.id} style={{display:'flex',gap:9,padding:'6px 0',alignItems:'flex-start'}}>
               <button onClick={()=>onToggle(l,r)} disabled={!can('edit')} title={can('edit')?'สลับ สอดคล้อง/ยังไม่สอดคล้อง':NO_PERM}
@@ -378,7 +378,7 @@ function ComplianceLawRow({l,onToggle,onOpen}){
 function Compliance({laws,cats,onOpen,onToggle}){
   const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
   return <div className="view">
-    <div className="panel" style={{marginTop:0}}><div className="panel-h"><h3>สถานะรายหมวด / ลำดับชั้นกฎหมาย</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกที่กฎหมายเพื่อดูข้อกำหนดและแก้ไข</span></div>
+    <div className="panel" style={{marginTop:0}}><div className="panel-h"><h3>สถานะรายหมวด / ลำดับชั้นกฎหมาย</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกที่กฎหมายเพื่อดูข้อปฏิบัติและแก้ไข</span></div>
       <div className="panel-b">
         {cats.filter(c=>byCat[c.code]).map(c=>{
           let r=0,m=0; byCat[c.code].forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++}))

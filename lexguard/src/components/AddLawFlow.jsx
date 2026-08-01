@@ -137,7 +137,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
                 <span style={{fontSize:16,lineHeight:1}}>⚠️</span>
                 <div style={{flex:1}}>
                   <b>ตรวจกับต้นฉบับก่อนบันทึก</b>
-                  <div style={{marginTop:2}}>ข้อมูลชุดนี้มาจาก AI สรุปกฎหมาย — โปรดตรวจทานชื่อ เลขประกาศ วันที่ และข้อกำหนด กับราชกิจจานุเบกษาต้นฉบับก่อนบันทึกเข้าทะเบียน</div>
+                  <div style={{marginTop:2}}>ข้อมูลชุดนี้มาจาก AI สรุปกฎหมาย — โปรดตรวจทานชื่อ เลขประกาศ วันที่ และข้อปฏิบัติ กับราชกิจจานุเบกษาต้นฉบับก่อนบันทึกเข้าทะเบียน</div>
                   <div style={{marginTop:8}}>
                     {srcUrl
                       ? <button type="button" className="btn btn-ghost" style={{padding:'4px 10px',fontSize:12}} onClick={()=>window.open(srcUrl,'_blank','noopener')}>เปิดต้นฉบับ (PDF) ↗</button>
@@ -216,7 +216,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
               </div>
               <label className="form-label">เอกสารที่เกี่ยวข้อง</label>
               <input className="form-input" type="text" value={docList} onChange={e=>setDocList(e.target.value)}/>
-              <label className="form-label">สาระสำคัญ / ข้อกำหนด (1 ข้อ ต่อบรรทัด)</label>
+              <label className="form-label">สาระสำคัญ / ข้อปฏิบัติ (1 ข้อ ต่อบรรทัด)</label>
               <textarea className="form-input" rows={4} placeholder="เช่น จัดให้มี จป.วิชาชีพ…" value={reqText} onChange={e=>setReqText(e.target.value)}/>
             </div>)}
 

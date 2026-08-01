@@ -152,7 +152,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
       frequency:   editForm.frequency.trim()   || null,
       documents:   editForm.documents.trim()   || null,
     }
-    if(!patch.text){ toast('ข้อความข้อกำหนดห้ามว่าง'); return }
+    if(!patch.text){ toast('ข้อความข้อปฏิบัติห้ามว่าง'); return }
     setSavingReq(true)
     try{
       await updateRequirementField(r.id, patch)
@@ -160,7 +160,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
       const idx = law.reqs.findIndex(x=>x.id===r.id)   // keep local copy in sync (prog/summary)
       if(idx>=0) law.reqs[idx] = { ...law.reqs[idx], ...patch }
       setEditingId(null)
-      toast('บันทึกข้อกำหนดแล้ว','success')
+      toast('บันทึกข้อปฏิบัติแล้ว','success')
     }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
     finally{ setSavingReq(false) }
   }
@@ -209,7 +209,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
           <div className="meta">
             <span>{law.ministry||'—'}</span>
             {law.issue_date && <span>{law.issue_date}</span>}
-            <span>{law.reqs.length} ข้อกำหนด</span>
+            <span>{law.reqs.length} ข้อปฏิบัติ</span>
             {law.law_type && <span>{law.law_type}</span>}
           </div>
           {law.source_url && (
@@ -260,7 +260,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
           {!isRepealed && (
             <div className="sec">
               <div className="sec-t">
-                ข้อกำหนด & การประเมิน
+                ข้อปฏิบัติ & การประเมิน
                 <span style={{marginLeft:'auto',color:p===100?'var(--ok)':'var(--bad)'}}>{p}%</span>
               </div>
               <p style={{fontSize:11.5,color:'var(--ink-faint)',marginBottom:10}}>คลิกกล่องสถานะเพื่อสลับ สอดคล้อง ↔ ยังไม่สอดคล้อง (บันทึกอัตโนมัติ)</p>
@@ -284,7 +284,7 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
                       <div style={{display:'flex',flexDirection:'column',gap:8}}>
                         <textarea className="form-input" rows={5} value={editForm.text}
                           onChange={e=>setEditForm(f=>({...f,text:e.target.value}))}
-                          placeholder="ข้อความข้อกำหนด…" style={{resize:'vertical',whiteSpace:'pre-wrap'}} autoFocus/>
+                          placeholder="ข้อความข้อปฏิบัติ…" style={{resize:'vertical',whiteSpace:'pre-wrap'}} autoFocus/>
                         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
                           <input className="form-input" value={editForm.responsible} onChange={e=>setEditForm(f=>({...f,responsible:e.target.value}))} placeholder="ผู้รับผิดชอบ"/>
                           <input className="form-input" value={editForm.frequency} onChange={e=>setEditForm(f=>({...f,frequency:e.target.value}))} placeholder="ความถี่"/>
@@ -313,14 +313,14 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
                           onChange={e=>{ const f=e.target.files?.[0]; attachEvidence(r,f); e.target.value='' }}/>
                       </label>
                       <button className="b" style={{cursor:can('edit')?'pointer':'not-allowed',opacity:can('edit')?1:.55,background:'none'}}
-                        disabled={!can('edit')} title={can('edit')?'แก้ไขข้อกำหนด':NO_PERM} onClick={()=>startEdit(r)}>แก้ไข</button>
+                        disabled={!can('edit')} title={can('edit')?'แก้ไขข้อปฏิบัติ':NO_PERM} onClick={()=>startEdit(r)}>แก้ไข</button>
                     </div>
                     {r.status==='unmet' && r.note && <div className="note">{r.note}</div>}
                     </>)}
                   </div>
                 </div>
               )})}
-              {law.reqs.length===0 && <p style={{fontSize:13,color:'var(--ink-faint)'}}>ยังไม่มีข้อกำหนดบันทึกไว้</p>}
+              {law.reqs.length===0 && <p style={{fontSize:13,color:'var(--ink-faint)'}}>ยังไม่มีข้อปฏิบัติบันทึกไว้</p>}
             </div>
           )}
 
