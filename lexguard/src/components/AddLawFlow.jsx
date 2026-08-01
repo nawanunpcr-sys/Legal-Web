@@ -11,6 +11,21 @@ import { nextCode, thDate, findLawDuplicate, beToISO, isoToBE, isFreeformDate } 
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
 
+// P20b · ประเภทกฎหมาย (law_type) — ตัวเลือกในฟอร์ม
+const LAW_TYPE_OPTIONS = ['พ.ร.บ.', 'พ.ร.ก.', 'พ.ร.ฎ.', 'กฎกระทรวง', 'ประกาศ', 'ระเบียบ', 'คำสั่ง', 'อื่นๆ']
+// map ค่า type ที่ AI ส่งมา (เช่น "พระราชบัญญัติ", "ประกาศกระทรวง…") → ตัวเลือกในฟอร์ม
+function mapLawType(t) {
+  const s = String(t || '')
+  if (/พระราชบัญญัติ|พ\.?ร\.?บ/.test(s)) return 'พ.ร.บ.'
+  if (/พระราชกำหนด|พ\.?ร\.?ก/.test(s)) return 'พ.ร.ก.'
+  if (/พระราชกฤษฎีกา|พ\.?ร\.?ฎ/.test(s)) return 'พ.ร.ฎ.'
+  if (/กฎกระทรวง/.test(s)) return 'กฎกระทรวง'
+  if (/ประกาศ/.test(s)) return 'ประกาศ'
+  if (/ระเบียบ/.test(s)) return 'ระเบียบ'
+  if (/คำสั่ง/.test(s)) return 'คำสั่ง'
+  return s ? 'อื่นๆ' : ''
+}
+
 // summary jsonb → [{text}] (รองรับ array ของ string หรือ object)
 function summaryToReqs(summary) {
   if (!summary) return []
@@ -65,6 +80,12 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const isPrefill = !!initialData
   const srcUrl = initialData?.law?.source_url || initialData?.source_url || ''
   const [verified, setVerified] = useState(false)
+  // P20b · แหล่งที่มา (ลิงก์ตัวบท) + ประเภทกฎหมาย — ต้องแสดงตลอด (เดิมไม่มีช่องเลย → ฐานว่าง 150/150)
+  const [sourceUrl, setSourceUrl] = useState(srcUrl)
+  const [skipSource, setSkipSource] = useState(false)
+  const [lawType, setLawType] = useState(mapLawType(il.type))
+  const srcValid = /^https?:\/\//i.test(sourceUrl.trim())
+  const srcOk = srcValid || skipSource
   // P20 · ย่อฟอร์ม: ข้อมูลเพิ่มเติม (ลำดับชั้น/กระทรวง/วันที่/เอกสาร) พับไว้ — กางอัตโนมัติถ้า prefill มีข้อมูล
   const [advOpen, setAdvOpen] = useState(() => !!(il.ministry || il.announce_date || il.effective_date || il.documents))
 
@@ -82,7 +103,8 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const chosenCount = activeRows.filter(r => r.choice).length
   const allChosen = activeRows.every(r => r.choice)
   const waitingOk = activeRows.filter(r => r.choice === 'waiting').every(r => r.responsible.trim())
-  const respOptions = [...new Set((suggest.responsibles || []).filter(Boolean))]
+  // P20c · datalist ผู้รับผิดชอบ = แผนกจาก lg_departments (มาก่อน) + ชื่อที่ทีมเคยพิมพ์ไว้ (ไม่ให้หาย) — dedupe คงลำดับ
+  const respOptions = [...new Set([...(suggest.departments || []), ...(suggest.responsibles || [])].filter(Boolean))]
 
   useEffect(() => { let alive = true
     fetchDiscoveredLaws().then(d => { if (alive) { setDiscovered(d.filter(x => x.status !== 'registered')); setLoadingDisc(false) } })
@@ -116,7 +138,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   }
 
   // P15·T1 · prefill ต้องติ๊กยืนยันตรวจทานก่อน · P18 · ทุกข้อต้องเลือกผลประเมิน + ข้อที่ "รอ" ต้องมีผู้รับผิดชอบ
-  const valid = owner.trim() && selId && cat && name.trim() && (!isPrefill || verified) && allChosen && waitingOk
+  const valid = owner.trim() && selId && cat && name.trim() && (!isPrefill || verified) && allChosen && waitingOk && srcOk
 
   async function submit(force = false) {
     if (!valid || saving) return
@@ -140,8 +162,10 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
         frequency: r.frequency || '', documents: r.documents || '',
       }))
       const { law } = await onCreate({
-        lawFields: { code: previewCode, cat, name: name.trim(), hierarchy_level: level, ministry,
-          announce_date: announce, effective_date: effective, doc_list: docList },
+        lawFields: { code: previewCode, cat, name: name.trim(), hierarchy_level: level, law_type: lawType || null, ministry,
+          announce_date: announce, effective_date: effective, doc_list: docList,
+          responsible: owner.trim() || null,   // P20b · ผู้รับผิดชอบระดับกฎหมาย (เดิมไม่เคยเขียน)
+          source_url: srcValid ? sourceUrl.trim() : null },
         reqs, ownerName: owner.trim(), discovered: disc, verifiedFromAI: isPrefill,
       })
       // บันทึกการยืนยันเพิ่มทั้งที่ระบบเตือน
@@ -184,10 +208,12 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
                 </div>
               </div>
             )}
+            {/* P20c · datalist ผู้รับผิดชอบ (แผนก + ชื่อเดิม) — render ครั้งเดียว ใช้ร่วมทั้งช่อง owner และช่อง waiting */}
+            <datalist id="lg-resp-suggest">{respOptions.map(x=><option key={x} value={x}/>)}</datalist>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
               <div>
                 <label className="form-label">ผู้รับผิดชอบ / ผู้ติดตาม <span style={{color:'var(--bad)'}}>*</span></label>
-                <input className="form-input" placeholder="พิมพ์ชื่อผู้รับผิดชอบ/ผู้ติดตาม…" value={owner} onChange={e=>setOwner(e.target.value)}/>
+                <input className="form-input" list="lg-resp-suggest" placeholder="พิมพ์ชื่อผู้รับผิดชอบ/แผนก…" value={owner} onChange={e=>setOwner(e.target.value)}/>
               </div>
               <div>
                 <label className="form-label">วันที่บันทึก</label>
@@ -233,6 +259,28 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
               </select>
               <label className="form-label">ชื่อกฎหมาย <span style={{color:'var(--bad)'}}>*</span></label>
               <textarea className="form-input" rows={2} value={name} onChange={e=>changeName(e.target.value)}/>
+
+              {/* P20b · ประเภทกฎหมาย — แสดงตลอด */}
+              <label className="form-label">ประเภทกฎหมาย</label>
+              <select className="form-input" value={lawType} onChange={e=>setLawType(e.target.value)}>
+                <option value="">— เลือกประเภท —</option>
+                {LAW_TYPE_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+
+              {/* P20b · ลิงก์แหล่งที่มา (ตัวบทจริง) — แสดงตลอด · บังคับกรอกหรือกดข้ามเอง */}
+              <label className="form-label">ลิงก์แหล่งที่มา (ราชกิจจานุเบกษา / ตัวบท) <span style={{color:'var(--bad)'}}>*</span></label>
+              <input className="form-input" type="url" placeholder="https://ratchakitcha.soc.go.th/…"
+                value={sourceUrl} onChange={e=>{ setSourceUrl(e.target.value); setSkipSource(false) }}/>
+              {sourceUrl.trim() && !srcValid && (
+                <div style={{fontSize:11.5,color:'var(--bad)',marginTop:3}}>ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://</div>
+              )}
+              {!srcValid && (
+                <div style={{marginTop:5,fontSize:11.5}}>
+                  {skipSource
+                    ? <span style={{color:'var(--warn)'}}>⚠ ข้ามลิงก์แหล่งที่มาไว้ก่อน — เพิ่มภายหลังได้ที่หน้าทะเบียน <button type="button" className="req-bulk" onClick={()=>setSkipSource(false)}>ยกเลิกการข้าม</button></span>
+                    : <span style={{color:'var(--ink-faint)'}}>ยังไม่มีลิงก์ตัวบท? <button type="button" className="req-bulk" onClick={()=>setSkipSource(true)}>ข้ามไปก่อน (ยืนยันเอง)</button></span>}
+                </div>
+              )}
 
               {/* P20 · ข้อมูลเพิ่มเติม (ไม่บังคับ) — พับไว้ */}
               <button type="button" onClick={()=>setAdvOpen(o=>!o)}
@@ -298,7 +346,6 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
                   )}
                 </div>
               ))}
-              <datalist id="lg-resp-suggest">{respOptions.map(x=><option key={x} value={x}/>)}</datalist>
               <button type="button" className="btn btn-ghost" style={{padding:'5px 12px',fontSize:12.5}} onClick={addRow}><I n="plus"/>เพิ่มข้อปฏิบัติ</button>
             </div>)}
 

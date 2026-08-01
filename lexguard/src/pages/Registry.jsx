@@ -3,14 +3,14 @@
 // Moved verbatim from App.jsx (pure refactor).
 // P19 · รับ History + Repealed เข้ามาเป็นแท็บในหน้าเดียว (ลดเมนูหลักเหลือ 4 อัน)
 import { useState, useMemo, useEffect } from 'react'
-import { LAW_TYPES } from '../lib/supabase.js'
+import { LAW_TYPES, fetchStaging } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import AssessForm from '../components/AssessForm.jsx'
 import DeleteLawModal from '../components/DeleteLawModal.jsx'
 import ImportLawsModal from '../components/ImportLawsModal.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
-import { usePageFilters, Pill, ActiveBadge, thDate, TH_MONTHS, prog, lawBEYear, sumReqStats, reqStats, reqKind, reqEvalTitle } from '../lib/ui.jsx'
+import { usePageFilters, Pill, Tag, ActiveBadge, thDate, TH_MONTHS, prog, lawBEYear, sumReqStats, reqStats, reqKind, reqEvalTitle } from '../lib/ui.jsx'
 import History from './History.jsx'
 import Repealed from './Repealed.jsx'
 
@@ -146,10 +146,42 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
 /* ─────────────────────────── REGISTER ─────────────────────────── */
 // จัดลำดับหมวด: LA→LG
 const catOrder=(a,b)=>a.localeCompare(b)
+
+// P20d · รายการที่ค้างรออนุมัติใน lg_import_staging (ดูอย่างเดียว — ไม่ลบ/แก้ข้อมูล)
+function StagingModal({ laws=[], catMap={}, onClose }){
+  return (<>
+    <div className="scrim" style={{zIndex:300}} onClick={onClose}/>
+    <div className="modal" style={{zIndex:301,width:620,maxWidth:'94vw'}}>
+      <div className="modal-head"><h3>รายการรออนุมัติเข้าทะเบียน ({laws.length})</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
+      <div className="modal-body">
+        <div style={{fontSize:12.5,color:'var(--ink-faint)',marginBottom:12,lineHeight:1.6}}>
+          รายการเหล่านี้ค้างอยู่ใน staging (เสนอเข้าทะเบียนแต่ยังไม่อนุมัติ) — ตรวจแล้วเพิ่มเข้าทะเบียนได้ที่ปุ่ม “เพิ่มกฎหมาย” หรือปล่อยไว้ก็ได้ (ไม่ถูกลบ)
+        </div>
+        {laws.map((l,i)=>(
+          <div key={i} className="panel" style={{padding:'10px 14px',marginBottom:8,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+            <Tag c={l.cat} color={catMap[l.cat]?.color}/>
+            <span className="law-code">{l.law_code}</span>
+            <span style={{flex:1,minWidth:180,fontSize:13}}>{(l.law_name||'').slice(0,70)}</span>
+            <span style={{fontSize:11.5,color:'var(--ink-faint)'}}>{l.ministry||'—'}</span>
+            <span style={{fontSize:11.5,color:'var(--ink-faint)'}}>{l.reqs} ข้อ</span>
+          </div>
+        ))}
+        {laws.length===0 && <div style={{textAlign:'center',color:'var(--ink-faint)',padding:24,fontSize:13}}>ไม่มีรายการรออนุมัติ</div>}
+      </div>
+      <div className="modal-foot"><button className="btn btn-primary" onClick={onClose}>ปิด</button></div>
+    </div>
+  </>)
+}
+
 function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259,onAddLaw,onImported,
     workflow=[],suggest={},onAssess,focus,onDelete}){
   const { can }=useAuth()
   const [showImport,setShowImport]=useState(false)   // P20 · CSV import modal
+  // P20d · รายการรออนุมัติใน lg_import_staging (badge ข้างปุ่มเพิ่มกฎหมาย)
+  const [staging,setStaging]=useState([])
+  const [showStaging,setShowStaging]=useState(false)
+  useEffect(()=>{ let live=true; fetchStaging().then(r=>{ if(live) setStaging(r) }).catch(()=>{}); return ()=>{ live=false } },[])
+  const stagingLaws=useMemo(()=>{ const m={}; staging.forEach(r=>{ const k=(r.cat||'')+'|'+r.law_code; (m[k]=m[k]||{cat:r.cat,law_code:r.law_code,law_name:r.law_name,ministry:r.ministry,created_at:r.created_at,reqs:0}).reqs++ }); return Object.values(m) },[staging])
   // Task 6.1 · จำ filter ต่อหน้า (lg_filters.registry)
   const [f,setF,resetF,filterActive]=usePageFilters('registry',{cat:'all',act:'all',sortKey:'code',sortDir:1})
   const {cat,act,sortKey,sortDir}=f
@@ -228,9 +260,18 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
         return <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>
           {hasFilter?`Export (${rows.length} ฉบับตามตัวกรอง)`:`ส่งออกทั้งหมด (${rows.length})`}</button> })()}
       <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} disabled={!can('edit')} title={can('edit')?'นำเข้ากฎหมายเป็นชุดจากไฟล์ CSV':NO_PERM} onClick={()=>setShowImport(true)}><I n="download"/>นำเข้าจาก CSV</button>
-      <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')||!onAddLaw} title={can('edit')?'':NO_PERM} onClick={()=>onAddLaw&&onAddLaw()}><I n="plus"/>เพิ่มกฎหมาย</button>
+      <div style={{position:'relative',display:'inline-flex'}}>
+        <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')||!onAddLaw} title={can('edit')?'':NO_PERM} onClick={()=>onAddLaw&&onAddLaw()}><I n="plus"/>เพิ่มกฎหมาย</button>
+        {stagingLaws.length>0 && (
+          <button title={`มี ${stagingLaws.length} รายการรออนุมัติเข้าทะเบียน — คลิกเพื่อดู`} onClick={()=>setShowStaging(true)}
+            style={{position:'absolute',top:-8,right:-8,minWidth:20,height:20,padding:'0 5px',borderRadius:999,border:'2px solid var(--surface)',background:'var(--warn)',color:'#fff',fontSize:11,fontWeight:800,cursor:'pointer',lineHeight:1}}>
+            {stagingLaws.length}
+          </button>
+        )}
+      </div>
     </div>
     {showImport && <ImportLawsModal cats={cats} allLaws={allLaws} onClose={()=>setShowImport(false)} onImported={()=>onImported&&onImported()}/>}
+    {showStaging && <StagingModal laws={stagingLaws} catMap={catMap} onClose={()=>setShowStaging(false)}/>}
     {sel.size>0 && (
       <div className="bulkbar">
         <b>เลือก {sel.size} ฉบับ</b>
@@ -280,7 +321,9 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
                 <tbody>{[...grouped[c][t.level]].sort(sortCmp).map(l=>{ const openWf=openWfByLaw[l.id]; const pending=openWf?.status==='รอประเมิน'; return (
                   <tr key={l.id} id={'reg-law-'+l.id} className={(sel.has(l.id)?'row-sel':'')+(flashId===l.id?' row-flash':'')} style={l.active===false?{opacity:.55}:null}>
                     <td onClick={e=>{e.stopPropagation();toggleSel(l.id)}} style={{textAlign:'center'}}><input type="checkbox" checked={sel.has(l.id)} onChange={()=>toggleSel(l.id)} onClick={e=>e.stopPropagation()}/></td>
-                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/>{l.source_url&&<a href={l.source_url} target="_blank" rel="noreferrer" title="เปิดตัวบท (PDF)" onClick={e=>e.stopPropagation()} style={{fontSize:13,textDecoration:'none'}}>📄</a>}</div><div className="law-title">{l.name}</div>{(()=>{ const rt=reqMatchText(l); return rt?<div style={{fontSize:11.5,color:'var(--ink-faint)',marginTop:3,lineHeight:1.4}}>↳ {markSnippet(rt,q)}</div>:null })()}</td>
+                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/>{l.source_url
+                        ? <a href={l.source_url} target="_blank" rel="noopener noreferrer" title={"เปิดตัวบท: "+l.source_url} onClick={e=>e.stopPropagation()} style={{fontSize:12,textDecoration:'none',color:'var(--brand)',fontWeight:600}}>📄 แหล่งที่มา</a>
+                        : <span title="ยังไม่มีลิงก์ตัวบท — เปิดกฎหมายเพื่อเพิ่ม" style={{fontSize:10.5,color:'var(--ink-faint)',background:'var(--surface-3)',padding:'1px 7px',borderRadius:999}}>ไม่มีลิงก์แหล่งที่มา</span>}</div><div className="law-title">{l.name}</div>{(()=>{ const rt=reqMatchText(l); return rt?<div style={{fontSize:11.5,color:'var(--ink-faint)',marginTop:3,lineHeight:1.4}}>↳ {markSnippet(rt,q)}</div>:null })()}</td>
                     <td data-lb="กระทรวง" onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)',lineHeight:1.5}}>{l.ministry||'—'}</td>
                     {(()=>{ const d=splitLawDates(l); return <>
                     <td data-lb="วันที่ประกาศ" onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',lineHeight:1.5}}>{d.announce||'—'}</td>

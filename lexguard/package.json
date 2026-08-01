@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "LexGuard — ระบบทะเบียนกฎหมาย SHE และติดตามความสอดคล้อง (จัสเทล เน็ทเวิร์ค)",
+  "description": "ทะเบียนกฎหมาย SHE และการติดตามความสอดคล้อง",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

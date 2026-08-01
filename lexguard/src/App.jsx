@@ -4,7 +4,7 @@ import { supabase, hasSupabase, fetchAll,
          repealLaw, restoreLaw, createLaw, createLawFull, deleteLaw,
          markCommSent, updateCommSchedule, addComm, deleteComm,
          fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
-         logActivity, fetchActivity, fetchQuarterStats, suggestionLists,
+         logActivity, fetchActivity, fetchQuarterStats, suggestionLists, listDepartments,
          fetchReports, setReportEvent, markReportSubmitted, fetchTasks,
          fetchWorkflow, subscribeWorkflow, subscribeLaws, createAddWorkflow, createMonitorWorkflow,
          submitWorkflowAssessment, closeWorkflowPlan, fetchDiscoveredLaws, fetchSearchLog,
@@ -71,11 +71,12 @@ export default function App(){
     // backward-compat: the old split 'register'/'compliance' views are now one 'registry' view
     if(v==='register'||v==='compliance'){ try{ localStorage.setItem('cr_registry_mode', JSON.stringify(v==='compliance'?'compliance':'register')) }catch{} return 'registry' }
     // P17: ปฏิทินกฎหมาย + Process Tracker ยุบเป็นหน้าเดียว 'tasks' (รายการที่ต้องทำ)
-    if(v==='process'||v==='staging'||v==='assessment'||v==='plans'||v==='updates'||v==='tracker'||v==='calendar') return 'tasks'
+    if(v==='process'||v==='staging'||v==='assessment'||v==='plans'||v==='tracker'||v==='calendar') return 'tasks'
     if(v==='discovery'||v==='analysis') return 'summary'   // P12: รวมเป็นหน้า "สรุปกฎหมาย"
     if(v==='reports') return 'comm'       // P10: merged into สื่อสาร & ส่งรายงาน hub
     // P19: เมนูหลักเหลือ 4 อัน — history/repealed ยุบเป็นแท็บใน registry, notifications เหลือกระดิ่งบน header
-    if(v==='history'||v==='repealed') return 'registry'
+    // P20d: 'updates' = หน้าเฝ้าระวังกฎหมายเดิม (flow ตายแล้ว) → ชี้ไปทะเบียน กัน bookmark เดิมพัง
+    if(v==='history'||v==='repealed'||v==='updates') return 'registry'
     if(v==='notifications') return 'dashboard'
     return v }catch{ return 'dashboard' } })
   const [dark,setDark]     = useState(()=>{ try{ const v=localStorage.getItem('cr_dark'); return v==null?false:v==='1' }catch{ return false } })
@@ -104,6 +105,7 @@ export default function App(){
   const [taskRows,setTaskRows] = useState([])           // view lg_tasks — หน้า "รายการที่ต้องทำ" (P16/P17)
   const [discovered,setDiscovered] = useState([])        // lg_ai_discovered_laws (หน้าค้นหากฎหมาย AI)
   const [searchLog,setSearchLog] = useState([])          // lg_search_log (หลักฐานการติดตามกฎหมาย)
+  const [departments,setDepartments] = useState([])      // lg_departments — ช่วยเติมช่อง "ผู้รับผิดชอบ" (P20c)
   const [showAddLaw,setShowAddLaw] = useState(false)     // Workflow A · Process 1 wizard
   const [addLawInit,setAddLawInit] = useState(null)      // P12: prefill AddLawFlow จากหน้าสรุปกฎหมาย
   const [trackerFocus,setTrackerFocus] = useState(0)     // signal: คลิก badge/เมนู tracker → โฟกัสงานค้าง
@@ -154,9 +156,9 @@ export default function App(){
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, a, rp, st, wf, disc, slog, tk] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchReports(), fetchSettings(), fetchWorkflow(), fetchDiscoveredLaws(), fetchSearchLog(), fetchTasks()])
+      const [d, mData, a, rp, st, wf, disc, slog, tk, dept] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchReports(), fetchSettings(), fetchWorkflow(), fetchDiscoveredLaws(), fetchSearchLog(), fetchTasks(), listDepartments()])
       setCats(withCatColors(d.cats)); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setCurMonthRows(mData); setActivity(a); setReports(rp); setSettings(st); setWorkflowRows(wf); setDiscovered(disc); setSearchLog(slog); setTaskRows(tk)
+      setMonths(mData); setCurMonthRows(mData); setActivity(a); setReports(rp); setSettings(st); setWorkflowRows(wf); setDiscovered(disc); setSearchLog(slog); setTaskRows(tk); setDepartments(dept)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -188,7 +190,8 @@ export default function App(){
   const activeLaws  = useMemo(()=>laws.filter(l=>l.status!=='repealed'),[laws])
   const repealedLaws= useMemo(()=>laws.filter(l=>l.status==='repealed'),[laws])
   const lawMap      = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
-  const suggest     = useMemo(()=>suggestionLists(laws),[laws])
+  // P20c · แนบรายชื่อแผนก (lg_departments) เข้าไปกับ suggest เพื่อช่วยเติมช่องผู้รับผิดชอบ
+  const suggest     = useMemo(()=>({ ...suggestionLists(laws), departments: departments.map(dp=>dp.name) }),[laws,departments])
   const searchResults = useMemo(()=>{
     const q=search.trim().toLowerCase(); if(q.length<2) return []
     const out=[]
@@ -489,7 +492,7 @@ export default function App(){
           onKeyDown={e=>{ if(e.key==='Enter'||e.key===' ') setView('dashboard') }}>
           <div className="brand-mark">{settings.brand_mark||'CR'}</div>
           <h1>{settings.company_name||'Comply Register'}</h1>
-          <span>{settings.subtitle||'ทะเบียนกฎหมาย SHE และกฎหมายอื่นๆ ที่เกี่ยวข้อง'}</span>
+          <span>{settings.subtitle||'ทะเบียนกฎหมาย SHE'}</span>
         </div>
 
         {NAV_GROUPS.map((group,gi)=>(

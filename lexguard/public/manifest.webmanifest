@@ -1,7 +1,7 @@
 {
-  "name": "Comply Register · ทะเบียนกฎหมาย SHE และกฎหมายอื่นๆ ที่เกี่ยวข้อง",
+  "name": "Comply Register · ทะเบียนกฎหมาย SHE และการติดตามความสอดคล้อง",
   "short_name": "Comply Register",
-  "description": "ระบบทะเบียนกฎหมาย SHE และกฎหมายอื่นๆ ที่เกี่ยวข้อง และติดตามความสอดคล้อง",
+  "description": "ทะเบียนกฎหมาย SHE และการติดตามความสอดคล้อง",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

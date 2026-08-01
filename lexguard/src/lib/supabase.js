@@ -272,7 +272,7 @@ export async function createLaw({ code, cat, name, hierarchy_level, ministry, an
 }
 
 // Create a law together with its requirement sub-items (manual entry)
-export async function createLawFull({ code, cat, name, hierarchy_level, ministry, announce_date, effective_date, doc_list, responsible, review_date, source_url }, reqs = []) {
+export async function createLawFull({ code, cat, name, hierarchy_level, law_type, ministry, announce_date, effective_date, doc_list, responsible, review_date, source_url }, reqs = []) {
   const clean = (reqs || []).filter(r => (r.text || '').trim())
   const now = new Date().toISOString()
   const by = currentUserName()
@@ -304,6 +304,7 @@ export async function createLawFull({ code, cat, name, hierarchy_level, ministry
   const { data, error } = await supabase.from('lg_laws').insert({
     code, cat, name,
     hierarchy_level: hierarchy_level ? Number(hierarchy_level) : null,
+    law_type: law_type || null,   // P20b · ประเภทกฎหมาย (เดิมไม่เคยถูกเขียนลงฐาน)
     ministry: ministry || null,
     issue_date: announce_date || null,
     effective_date: effective_date || null,
@@ -455,6 +456,13 @@ export function suggestionLists(laws = []) {
   }
 }
 
+// P20c · รายชื่อแผนก (lg_departments) — ใช้ช่วยเติมช่อง "ผู้รับผิดชอบ" ในฟอร์มเพิ่มกฎหมาย
+export async function listDepartments() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_departments').select('id,name').eq('active', true).order('name')
+  return data || []
+}
+
 export async function restoreLaw(lawId) {
   const { data: before } = await supabase.from('lg_laws').select('cat,repeal_date').eq('id', lawId).maybeSingle()
   const { error } = await supabase.from('lg_laws').update({
@@ -553,15 +561,12 @@ export async function fetchQuarterStats() {
   return data || []
 }
 
-// ---- AI Skills: staging (import/approve) + update watcher ----
+// ---- AI Skills: staging (import/approve) ----
+// P20d · fetchStaging = รายการที่ค้างรออนุมัติใน lg_import_staging (ใช้กับ badge หน้าทะเบียน)
+// (fetchUpdates/setUpdateStatus ของ flow "เฝ้าระวังกฎหมาย" (lg_law_updates) ถูกลบแล้ว — flow นั้นไม่เคยทำงาน)
 export async function fetchStaging() {
   if (!hasSupabase) return []
   const { data } = await supabase.from('lg_import_staging').select('*').eq('status', 'proposed').order('id')
-  return data || []
-}
-export async function fetchUpdates() {
-  if (!hasSupabase) return []
-  const { data } = await supabase.from('lg_law_updates').select('*').neq('status', 'dismissed').order('detected_at', { ascending: false })
   return data || []
 }
 // Promote a staged batch (one law_code group) into the live registry
@@ -600,9 +605,6 @@ export async function addStagedLaw(rows) {
 }
 export async function dismissStaged(ids) {
   await supabase.from('lg_import_staging').update({ status: 'dismissed' }).in('id', ids)
-}
-export async function setUpdateStatus(id, status) {
-  await supabase.from('lg_law_updates').update({ status }).eq('id', id)
 }
 
 // ---- P8: ตรวจทานผลสรุปของ AI (ผู้ตรวจสอบ) ----
