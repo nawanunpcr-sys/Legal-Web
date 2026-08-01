@@ -216,6 +216,10 @@ export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],onGoView,
     </div>
 
     {/* พับเก็บได้ — ค่าเริ่มต้น = พับ (จำสถานะใน localStorage) */}
+    <Collapsible storageKey="dash_open_monthly" title="สถิติรายเดือน — กฎหมายเพิ่ม/ยกเลิก">
+      <MonthlyAddRepealChart laws={laws} cats={cats} catMap={catMap}/>
+    </Collapsible>
+
     <Collapsible storageKey="dash_open_catbars" title="ความสอดคล้องรายหมวด">
       <CatBars laws={fLaws} cats={cats}/>
       {/* ตรวจสอบ ณ วันที่ ... — เชื่อมกับการเช็ครายเดือนในหน้าทะเบียน & ความสอดคล้อง */}
@@ -240,10 +244,6 @@ export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],onGoView,
           <td><Pill s={l.status}/></td>
         </tr>))}
       </tbody></table></div>
-    </Collapsible>
-
-    <Collapsible storageKey="dash_open_monthly" title="สถิติรายเดือน — กฎหมายเพิ่ม/ยกเลิก">
-      <MonthlyAddRepealChart laws={laws} cats={cats} catMap={catMap}/>
     </Collapsible>
   </div>
 }
