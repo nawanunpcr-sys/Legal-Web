@@ -1,28 +1,58 @@
 // Dashboard page — overview KPIs, category bars, NC list, quarterly chart, report deadlines.
+// P19 · จัดใหม่: เห็นโดยไม่ต้องเลื่อน = การ์ด "ต้องทำตอนนี้" + KPI strip
+//   ที่เหลือ (CatBars/NC list/สถิติรายเดือน) พับเก็บ ค่าเริ่มต้น=พับ จำสถานะใน localStorage
 import { useState, useMemo } from 'react'
-import { Pill, Tag, ActiveBadge, thDate, daysTo, TH_MONTHS, monthlyByAnnounce, announceYears, announceMonth } from '../lib/ui.jsx'
+import { Pill, Tag, ActiveBadge, thDate, daysTo, TH_MONTHS, monthlyByAnnounce, announceYears, announceMonth, sumReqStats, usePersist } from '../lib/ui.jsx'
+import { I } from '../components/icons.jsx'
 
-/* P17 · การ์ด "เดือนนี้ต้องทำ" — นับจาก view lg_tasks (overdue + todo ที่ครบกำหนดในเดือนนี้) */
-function MonthDueCard({ taskRows = [], onOpenTasks }) {
-  const now = new Date()
-  const { total, overdue } = useMemo(() => {
-    const inMonth = d => { if (!d) return false; const x = new Date(d); return !isNaN(x) && x.getFullYear() === now.getFullYear() && x.getMonth() === now.getMonth() }
-    const od = taskRows.filter(t => t.state === 'overdue').length
-    const dueThis = taskRows.filter(t => t.state === 'todo' && inMonth(t.due_date)).length
-    return { total: od + dueThis, overdue: od }
-  }, [taskRows])   // eslint-disable-line react-hooks/exhaustive-deps
-  const accent = overdue > 0 ? 'var(--bad)' : total > 0 ? 'var(--review)' : 'var(--ok)'
+/* P19 · ส่วนที่พับเก็บได้ — จำสถานะเปิด/ปิดต่อบล็อกใน localStorage (ค่าเริ่มต้น = พับ) */
+function Collapsible({ storageKey, title, right, children, defaultOpen = false }) {
+  const [open, setOpen] = usePersist(storageKey, defaultOpen)
   return (
-    <div className="panel" style={{ marginBottom: 16, borderTop: '3px solid ' + accent, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 22 }}>🗓️</span>
-      <div style={{ flex: 1, minWidth: 220 }}>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>
-          เดือนนี้มี <b className="num" style={{ color: accent }}>{total}</b> รายการต้องทำ
-          {overdue > 0 && <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--bad)' }}> (เกินกำหนด {overdue})</span>}
-        </div>
-        <div style={{ fontSize: 12.5, color: 'var(--ink-faint)', marginTop: 2 }}>รายงานราชการ · การสื่อสาร · การทวนสอบ ที่ครบกำหนดในเดือน {TH_MONTHS[now.getMonth()]} {now.getFullYear() + 543}</div>
+    <div className="panel" style={{ marginTop: 16 }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+        <span style={{ display: 'inline-flex', transition: 'transform .18s ease', transform: open ? 'rotate(90deg)' : 'none', color: 'var(--ink-faint)' }}><I n="chevron" /></span>
+        <h3 style={{ margin: 0, fontSize: 14.5 }}>{title}</h3>
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }} onClick={e => e.stopPropagation()}>{right}</span>
+      </button>
+      {open && <div className="panel-b" style={{ borderTop: '1px solid var(--line)', paddingTop: 14 }}>{children}</div>}
+    </div>
+  )
+}
+
+/* P19 · การ์ด "ต้องทำตอนนี้" — รวม MonthDueCard(เดิม) + ReportDeadlinesPanel(เดิม) เป็นการ์ดเดียว
+   3 ตัวเลข: เกินกำหนด / ครบกำหนดใน 7 วัน / รอผู้เกี่ยวข้องตอบ — คลิกแต่ละตัวกระโดดไปหน้าที่เกี่ยวข้อง
+   (เกินกำหนด, ครบกำหนดใน 7 วัน → "รายการที่ต้องทำ" ซึ่ง group หัวข้อ "เกินกำหนด"/"สัปดาห์นี้" ให้อยู่แล้ว
+    รอผู้เกี่ยวข้องตอบ → "ทะเบียนกฎหมาย" เพราะเป็นข้อมูลระดับข้อปฏิบัติ ไม่ใช่ task ใน lg_tasks) */
+function NowCard({ taskRows = [], waitingCount = 0, onOpenTasks, onOpenRegistry }) {
+  const { overdue, dueWeek } = useMemo(() => {
+    const od = taskRows.filter(t => t.state === 'overdue').length
+    const wk = taskRows.filter(t => t.state === 'todo' && (() => { const d = daysTo(t.due_date); return d >= 0 && d <= 7 })()).length
+    return { overdue: od, dueWeek: wk }
+  }, [taskRows])
+  const nums = [
+    { val: overdue, lab: 'เกินกำหนด', color: overdue > 0 ? 'var(--bad)' : 'var(--ink-faint)', onClick: onOpenTasks },
+    { val: dueWeek, lab: 'ครบกำหนดใน 7 วัน', color: dueWeek > 0 ? 'var(--warn)' : 'var(--ink-faint)', onClick: onOpenTasks },
+    { val: waitingCount, lab: 'รอผู้เกี่ยวข้องตอบ', color: waitingCount > 0 ? 'var(--review)' : 'var(--ink-faint)', onClick: onOpenRegistry },
+  ]
+  const accent = overdue > 0 ? 'var(--bad)' : (dueWeek > 0 || waitingCount > 0) ? 'var(--review)' : 'var(--ok)'
+  return (
+    <div className="panel" style={{ marginBottom: 16, borderTop: '3px solid ' + accent, padding: '14px 18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <span style={{ fontSize: 20 }}>🗓️</span>
+        <h3 style={{ margin: 0, fontSize: 15 }}>ต้องทำตอนนี้</h3>
+        <button className="btn btn-primary" style={{ marginLeft: 'auto', padding: '6px 14px' }} onClick={onOpenTasks}>ดูรายการที่ต้องทำ →</button>
       </div>
-      <button className="btn btn-primary" style={{ padding: '7px 16px' }} onClick={onOpenTasks}>ดูรายการที่ต้องทำ →</button>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {nums.map((n, i) => (
+          <button key={i} onClick={n.onClick} type="button"
+            style={{ flex: '1 1 140px', minWidth: 140, textAlign: 'left', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 14px', background: 'var(--surface-2)', cursor: 'pointer' }}>
+            <div className="num" style={{ fontSize: 22, fontWeight: 800, color: n.color, lineHeight: 1.1 }}>{n.val}</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2 }}>{n.lab}</div>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -32,67 +62,26 @@ function CatBars({laws,cats}){
   const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
   return <div className="catbars-grid">
     {cats.filter(c=>byCat[c.code]).map(c=>{
-      let r=0,m=0; byCat[c.code].forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++}))
-      const p=r?Math.round(m/r*100):100
-      const unmet=r-m
+      // P18 · แบ่งแถบ 3 สี: met(เขียว) / unmet(แดง) / waiting(เทา) — % นับเฉพาะข้อที่ประเมินแล้ว
+      const s=sumReqStats(byCat[c.code]); const t=s.total||1
       return <div className="catbar" key={c.code}>
         <div className="top">
           <span className="nm">{c.code} · {c.name}</span>
           <span className="cat-meta">
-            {unmet>0
-              ? <span className="cat-remain">เหลือ {unmet} ข้อ</span>
-              : <span className="cat-done">ครบ {r} ข้อ ✓</span>}
-            <b className="num" style={{color:c.color}}>{p}%</b>
+            {s.unmet>0 && <span className="cat-remain">NC {s.unmet} ข้อ</span>}
+            {s.waiting>0 && <span style={{fontSize:10.5,fontWeight:600,color:'var(--ink-faint)'}}>รอประเมิน {s.waiting}</span>}
+            {s.unmet===0 && s.waiting===0 && s.total>0 && <span className="cat-done">ครบ {s.met} ข้อ ✓</span>}
+            <b className="num" style={{color:c.color}}>{s.pct==null?'—':s.pct+'%'}</b>
           </span>
         </div>
-        <div className="track"><div className="fill" style={{width:p+'%',background:`linear-gradient(90deg, ${c.color} 0%, color-mix(in srgb, ${c.color} 88%, #fff) 100%)`}}/></div>
+        <div className="track" title={`สอดคล้อง ${s.met} · ไม่สอดคล้อง ${s.unmet} · รอผู้เกี่ยวข้องประเมิน ${s.waiting}`} style={{display:'flex',overflow:'hidden'}}>
+          <div style={{width:(s.met/t*100)+'%',background:'var(--ok)'}}/>
+          <div style={{width:(s.unmet/t*100)+'%',background:'var(--bad)'}}/>
+          <div style={{width:(s.waiting/t*100)+'%',background:'var(--ink-faint)'}}/>
+        </div>
       </div>
     })}
   </div>
-}
-
-function ReportDeadlinesPanel({reports=[],onGoReports,danger=false}){
-  const upcoming = useMemo(()=>reports
-    .filter(r=>r.next_due_date)
-    .map(r=>({...r,d:daysTo(r.next_due_date)}))
-    .filter(r=>r.d<0||r.d<=(r.notify_days_before||30))
-    .sort((a,b)=>a.d-b.d)
-  ,[reports])
-  const overdue = upcoming.filter(r=>r.d<0).length
-  const soon = upcoming.length - overdue
-  const shown = upcoming.slice(0,6)
-  const accent = overdue>0 ? 'var(--bad)' : soon>0 ? 'var(--review)' : 'var(--ok)'
-  return (
-    <div className={'panel'+(danger?' report-alert':'')} style={{marginTop:16, borderTop:'3px solid '+(danger?'var(--bad)':accent)}}>
-      <div className="panel-h">
-        <h3>{danger && <span className="report-alert-dot">⚠</span>}รายงานที่ต้องส่งให้ราชการ</h3>
-        <div style={{display:'flex',gap:6,alignItems:'center',marginLeft:'auto'}}>
-          {overdue>0 && <span className="pill p-bad">เกินกำหนด {overdue}</span>}
-          {soon>0 && <span className="pill" style={{background:'var(--review-bg)',color:'var(--review)'}}>ใกล้ครบ {soon}</span>}
-          <span className="sub" style={{cursor:'pointer',color:'var(--brand)'}} onClick={onGoReports}>ดูทั้งหมด →</span>
-        </div>
-      </div>
-      <div className="panel-b">
-        {upcoming.length===0 && <div style={{textAlign:'center',color:'var(--ink-faint)',padding:24,fontSize:13}}>ไม่มีรายงานที่ต้องส่งในช่วงนี้ ✓</div>}
-        {shown.map(r=>(
-          <div key={r.id} className="tl-row" onClick={onGoReports} style={{padding:'9px 6px'}}>
-            <span className="tl-tag" style={{background:r.d<0?'var(--bad)':r.d<=7?'var(--warn)':'var(--review)'}}>
-              {r.d<0?'เกิน '+Math.abs(r.d)+' วัน':r.d===0?'วันนี้!':'อีก '+r.d+' วัน'}
-            </span>
-            {r.law_code && <span className="law-code" style={{minWidth:58}}>{r.law_code}</span>}
-            <span style={{flex:1,fontSize:13}}>{r.title.slice(0,60)}{r.title.length>60?'…':''}</span>
-            {r.responsible && <span className="tag" title="ผู้รับผิดชอบส่ง">{r.responsible}</span>}
-            <span className="sub" style={{whiteSpace:'nowrap'}}>{r.authority?r.authority.slice(0,20)+' · ':''}{thDate(r.next_due_date)}</span>
-          </div>
-        ))}
-        {upcoming.length>shown.length && (
-          <div style={{textAlign:'center',marginTop:8}}>
-            <span className="sub" style={{cursor:'pointer',color:'var(--brand)'}} onClick={onGoReports}>+ อีก {upcoming.length-shown.length} รายการ</span>
-          </div>
-        )}
-      </div>
-    </div>
-  )
 }
 
 function MonthlyAddRepealChart({laws,cats,catMap}){
@@ -183,7 +172,9 @@ function MonthlyAddRepealChart({laws,cats,catMap}){
   )
 }
 
-export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],reports=[],onGoReports,onGoView,monthsData=[],comms=[],workflow=[],lawMap={}}){
+// P19 · reports/onGoReports/comms/workflow/lawMap ไม่ใช้แล้ว — ReportDeadlinesPanel/MonthDueCard(เดิม)
+// ถูกรวมเป็น NowCard ซึ่งอ่านจาก taskRows (view lg_tasks) อย่างเดียว
+export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],onGoView,monthsData=[]}){
   // วันที่ตรวจสอบรายเดือนล่าสุด (เชื่อมกับการเช็คในหน้าทะเบียน & ความสอดคล้อง)
   const lastCheck = useMemo(()=>{
     const done=(monthsData||[]).filter(m=>m.checked_at && (m.status||m.checked))
@@ -197,22 +188,23 @@ export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],reports=[
 
   const goRegistry = mode => { try{ localStorage.setItem('cr_registry_mode', JSON.stringify(mode)) }catch{} ; onGoView&&onGoView('registry') }
 
-  const stats = useMemo(()=>{
-    let req=0,met=0; fLaws.forEach(l=>l.reqs.forEach(r=>{req++;if(r.status==='met')met++}))
-    return { total:fLaws.length, req, met, nc:req-met, pct:req?(met/req*100):100 }
-  },[fLaws])
+  // P18 · % นับเฉพาะข้อที่ประเมินแล้ว (met+unmet) — waiting แยกแสดงต่างหาก
+  const stats = useMemo(()=>sumReqStats(fLaws),[fLaws])
 
   const bad=fLaws.filter(l=>l.status==='bad')
   const strip=[
     {val:(active.length+inactive.length).toLocaleString('en-US'), lab:'กฎหมายในทะเบียน (ฉบับ)'},
     {val:String(cats.length),                 lab:'หมวด (LA–LG)'},
-    {val:stats.req.toLocaleString('en-US'),   lab:'ข้อปฏิบัติรายข้อ'},
-    {val:stats.nc.toLocaleString('en-US'),    lab:'ยังไม่สอดคล้อง (ข้อ)', bad:true, go:()=>goRegistry('compliance')},
-    {val:stats.pct.toFixed(1)+'%',            lab:'ความสอดคล้อง ('+stats.met+'/'+stats.req+')', accent:true},
+    {val:stats.total.toLocaleString('en-US'), lab:'ข้อปฏิบัติรายข้อ'},
+    {val:stats.unmet.toLocaleString('en-US'), lab:'ยังไม่สอดคล้อง (ข้อ)', bad:true, go:()=>goRegistry('compliance')},
+    {val:stats.waiting.toLocaleString('en-US'), lab:'รอผู้เกี่ยวข้องประเมิน (ข้อ)'},
+    {val:stats.assessed?((stats.met/stats.assessed*100).toFixed(1)+'%'):'ยังไม่ประเมิน', lab:stats.assessed?('ความสอดคล้อง ('+stats.met+'/'+stats.assessed+')'):'ยังไม่มีข้อที่ประเมิน', accent:true},
   ]
 
   return <div className="view">
-    <MonthDueCard taskRows={taskRows} onOpenTasks={()=>onGoView&&onGoView('tasks')}/>
+    {/* เห็นโดยไม่ต้องเลื่อน: การ์ด "ต้องทำตอนนี้" + KPI strip */}
+    <NowCard taskRows={taskRows} waitingCount={stats.waiting}
+      onOpenTasks={()=>onGoView&&onGoView('tasks')} onOpenRegistry={()=>onGoView&&onGoView('registry')}/>
     <div className="dash-strip">
       {strip.map((s,i)=>(<div className={'dash-strip-cell'+(s.go?' stat-link':'')} key={i}
         role={s.go?'button':undefined} tabIndex={s.go?0:undefined} onClick={s.go||undefined}
@@ -223,34 +215,22 @@ export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],reports=[
       </div>))}
     </div>
 
-    {/* ความสอดคล้องตามหมวดกฎหมาย */}
-    <div style={{marginTop:16}}>
-      <div className="dash-sec-h">ความสอดคล้องตามหมวดกฎหมาย</div>
-      <div className="panel">
-        <div className="panel-b"><CatBars laws={fLaws} cats={cats}/></div>
+    {/* พับเก็บได้ — ค่าเริ่มต้น = พับ (จำสถานะใน localStorage) */}
+    <Collapsible storageKey="dash_open_catbars" title="ความสอดคล้องรายหมวด">
+      <CatBars laws={fLaws} cats={cats}/>
+      {/* ตรวจสอบ ณ วันที่ ... — เชื่อมกับการเช็ครายเดือนในหน้าทะเบียน & ความสอดคล้อง */}
+      <div style={{marginTop:14,paddingTop:12,borderTop:'1px solid var(--line-soft)',display:'flex',alignItems:'center',gap:10,cursor:'pointer'}}
+        onClick={()=>onGoView&&onGoView('registry')} role="button" tabIndex={0}
+        onKeyDown={e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); onGoView&&onGoView('registry') } }}>
+        <span style={{fontSize:16}}>🗓️</span>
+        <span style={{fontSize:13}}>ตรวจสอบรายเดือนล่าสุด ณ วันที่ <b>{lastCheck?thDate(lastCheck.checked_at):'—ยังไม่ได้ตรวจสอบ'}</b>
+          {lastCheck?.checked_by && <span style={{color:'var(--ink-faint)'}}> · โดย {lastCheck.checked_by}</span>}</span>
+        <span style={{marginLeft:'auto',color:'var(--brand)',fontSize:12.5,fontWeight:500}}>ไปตรวจสอบรายเดือน →</span>
       </div>
-    </div>
+    </Collapsible>
 
-    {/* ตรวจสอบ ณ วันที่ ... — เชื่อมกับการเช็ครายเดือนในหน้าทะเบียน & ความสอดคล้อง */}
-    <div className="panel" style={{marginTop:12,padding:'10px 16px',display:'flex',alignItems:'center',gap:10,cursor:'pointer'}}
-      onClick={()=>onGoView&&onGoView('registry')} role="button" tabIndex={0}
-      onKeyDown={e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); onGoView&&onGoView('registry') } }}>
-      <span style={{fontSize:16}}>🗓️</span>
-      <span style={{fontSize:13}}>ตรวจสอบรายเดือนล่าสุด ณ วันที่ <b>{lastCheck?thDate(lastCheck.checked_at):'—ยังไม่ได้ตรวจสอบ'}</b>
-        {lastCheck?.checked_by && <span style={{color:'var(--ink-faint)'}}> · โดย {lastCheck.checked_by}</span>}</span>
-      <span style={{marginLeft:'auto',color:'var(--brand)',fontSize:12.5,fontWeight:500}}>ไปตรวจสอบรายเดือน →</span>
-    </div>
-
-    <div style={{marginTop:36}}>
-      <div className="dash-sec-h">ภาพรวมรายเดือน</div>
-      <MonthlyAddRepealChart laws={laws} cats={cats} catMap={catMap}/>
-    </div>
-
-    <ReportDeadlinesPanel reports={reports} onGoReports={onGoReports} danger/>
-
-    {/* รายการที่ยังไม่สอดคล้อง — ย้ายมาไว้ล่างสุดของหน้า */}
-    <div className="panel" style={{marginTop:16}}>
-      <div className="panel-h"><h3>รายการที่ยังไม่สอดคล้อง — ต้องติดตาม</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกเพื่อดูรายละเอียด</span></div>
+    <Collapsible storageKey="dash_open_nclist" title="รายการที่ยังไม่สอดคล้อง — ต้องติดตาม"
+      right={bad.length>0 ? <span className="pill p-bad">{bad.length} รายการ</span> : <span className="pill p-ok">ครบถ้วน ✓</span>}>
       <div className="tablewrap"><table><thead><tr><th>รหัส / ชื่อกฎหมาย</th><th>หมวด</th><th>กระทรวง</th><th>สถานะ</th></tr></thead><tbody>
         {bad.length===0 && <tr><td colSpan="4" style={{textAlign:'center',color:'var(--ok)',fontWeight:600,padding:30}}>ทุกข้อปฏิบัติสอดคล้องครบถ้วน ✓</td></tr>}
         {bad.map(l=>(<tr key={l.id} onClick={()=>onOpen(l)}>
@@ -260,6 +240,10 @@ export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],reports=[
           <td><Pill s={l.status}/></td>
         </tr>))}
       </tbody></table></div>
-    </div>
+    </Collapsible>
+
+    <Collapsible storageKey="dash_open_monthly" title="สถิติรายเดือน — กฎหมายเพิ่ม/ยกเลิก">
+      <MonthlyAddRepealChart laws={laws} cats={cats} catMap={catMap}/>
+    </Collapsible>
   </div>
 }

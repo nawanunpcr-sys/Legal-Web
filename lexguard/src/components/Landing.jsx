@@ -34,10 +34,14 @@ export default function Landing({ onEnter }) {
     const laws = data?.laws || []
     const comms = data?.comms || []
     const inForce = laws.filter(l => l.status !== 'repealed' && l.active !== false)
-    let req = 0, met = 0
-    inForce.forEach(l => (l.reqs || []).forEach(r => { req++; if (r.status === 'met') met++ }))
-    const nc = req - met
-    const pct = req ? (met / req * 100) : 100
+    // P18 · % นับเฉพาะข้อที่ประเมินแล้ว — waiting (รอผู้เกี่ยวข้องประเมิน) ไม่รวม
+    const isWaiting = r => r.status === 'unmet' && !r.evaluated_at && /รอผู้เกี่ยวข้องประเมิน/.test(r.note || '')
+    let met = 0, unmet = 0, waiting = 0
+    inForce.forEach(l => (l.reqs || []).forEach(r => { if (r.status === 'met') met++; else if (isWaiting(r)) waiting++; else unmet++ }))
+    const req = met + unmet + waiting
+    const nc = unmet
+    const assessed = met + unmet
+    const pct = assessed ? (met / assessed * 100) : 100
     // per-category NC (in-force laws whose status is bad)
     const catRows = cats.map(c => {
       const ncCount = inForce.filter(l => l.cat === c.code && l.status === 'bad').length

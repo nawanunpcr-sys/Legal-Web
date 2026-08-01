@@ -26,8 +26,31 @@ export function usePageFilters(page, defaults) {
   return [state, set, reset, isActive]
 }
 
-// Progress % of a law from its requirements (no reqs = 100%).
-export const prog = l => !l.reqs.length ? 100 : Math.round(l.reqs.filter(r => r.status === 'met').length / l.reqs.length * 100)
+// ── P18 · แยกแยะข้อปฏิบัติ 3 แบบ ─────────────────────────────────────────────
+//  met                          = ประเมินแล้ว: สอดคล้อง
+//  unmet (NC จริง)              = ประเมินแล้ว: ไม่สอดคล้อง
+//  waiting (รอผู้เกี่ยวข้องประเมิน) = ยังไม่ตัดสิน — เก็บเป็น status 'unmet' + evaluated_at NULL + note marker
+//    (ใช้ note marker เป็นตัวแยก เพื่อไม่ให้ข้อมูลเดิม (unmet ที่ไม่มี evaluated_at) ถูกนับเป็น waiting)
+export const isWaitingReq = r => r?.status === 'unmet' && !r?.evaluated_at && /รอผู้เกี่ยวข้องประเมิน/.test(r?.note || '')
+export const reqKind = r => r?.status === 'met' ? 'met' : (isWaitingReq(r) ? 'waiting' : 'unmet')
+// รวมสถิติข้อปฏิบัติของกฎหมายหลายฉบับ — % นับเฉพาะข้อที่ "ประเมินแล้ว" (met + unmet) ไม่รวม waiting
+export function sumReqStats(laws) {
+  let met = 0, unmet = 0, waiting = 0
+  for (const l of (laws || [])) for (const r of (l.reqs || [])) {
+    const k = reqKind(r); if (k === 'met') met++; else if (k === 'waiting') waiting++; else unmet++
+  }
+  const assessed = met + unmet
+  return { total: met + unmet + waiting, met, unmet, waiting, assessed, pct: assessed ? Math.round(met / assessed * 100) : null }
+}
+export const reqStats = law => sumReqStats([law])
+// ค่าใช้จัดเรียง: ไม่มีข้อ=100, ประเมินแล้ว=pct, มีข้อแต่ยังไม่ประเมินเลย=-1 (จมล่างสุด)
+export const prog = l => { const s = reqStats(l); if (!s.total) return 100; return s.pct == null ? -1 : s.pct }
+// ป้ายกำกับ tooltip ผู้ประเมิน/วันที่ (met/unmet) หรือรายละเอียดผู้รับผิดชอบ (waiting)
+export const reqEvalTitle = r => {
+  if (isWaitingReq(r)) return r?.note || 'รอผู้เกี่ยวข้องประเมิน'
+  if (r?.evaluated_by || r?.evaluated_at) return `ประเมินโดย ${r?.evaluated_by || '—'}${r?.evaluated_at ? ' · ' + formatThaiDate(r.evaluated_at) : ''}`
+  return 'ยังไม่ได้บันทึกผู้ประเมิน'
+}
 
 // Extract a Buddhist-era (พ.ศ.) year from the messy free-text issue_date
 export const lawBEYear = s => {
@@ -76,6 +99,28 @@ function parseBEDate(s) {
   const dt = new Date(s)
   return isNaN(dt) ? null : dt
 }
+// ── P20 · แปลงวันที่ระหว่าง <input type="date"> (ISO ค.ศ.) ↔ รูปแบบที่เก็บในฐาน (วว/ดด/ปปปป พ.ศ.) ──
+// เก็บในฐานเป็น "วว/ดด/ปปปป" พ.ศ. เหมือน 150 แถวเดิม เพื่อไม่ให้ chart รายเดือน / เรียงวันที่ / PDF เพี้ยน
+// beToISO: "วว/ดด/ปปปป"(พ.ศ. หรือ ค.ศ.) → "ปปปป-ดด-วว"(ค.ศ.) สำหรับใส่ค่าใน date picker — คืน '' ถ้าแปลงไม่ได้
+export function beToISO(be) {
+  const m = String(be || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{3,4})$/)
+  if (!m) return ''
+  let [, d, mo, y] = m; y = +y; if (y > 2400) y -= 543   // >2400 = พ.ศ. → ค.ศ.
+  const dt = new Date(y, +mo - 1, +d)
+  if (isNaN(dt) || dt.getMonth() !== +mo - 1 || dt.getDate() !== +d) return ''   // กันวันที่ไม่มีจริง
+  const pad = n => String(n).padStart(2, '0')
+  return `${y}-${pad(+mo)}-${pad(+d)}`
+}
+// isoToBE: "ปปปป-ดด-วว"(ค.ศ. จาก picker) → "วว/ดด/ปปปป"(พ.ศ.) สำหรับบันทึกลงฐาน
+export function isoToBE(iso) {
+  const m = String(iso || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return iso || ''
+  const [, y, mo, d] = m
+  return `${d}/${mo}/${+y + 543}`
+}
+// วันที่มีค่าอยู่แต่แปลงเป็น date picker ไม่ได้ (freeform เดิม) → true = ให้ fallback เป็นช่องข้อความ
+export const isFreeformDate = v => !!(v && String(v).trim() && !beToISO(v))
+
 // กฎหมายที่ "ประกาศแล้วแต่ยังไม่ถึงวันบังคับใช้" — คืน { days } ถ้า effective_date เป็นวันในอนาคต (ข้าม freeform)
 export function effectiveInfo(law, now = new Date()) {
   const d = parseBEDate(law?.effective_date)
@@ -164,6 +209,12 @@ export const daysTo = s => Math.ceil((new Date(s) - new Date()) / 86400000)
 export const beYearFromDate = d => { if (!d) return null; const x = new Date(d); return isNaN(x) ? null : x.getFullYear() + 543 }
 
 export const Pill = ({ s }) => <span className={'pill ' + (STATUS[s]?.cls || 'p-ok')}>{STATUS[s]?.label || s}</span>
+// P18 · ป้ายสถานะข้อปฏิบัติรายข้อ — สอดคล้อง(เขียว) / ไม่สอดคล้อง(แดง) / รอผู้เกี่ยวข้องประเมิน(เทา)
+export const ReqStatusPill = ({ req }) => {
+  const map = { met: ['p-ok', 'สอดคล้อง'], unmet: ['p-bad', 'ไม่สอดคล้อง'], waiting: ['p-wait', 'รอผู้เกี่ยวข้องประเมิน'] }
+  const [cls, label] = map[reqKind(req)]
+  return <span className={'pill ' + cls} title={reqEvalTitle(req)}>{label}</span>
+}
 export const Tag = ({ c, color }) => <span className="tag" style={{ borderColor: (color || '#888') + '33', color: color || '#888' }}>{c}</span>
 // Small "in-force" marker — green "ใช้อยู่" when the law is active, grey "ไม่ใช้แล้ว" when retired.
 export const ActiveBadge = ({ active, size }) => active === false

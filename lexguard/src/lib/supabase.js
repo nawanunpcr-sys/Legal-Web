@@ -137,9 +137,13 @@ export async function bulkSetCompliance(lawIds, met = true) {
   await supabase.from('lg_laws').update({ status: met ? 'ok' : 'bad', updated_at: new Date().toISOString() }).in('id', lawIds)
 }
 
+// P18 · law status คงตรรกะเดิม 2 ทาง: มี unmet อย่างน้อย 1 → 'bad', ไม่งั้น → 'ok'
+// (หมายเหตุ: "รอผู้เกี่ยวข้องประเมิน" ถูกเก็บเป็น status 'unmet' อยู่แล้ว จึงนับเป็น 'bad' ระดับกฎหมาย)
+export function computeLawStatus(reqs) {
+  return (reqs || []).some(r => r.status === 'unmet') ? 'bad' : 'ok'
+}
 export async function recomputeLawStatus(lawId, reqs) {
-  const anyUnmet = reqs.some(r => r.status === 'unmet')
-  const status = anyUnmet ? 'bad' : 'ok'
+  const status = computeLawStatus(reqs)
   await supabase.from('lg_laws').update({ status, updated_at: new Date().toISOString() }).eq('id', lawId)
   return status
 }
@@ -270,7 +274,33 @@ export async function createLaw({ code, cat, name, hierarchy_level, ministry, an
 // Create a law together with its requirement sub-items (manual entry)
 export async function createLawFull({ code, cat, name, hierarchy_level, ministry, announce_date, effective_date, doc_list, responsible, review_date, source_url }, reqs = []) {
   const clean = (reqs || []).filter(r => (r.text || '').trim())
-  const anyUnmet = clean.some(r => r.status === 'unmet')
+  const now = new Date().toISOString()
+  const by = currentUserName()
+  // P18 · แปลง "ทางเลือกที่ผู้ใช้กดจริง" → แถว lg_requirements (สถานะมีแค่ met/unmet)
+  //   สอดคล้อง             → met  + evaluated_at/by (ประเมินแล้ว)
+  //   ไม่สอดคล้อง          → unmet + evaluated_at/by (ประเมินแล้ว = NC จริง)
+  //   รอผู้เกี่ยวข้องประเมิน → unmet + evaluated_at/by = NULL + note 'รอผู้เกี่ยวข้องประเมิน: <ชื่อ>'
+  // ไม่มี fallback เป็น 'met' อีกต่อไป — ถ้าไม่ได้เลือกจริง ให้ถือเป็น "รอผู้เกี่ยวข้องประเมิน" (ปลอดภัย ไม่นับ met)
+  const rowsFor = lawId => clean.map((r, i) => {
+    const choice = (r.choice === 'met' || r.choice === 'unmet') ? r.choice : 'waiting'
+    const evaluated = choice === 'met' || choice === 'unmet'
+    let note = (r.note || '').trim() || null
+    if (choice === 'waiting') {
+      const parts = ['รอผู้เกี่ยวข้องประเมิน: ' + ((r.responsible || '').trim() || '-')]
+      if (r.waitDate) parts.push('ต้องการคำตอบภายใน ' + r.waitDate)
+      note = [note, parts.join(' · ')].filter(Boolean).join(' · ')
+    }
+    return {
+      law_id: lawId, seq: i, text: r.text.trim(),
+      status: choice === 'met' ? 'met' : 'unmet',
+      responsible: (r.responsible || '').trim() || null,
+      frequency: r.frequency || null, documents: r.documents || null,
+      evaluated_at: evaluated ? now : null,
+      evaluated_by: evaluated ? by : null,
+      note,
+    }
+  })
+  const reqStatusList = clean.map(r => ({ status: (r.choice === 'met') ? 'met' : 'unmet' }))
   const { data, error } = await supabase.from('lg_laws').insert({
     code, cat, name,
     hierarchy_level: hierarchy_level ? Number(hierarchy_level) : null,
@@ -281,21 +311,66 @@ export async function createLawFull({ code, cat, name, hierarchy_level, ministry
     responsible: responsible || null,
     review_date: review_date || null,
     source_url: source_url || null,
-    status: clean.length ? (anyUnmet ? 'bad' : 'ok') : 'ok',
-    created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    status: computeLawStatus(reqStatusList),   // มี unmet/รอ (เก็บเป็น unmet) ≥1 → 'bad'
+    created_at: now, updated_at: now,
   }).select().single()
   if (error) throw error
   await bumpQuarterStat(cat, 'added', 1)
   if (clean.length) {
-    const rows = clean.map((r, i) => ({
-      law_id: data.id, seq: i, text: r.text.trim(), status: r.status || 'met',
-      responsible: r.responsible || null, frequency: r.frequency || null, documents: r.documents || null,
-    }))
+    const rows = rowsFor(data.id)
     const { error: e2 } = await supabase.from('lg_requirements').insert(rows)
     if (e2) throw e2
     return { ...data, reqs: rows }
   }
   return { ...data, reqs: [] }
+}
+
+// P20 · นำเข้ากฎหมายเป็นชุดจาก CSV — ทุกข้อปฏิบัติเป็น "รอผู้เกี่ยวข้องประเมิน" (P18: unmet + evaluated_at NULL)
+// อะตอมมิกเชิงปฏิบัติ: insert laws ครั้งเดียว → insert requirements ครั้งเดียว
+// ถ้า requirements ล้ม → ลบ laws ที่เพิ่งใส่คืน (ไม่ทิ้งข้อมูลค้างครึ่งๆ)
+// inputs: [{ code, cat, name, ministry, announce_date, effective_date, doc_list, reqTexts:[...] }]
+export async function createLawsBatch(inputs = [], { responsible = 'QA & SHE' } = {}) {
+  if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  if (!inputs.length) return []
+  const now = new Date().toISOString()
+  const lawRows = inputs.map(r => ({
+    code: r.code, cat: r.cat, name: r.name, ministry: r.ministry || null,
+    issue_date: r.announce_date || null, effective_date: r.effective_date || null,
+    doc_list: r.doc_list || null,
+    // ทุกข้ออยู่สถานะรอประเมิน (เก็บเป็น unmet) → ถ้ามีข้อปฏิบัติ law = 'bad' ตามตรรกะ P18, ไม่มีข้อ = 'ok'
+    status: (r.reqTexts || []).filter(t => (t || '').trim()).length ? 'bad' : 'ok',
+    created_at: now, updated_at: now,
+  }))
+  const { data: laws, error } = await supabase.from('lg_laws').insert(lawRows).select()
+  if (error) throw error
+  // จับคู่ law ที่ใส่แล้วกลับเข้ากับ input ตาม (cat, code) เพื่อสร้าง requirements
+  const byKey = {}; laws.forEach(l => { byKey[l.cat + '|' + l.code] = l })
+  const reqRows = []
+  inputs.forEach(r => {
+    const law = byKey[r.cat + '|' + r.code]; if (!law) return
+    ;(r.reqTexts || []).map(t => (t || '').trim()).filter(Boolean).forEach((text, seq) => {
+      reqRows.push({
+        law_id: law.id, seq, text,
+        status: 'unmet', responsible,        // P18 · รอผู้เกี่ยวข้องประเมิน
+        evaluated_at: null, evaluated_by: null,
+        note: 'รอผู้เกี่ยวข้องประเมิน: ' + responsible,
+      })
+    })
+  })
+  if (reqRows.length) {
+    const { error: e2 } = await supabase.from('lg_requirements').insert(reqRows)
+    if (e2) {   // rollback: ลบ laws ที่เพิ่งใส่
+      await supabase.from('lg_laws').delete().in('id', laws.map(l => l.id))
+      throw e2
+    }
+  }
+  // สถิติ + activity log ต่อฉบับ (ไม่กระทบ atomicity ของข้อมูลหลัก)
+  for (const l of laws) {
+    await bumpQuarterStat(l.cat, 'added', 1)
+    await logActivity({ action: 'import', law_id: l.id, law_code: l.code, law_name: l.name,
+      detail: `นำเข้าจาก CSV (รอผู้เกี่ยวข้องประเมิน · ผู้รับผิดชอบ: ${responsible})` })
+  }
+  return laws
 }
 
 // Upload an original law document (PDF) to Storage → returns public URL
@@ -938,22 +1013,18 @@ export function subscribeLaws(onChange) {
 // ── Workflow A · Process 1 — เพิ่มกฎหมายใหม่เข้าทะเบียน (ผู้ตรวจสอบ) ────────────
 // สร้าง lg_laws (+requirements) แล้วเปิด tracker case ที่ stage 2 (รอประเมิน).
 // discovered = แถวจาก lg_ai_discovered_laws (ถ้าเลือกมา) → mark 'registered'.
+// P18 · เพิ่มกฎหมาย + ประเมินรายข้อ inline ในหน้าเดียว — ไม่เปิด case ใน lg_law_workflow อีกต่อไป
+// (การประเมิน inline = บันทึกผลจบในตัว. NC ที่ต้องมีแผนแก้ไข ให้เปิด "ติดตาม/ทวนสอบกฎหมายเดิม"
+//  จากหน้ารายการที่ต้องทำเมื่อจะจัดการแผนจริง)
 export async function createAddWorkflow({ lawFields, reqs = [], ownerName, discovered = null, verifiedFromAI = false }) {
   const law = await createLawFull(lawFields, reqs)
-  const now = new Date().toISOString()
-  const { data: wf, error } = await supabase.from('lg_law_workflow').insert({
-    law_id: law.id, discovered_law_id: discovered?.id || null,
-    workflow_type: 'add', stage: 2, status: 'รอประเมิน',
-    owner_name: ownerName || currentUserName(), owner_at: now,
-  }).select().single()
-  if (error) throw error
   if (discovered?.id) {
     await supabase.from('lg_ai_discovered_laws')
       .update({ status: 'registered', registered_law_id: law.id }).eq('id', discovered.id)
   }
   await logActivity({ action: 'register', law_id: law.id, law_code: law.code, law_name: law.name,
-    detail: `เพิ่มเข้าทะเบียน (ผู้ตรวจสอบ: ${ownerName || currentUserName()})` + (verifiedFromAI ? ' (จาก AI สรุป — ผู้ใช้ตรวจทานแล้ว)' : '') })
-  return { law, workflow: wf }
+    detail: `เพิ่มเข้าทะเบียน + ประเมินรายข้อ (ผู้รับผิดชอบ: ${ownerName || currentUserName()})` + (verifiedFromAI ? ' (จาก AI สรุป — ผู้ใช้ตรวจทานแล้ว)' : '') })
+  return { law, workflow: null }
 }
 
 // รอบถัดไป + รอบที่ยังเปิดของกฎหมายหนึ่ง (P11 · Phase B)

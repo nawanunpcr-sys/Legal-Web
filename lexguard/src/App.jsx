@@ -25,49 +25,41 @@ import { confirmDialog } from './lib/confirm.js'
 import { buildReport } from './components/PdfExport.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
 import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, currentRound,
-         jorporReportDeadlines, effectiveInfo, trainingStatus } from './lib/ui.jsx'
+         jorporReportDeadlines, effectiveInfo, trainingStatus, sumReqStats } from './lib/ui.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Tasks from './pages/Tasks.jsx'
 import LawSummary from './pages/LawSummary.jsx'
-import History from './pages/History.jsx'
 import AddLawFlow from './components/AddLawFlow.jsx'
 import RegistryCompliance from './pages/Registry.jsx'
 import Communication from './pages/Communications.jsx'
-import Repealed from './pages/Repealed.jsx'
 import ExportPdfModal from './components/ExportPdfModal.jsx'
 import Improvements from './pages/Improvements.jsx'
 import NotificationsPage from './pages/Notifications.jsx'
 import SettingsPage from './pages/Settings.jsx'
 
+// P19 · เมนูหลักเหลือ 4 อัน — เปิดมาแล้วรู้ทันทีว่าต้องทำอะไร
+//   history/repealed → แท็บในหน้าทะเบียน (Registry.jsx) · notifications → กระดิ่งบน header เท่านั้น
+//   settings → ปุ่มเฟืองมุมล่างซ้าย sidebar · comm → เมนูย่อยใต้ "รายการที่ต้องทำ" (P21 จะดูดเข้าไปทีหลัง)
 const NAV_GROUPS = [
   { label: null, items: [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
-    { id:'registry',      label:'ทะเบียน & ความสอดคล้อง', icon:'book'    },
+    { id:'registry',      label:'ทะเบียนกฎหมาย',        icon:'book'    },
     { id:'tasks',         label:'รายการที่ต้องทำ',        icon:'update'  },
-    { id:'summary',       label:'สรุปกฎหมาย',            icon:'spark'   },
-  ]},
-  { label: 'ประเมิน & สื่อสาร', items: [
-    { id:'comm',          label:'สื่อสาร & ส่งรายงาน',    icon:'chat'    },
-  ]},
-  { label: 'อ้างอิง & ระบบ', items: [
-    { id:'history',       label:'ประวัติการทำรายการ',     icon:'clock'   },
-    { id:'repealed',      label:'กฎหมายที่ถูกยกเลิก',   icon:'ban'     },
-    { id:'notifications', label:'การแจ้งเตือน',           icon:'bell'    },
-    { id:'settings',      label:'ตั้งค่า',                icon:'gear'    },
+    { id:'comm',          label:'สื่อสาร & ส่งรายงาน',    icon:'chat', sub:true },
+    { id:'summary',       label:'สรุปกฎหมาย (AI)',       icon:'spark'   },
   ]},
 ]
 
 const TITLES = {
   dashboard:     ['Dashboard',             'สรุปสถานะความสอดคล้องตามกฎหมาย SHE'],
   tasks:         ['รายการที่ต้องทำ',        'งานที่ต้องดำเนินการทั้งหมด — ทวนสอบกฎหมาย · รายงานราชการ · การสื่อสาร'],
-  registry:      ['ทะเบียน & ความสอดคล้อง','ทะเบียนกฎหมายพร้อมสถานะความสอดคล้องรายข้อปฏิบัติ'],
+  // P19 · registry ตอนนี้มี 3 แท็บ (ทะเบียน/ประวัติ/ยกเลิก) — history และ repealed ไม่ใช่ view เดี่ยวๆ แล้ว
+  registry:      ['ทะเบียนกฎหมาย','ทะเบียนกฎหมาย พร้อมประวัติการทำรายการ และกฎหมายที่ยกเลิก'],
   register:      ['ทะเบียนกฎหมาย',         'กฎหมายที่เกี่ยวข้องและสถานะการปฏิบัติ'],
   compliance:    ['ติดตามความสอดคล้อง',    'สถานะรายข้อปฏิบัติแยกตามหมวดและลำดับชั้น'],
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
-  repealed:      ['กฎหมายที่ถูกยกเลิก',    'รายการกฎหมายที่ยกเลิก / ถูกแทนที่'],
   comm:          ['สื่อสาร & ส่งรายงาน',   'ตารางการสื่อสาร (ISD-86) และการส่งรายงานราชการในหน้าเดียว'],
-  summary:       ['สรุปกฎหมาย',            'สรุปกฎหมายด้วย AI + คลังสรุป + ส่งต่อเข้าทะเบียน'],
-  history:       ['ประวัติการทำรายการ',     'ไทม์ไลน์การกระทำต่อกฎหมายแต่ละฉบับ แยกตามหมวด LA–LG'],
+  summary:       ['สรุปกฎหมาย (AI)',       'สรุปกฎหมายด้วย AI + คลังสรุป + ส่งต่อเข้าทะเบียน'],
   notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
   settings:      ['ตั้งค่า',                'ข้อมูลองค์กรและการแสดงผลของระบบ'],
 }
@@ -82,6 +74,9 @@ export default function App(){
     if(v==='process'||v==='staging'||v==='assessment'||v==='plans'||v==='updates'||v==='tracker'||v==='calendar') return 'tasks'
     if(v==='discovery'||v==='analysis') return 'summary'   // P12: รวมเป็นหน้า "สรุปกฎหมาย"
     if(v==='reports') return 'comm'       // P10: merged into สื่อสาร & ส่งรายงาน hub
+    // P19: เมนูหลักเหลือ 4 อัน — history/repealed ยุบเป็นแท็บใน registry, notifications เหลือกระดิ่งบน header
+    if(v==='history'||v==='repealed') return 'registry'
+    if(v==='notifications') return 'dashboard'
     return v }catch{ return 'dashboard' } })
   const [dark,setDark]     = useState(()=>{ try{ const v=localStorage.getItem('cr_dark'); return v==null?false:v==='1' }catch{ return false } })
   const [cats,setCats]     = useState([])
@@ -152,6 +147,7 @@ export default function App(){
   function goView(v){
     if(v==='reports'){ setCommTab('reports'); setView('comm'); return }
     if(v==='discovery'||v==='analysis'){ setView('summary'); return }   // P12
+    if(v==='history'||v==='repealed'){ setView('registry'); return }    // P19: ยุบเป็นแท็บใน registry
     setView(v)
   }
 
@@ -207,8 +203,10 @@ export default function App(){
 
   const inForceLaws = useMemo(()=>activeLaws.filter(l=>l.active!==false),[activeLaws])
   const stats = useMemo(()=>{
-    let req=0,met=0; inForceLaws.forEach(l=>l.reqs.forEach(r=>{req++;if(r.status==='met')met++}))
-    return { total:inForceLaws.length, req, met, nc:req-met, pct:req?Math.round(met/req*100):100 }
+    // P18 · % นับเฉพาะข้อที่ประเมินแล้ว (met+unmet) — waiting ไม่รวมทั้งเศษและส่วน
+    const s = sumReqStats(inForceLaws)
+    return { total:inForceLaws.length, req:s.total, met:s.met, nc:s.unmet, waiting:s.waiting,
+             assessed:s.assessed, pct: s.pct==null ? 100 : s.pct }
   },[inForceLaws])
 
   const reportAlerts = useMemo(()=>
@@ -365,7 +363,7 @@ export default function App(){
   // Workflow A · Process 1 — เพิ่มกฎหมายเข้าทะเบียน (จาก AddLawFlow)
   async function handleCreateAddWorkflow(payload){
     const { law, workflow } = await createAddWorkflow(payload)
-    setLaws(prev=>[...prev,law]); setWorkflowRows(prev=>[workflow,...prev])
+    setLaws(prev=>[...prev,law]); if(workflow) setWorkflowRows(prev=>[workflow,...prev])   // P18: ปกติ workflow=null (ไม่เปิด case ตอนเพิ่ม)
     fetchActivity().then(setActivity); fetchQuarterStats().then(setQuarterStats); loadDiscovered()
     return { law, workflow }
   }
@@ -497,12 +495,12 @@ export default function App(){
         {NAV_GROUPS.map((group,gi)=>(
           <div key={gi} className="nav-group">
             {group.label && <div className="nav-label">{group.label}</div>}
-            {group.items.filter(n=>n.id!=='settings'||can(role,'delete')).map(n=>{
+            {group.items.map(n=>{
               // P17: badge งานต้องทำบนเมนู "รายการที่ต้องทำ" — สีแดงถ้ามีเลยกำหนด
               const badge = n.id==='tasks' ? (openWorkCount||null) : null
               const urgent = n.id==='tasks' && trackerUrgent
               return (
-                <button key={n.id} className={'nav-item'+(view===n.id?' active':'')}
+                <button key={n.id} className={'nav-item'+(view===n.id?' active':'')+(n.sub?' sub':'')}
                   onClick={()=>{ setView(n.id); if(n.id==='tasks') setTrackerFocus(f=>f+1) }} title={n.label}>
                   <span className="nav-ic"><I n={n.icon}/></span>
                   <span className="label">{n.label}</span>
@@ -513,9 +511,15 @@ export default function App(){
           </div>
         ))}
 
+        {/* P19 · ตั้งค่า ย้ายจากเมนูหลักมาเป็นปุ่มเฟืองมุมล่างซ้าย (เฉพาะ admin เหมือนเดิม) */}
         <div className="side-foot">
           <div className="av">{(session?.name||'ผู้').trim().charAt(0)}</div>
-          <div><div className="nm">{session?.name||'ผู้ใช้งาน'}</div><div className="rl">{ROLE_LABELS[role]||role}</div></div>
+          <div style={{flex:1,minWidth:0}}><div className="nm">{session?.name||'ผู้ใช้งาน'}</div><div className="rl">{ROLE_LABELS[role]||role}</div></div>
+          {can(role,'delete') && (
+            <button className={'side-gear'+(view==='settings'?' active':'')} onClick={()=>setView('settings')} title="ตั้งค่า">
+              <I n="gear"/>
+            </button>
+          )}
         </div>
       </aside>
 
@@ -582,8 +586,8 @@ export default function App(){
             </div>
           </div>
           <div className="view-swap" key={view}>
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} activity={activity} taskRows={taskRows} reports={reports} onGoReports={()=>goView('reports')} onGoView={goView}
-            monthsData={months} comms={comms} workflow={workflowRows} lawMap={lawMap}/>}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} taskRows={taskRows} onGoView={goView}
+            monthsData={months}/>}
           {view==='tasks'         && <Tasks taskRows={taskRows} workflowRows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest} focusSignal={trackerFocus}
             onStartMonitor={async(...a)=>{ await handleStartMonitor(...a); loadTasks() }}
             onAssess={async(...a)=>{ await handleWorkflowAssess(...a); loadTasks() }}
@@ -596,13 +600,13 @@ export default function App(){
             search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
             workflow={workflowRows} suggest={suggest} onAssess={handleWorkflowAssess} focus={regFocus} onDelete={handleDeleteLaw}
             round={round} onExportF259={()=>setShowPdf(true)} onAddLaw={()=>openAddLaw()}
+            onImported={async()=>{ await loadLaws(); fetchQuarterStats().then(setQuarterStats); fetchActivity().then(setActivity) }}
             monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
-            onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}/>}
+            onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}
+            activity={activity} settings={settings} searchLog={searchLog} repealedLaws={repealedLaws} onRestore={handleRestore}/>}
           {view==='summary'       && <LawSummary laws={activeLaws} cats={cats} catMap={catMap} discovered={discovered} suggest={suggest}
             onReloadDiscovered={loadDiscovered} onReloadLaws={loadLaws} onOpenLaw={setOpenLaw} onAddToRegistry={init=>openAddLaw(init)}/>}
-          {view==='history'       && <History activity={activity} laws={laws} catMap={catMap} settings={settings} workflowRows={workflowRows} searchLog={searchLog} onDeleteLaw={handleDeleteLaw}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
-          {view==='repealed'      && <Repealed      laws={repealedLaws} catMap={catMap} search={searchDebounced} onOpen={setOpenLaw} onRestore={handleRestore}/>}
           {view==='comm'          && (<div className="view">
             <div className="seg" style={{marginBottom:14}}>
               <button className={'seg-btn'+(commTab==='comm'?' active':'')} onClick={()=>setCommTab('comm')}>ตารางการสื่อสาร</button>
@@ -622,13 +626,13 @@ export default function App(){
       {openLaw && (
         <LawDrawer law={openLaw} catMap={catMap} onClose={()=>setOpenLaw(null)}
           onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive} onDelete={handleDeleteLaw}
-          prog={prog} thDate={thDate}/>
+          thDate={thDate}/>
       )}
       {showAddLaw && <AddLawFlow cats={cats} allLaws={laws} suggest={suggest} initialData={addLawInit}
         onCreate={handleCreateAddWorkflow} onClose={()=>{ setShowAddLaw(false); setAddLawInit(null) }}
         onDone={(law)=>{ loadDiscovered()
           if(law){ setView('registry'); setRegFocus({ lawId:law.id, cat:law.cat, ts:Date.now() }) }
-          setFlowPopup({ title:'เพิ่มเข้าทะเบียนแล้ว', msg:'กฎหมายถูกเพิ่มเข้าทะเบียนแล้ว (สถานะ: รอประเมิน) — แสดงในทะเบียนหมวด '+(law?.cat||'')+' และ Process Tracker' }) }}/>}
+          setFlowPopup({ title:'เพิ่มเข้าทะเบียนแล้ว', msg:'กฎหมายถูกเพิ่มเข้าทะเบียนพร้อมผลประเมินรายข้อแล้ว — แสดงในทะเบียนหมวด '+(law?.cat||'') }) }}/>}
       {flowPopup && (
         <div className="flow-popup-overlay" style={{position:'fixed',inset:0,display:'grid',placeItems:'center',zIndex:400,background:'rgba(20,24,33,.45)'}} onClick={()=>setFlowPopup(null)}>
           <div className="panel" style={{maxWidth:380,padding:'22px 24px',textAlign:'center'}} onClick={e=>e.stopPropagation()}>

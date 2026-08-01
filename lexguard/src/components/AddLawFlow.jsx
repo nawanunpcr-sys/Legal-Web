@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { LAW_TYPES, fetchDiscoveredLaws, deleteDiscoveredLaw, logActivity } from '../lib/supabase.js'
 import Attachments from './Attachments.jsx'
 import { I } from './icons.jsx'
-import { nextCode, thDate, findLawDuplicate } from '../lib/ui.jsx'
+import { nextCode, thDate, findLawDuplicate, beToISO, isoToBE, isFreeformDate } from '../lib/ui.jsx'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
 
@@ -19,6 +19,23 @@ function summaryToReqs(summary) {
     .filter(Boolean)
 }
 
+// P20 · ช่องวันที่ = date picker (เก็บลงฐานเป็น วว/ดด/ปปปป พ.ศ.)
+//   ถ้าค่าเดิมแปลงเป็น date ไม่ได้ (freeform) → fallback เป็นช่องข้อความ + ไอคอนเตือน (ไม่ crash)
+function DateField({ label, value, onChange }) {
+  const freeform = isFreeformDate(value)
+  return (
+    <div>
+      <label className="form-label">
+        {label}
+        {freeform && <span title="รูปแบบวันที่เดิมไม่มาตรฐาน — พิมพ์แก้เป็นวันที่ปกติเพื่อใช้ตัวเลือกปฏิทิน" style={{ color: 'var(--warn)', marginLeft: 5, cursor: 'help' }}>⚠</span>}
+      </label>
+      {freeform
+        ? <input className="form-input" type="text" value={value} onChange={e => onChange(e.target.value)} title="รูปแบบเดิมไม่ใช่ วว/ดด/ปปปป — จะเก็บตามที่พิมพ์" />
+        : <input className="form-input" type="date" value={beToISO(value)} onChange={e => onChange(isoToBE(e.target.value))} />}
+    </div>
+  )
+}
+
 export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = null, onCreate, onClose, onDone }) {
   const [step, setStep] = useState(1)
   const [owner, setOwner] = useState('')
@@ -26,10 +43,6 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const [loadingDisc, setLoadingDisc] = useState(true)
   // 'prefill' = มาจากหน้าสรุปกฎหมาย (P12) · 'manual' = กรอกเอง · uuid = เลือกจากคิว
   const [selId, setSelId] = useState(initialData ? 'prefill' : null)
-  // P12: เก็บ requirements แบบมีโครงสร้าง (responsible/frequency) ไว้ส่งเข้าทะเบียนโดยไม่ตกหล่น
-  const prefillReqs = useMemo(() => (initialData?.requirements || []).map(q => ({
-    responsible: q.responsible || '', frequency: q.frequency || '', documents: q.documents || '',
-  })), [initialData])
   const il = initialData?.law || {}
   const [cat, setCat] = useState(il.cat || cats[0]?.code || 'LA')
   const [level, setLevel] = useState('4')
@@ -38,8 +51,12 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const [announce, setAnnounce] = useState(il.announce_date || '')
   const [effective, setEffective] = useState(il.effective_date || '')
   const [docList, setDocList] = useState(il.documents || '')
-  const [reqText, setReqText] = useState(       // สาระสำคัญ 1 ข้อ/บรรทัด
-    (initialData?.requirements || []).map(q => `${q.section_ref ? q.section_ref + ': ' : ''}${q.req_text || ''}`.trim()).filter(Boolean).join('\n'))
+  // P18 · แต่ละข้อปฏิบัติเก็บโครงสร้าง + ผลประเมิน inline (choice: null|'met'|'unmet'|'waiting')
+  const [reqRows, setReqRows] = useState(() => (initialData?.requirements || []).map(q => ({
+    text: `${q.section_ref ? q.section_ref + ': ' : ''}${q.req_text || ''}`.trim(),
+    choice: null, responsible: q.responsible || '', waitDate: '',
+    frequency: q.frequency || '', documents: q.documents || '',
+  })).filter(r => r.text))
   const [saving, setSaving] = useState(false)
   const [newLaw, setNewLaw] = useState(null)
   const [dup, setDup] = useState(null)               // Task 9: { type:'exact'|'amendment'|'fuzzy', law, sim, blocked? }
@@ -48,9 +65,24 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const isPrefill = !!initialData
   const srcUrl = initialData?.law?.source_url || initialData?.source_url || ''
   const [verified, setVerified] = useState(false)
+  // P20 · ย่อฟอร์ม: ข้อมูลเพิ่มเติม (ลำดับชั้น/กระทรวง/วันที่/เอกสาร) พับไว้ — กางอัตโนมัติถ้า prefill มีข้อมูล
+  const [advOpen, setAdvOpen] = useState(() => !!(il.ministry || il.announce_date || il.effective_date || il.documents))
 
   // ชื่อเปลี่ยน → ล้างสถานะการเตือนซ้ำ เพื่อเช็คใหม่
   function changeName(v) { setName(v); setDup(null); setDupConfirmed(false) }
+
+  // ── P18 · จัดการรายการข้อปฏิบัติ + ผลประเมิน inline ──────────────────────────
+  const emptyRow = () => ({ text: '', choice: null, responsible: '', waitDate: '', frequency: '', documents: '' })
+  const textToRows = texts => texts.map(t => ({ ...emptyRow(), text: t }))
+  const setRow = (i, patch) => setReqRows(rs => rs.map((r, j) => j === i ? { ...r, ...patch } : r))
+  const addRow = () => setReqRows(rs => [...rs, emptyRow()])
+  const delRow = i => setReqRows(rs => rs.filter((_, j) => j !== i))
+  const setAllChoice = choice => setReqRows(rs => rs.map(r => r.text.trim() ? { ...r, choice } : r))
+  const activeRows = reqRows.filter(r => r.text.trim())
+  const chosenCount = activeRows.filter(r => r.choice).length
+  const allChosen = activeRows.every(r => r.choice)
+  const waitingOk = activeRows.filter(r => r.choice === 'waiting').every(r => r.responsible.trim())
+  const respOptions = [...new Set((suggest.responsibles || []).filter(Boolean))]
 
   useEffect(() => { let alive = true
     fetchDiscoveredLaws().then(d => { if (alive) { setDiscovered(d.filter(x => x.status !== 'registered')); setLoadingDisc(false) } })
@@ -71,11 +103,11 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
     setName(d.law_name || ''); setMinistry(d.ministry || '')
     setAnnounce(d.announced_date || ''); setEffective(d.effective_date || '')
     setDocList((d.related_docs || []).join(', '))
-    setReqText(summaryToReqs(d.summary).join('\n'))
+    setReqRows(textToRows(summaryToReqs(d.summary)))
   }
   function pickManual() {
     setSelId('manual'); setDup(null); setDupConfirmed(false)
-    setName(''); setMinistry(''); setAnnounce(''); setEffective(''); setDocList(''); setReqText('')
+    setName(''); setMinistry(''); setAnnounce(''); setEffective(''); setDocList(''); setReqRows([emptyRow()])
   }
   async function removeDiscovered(d) {
     if (!(await confirmDialog(`ลบ "${(d.law_name||'').slice(0,40)}" ออกจากรายการ?`, { danger: true }))) return
@@ -83,7 +115,8 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
     catch (e) { toast('ลบไม่สำเร็จ: ' + e.message) }
   }
 
-  const valid = owner.trim() && selId && cat && name.trim() && (!isPrefill || verified)   // P15·T1 · prefill ต้องติ๊กยืนยันตรวจทานก่อน
+  // P15·T1 · prefill ต้องติ๊กยืนยันตรวจทานก่อน · P18 · ทุกข้อต้องเลือกผลประเมิน + ข้อที่ "รอ" ต้องมีผู้รับผิดชอบ
+  const valid = owner.trim() && selId && cat && name.trim() && (!isPrefill || verified) && allChosen && waitingOk
 
   async function submit(force = false) {
     if (!valid || saving) return
@@ -100,10 +133,11 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
     }
     setSaving(true)
     try {
-      // P12: คงข้อมูล responsible/frequency จาก prefill ตามลำดับบรรทัด (ถ้าผู้ใช้ไม่ได้เพิ่ม/ลบบรรทัด)
-      const reqs = reqText.split('\n').map(s => s.trim()).filter(Boolean).map((t, i) => ({
-        text: t, status: 'met',
-        responsible: prefillReqs[i]?.responsible || '', frequency: prefillReqs[i]?.frequency || '', documents: prefillReqs[i]?.documents || '',
+      // P18 · ส่งผลประเมินรายข้อที่ผู้ใช้เลือก (choice) ให้ createLawFull แปลงเป็น met/unmet + evaluated_at
+      const reqs = activeRows.map(r => ({
+        text: r.text.trim(), choice: r.choice,
+        responsible: r.responsible.trim(), waitDate: r.waitDate || '',
+        frequency: r.frequency || '', documents: r.documents || '',
       }))
       const { law } = await onCreate({
         lawFields: { code: previewCode, cat, name: name.trim(), hierarchy_level: level, ministry,
@@ -192,32 +226,80 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
                 <span style={{fontSize:12,color:'var(--brand)',fontWeight:600}}>เลขทะเบียนที่จะได้รับ</span>
                 <span className="num" style={{fontSize:22,fontWeight:700,color:'var(--brand)',letterSpacing:-1,marginLeft:'auto'}}>{previewCode}</span>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-                <div>
-                  <label className="form-label">หมวด <span style={{color:'var(--bad)'}}>*</span></label>
-                  <select className="form-input" value={cat} onChange={e=>setCat(e.target.value)}>
-                    {cats.map(c=><option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">ลำดับชั้น</label>
-                  <select className="form-input" value={level} onChange={e=>setLevel(e.target.value)}>
-                    {LAW_TYPES.map(t=><option key={t.level} value={t.level}>ชั้น {t.level} — {t.label}</option>)}
-                  </select>
-                </div>
-              </div>
+              {/* แสดงตลอด: หมวด · ชื่อกฎหมาย */}
+              <label className="form-label">หมวด <span style={{color:'var(--bad)'}}>*</span></label>
+              <select className="form-input" value={cat} onChange={e=>setCat(e.target.value)}>
+                {cats.map(c=><option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
+              </select>
               <label className="form-label">ชื่อกฎหมาย <span style={{color:'var(--bad)'}}>*</span></label>
               <textarea className="form-input" rows={2} value={name} onChange={e=>changeName(e.target.value)}/>
-              <label className="form-label">กระทรวง / หน่วยงาน</label>
-              <input className="form-input" type="text" value={ministry} onChange={e=>setMinistry(e.target.value)}/>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-                <div><label className="form-label">วันที่ประกาศ</label><input className="form-input" type="text" value={announce} onChange={e=>setAnnounce(e.target.value)}/></div>
-                <div><label className="form-label">วันที่บังคับใช้</label><input className="form-input" type="text" value={effective} onChange={e=>setEffective(e.target.value)}/></div>
+
+              {/* P20 · ข้อมูลเพิ่มเติม (ไม่บังคับ) — พับไว้ */}
+              <button type="button" onClick={()=>setAdvOpen(o=>!o)}
+                style={{display:'flex',alignItems:'center',gap:6,width:'100%',background:'none',border:'none',cursor:'pointer',padding:'10px 0 4px',color:'var(--ink-soft)',fontSize:12.5,fontWeight:600}}>
+                <span style={{display:'inline-flex',transition:'transform .18s ease',transform:advOpen?'rotate(90deg)':'none'}}><I n="chevron"/></span>
+                ข้อมูลเพิ่มเติม (ไม่บังคับ)
+                <span style={{marginLeft:'auto',color:'var(--ink-faint)',fontWeight:400}}>ลำดับชั้น · กระทรวง · วันที่ · เอกสาร</span>
+              </button>
+              {advOpen && (<div style={{borderLeft:'2px solid var(--line)',paddingLeft:12,marginBottom:4}}>
+                <label className="form-label" style={{marginTop:4}}>ลำดับชั้น</label>
+                <select className="form-input" value={level} onChange={e=>setLevel(e.target.value)}>
+                  {LAW_TYPES.map(t=><option key={t.level} value={t.level}>ชั้น {t.level} — {t.label}</option>)}
+                </select>
+                <label className="form-label">กระทรวง / หน่วยงาน</label>
+                <input className="form-input" type="text" value={ministry} onChange={e=>setMinistry(e.target.value)}/>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                  <DateField label="วันที่ประกาศ" value={announce} onChange={setAnnounce}/>
+                  <DateField label="วันที่บังคับใช้" value={effective} onChange={setEffective}/>
+                </div>
+                <label className="form-label">เอกสารที่เกี่ยวข้อง</label>
+                <input className="form-input" type="text" value={docList} onChange={e=>setDocList(e.target.value)}/>
+              </div>)}
+
+              {/* P18 · ข้อปฏิบัติ + ประเมินรายข้อในบรรทัดเดียว */}
+              <div style={{display:'flex',alignItems:'center',gap:10,marginTop:12,flexWrap:'wrap'}}>
+                <label className="form-label" style={{margin:0}}>สาระสำคัญ / ข้อปฏิบัติ · ประเมินรายข้อ <span style={{color:'var(--bad)'}}>*</span></label>
+                {activeRows.length>0 && <span style={{fontSize:11.5,color:allChosen?'var(--ok)':'var(--ink-faint)',marginLeft:'auto'}}>เลือกแล้ว {chosenCount} จาก {activeRows.length} ข้อ</span>}
               </div>
-              <label className="form-label">เอกสารที่เกี่ยวข้อง</label>
-              <input className="form-input" type="text" value={docList} onChange={e=>setDocList(e.target.value)}/>
-              <label className="form-label">สาระสำคัญ / ข้อปฏิบัติ (1 ข้อ ต่อบรรทัด)</label>
-              <textarea className="form-input" rows={4} placeholder="เช่น จัดให้มี จป.วิชาชีพ…" value={reqText} onChange={e=>setReqText(e.target.value)}/>
+              {activeRows.length>1 && (
+                <div style={{display:'flex',gap:8,margin:'2px 0 8px',fontSize:11.5}}>
+                  <span style={{color:'var(--ink-faint)'}}>ตั้งทั้งหมด:</span>
+                  <button type="button" className="req-bulk" onClick={()=>setAllChoice('met')}>สอดคล้องทั้งหมด</button>
+                  <button type="button" className="req-bulk" onClick={()=>setAllChoice('waiting')}>รอผู้เกี่ยวข้องทั้งหมด</button>
+                </div>
+              )}
+              {reqRows.map((r,i)=>(
+                <div key={i} className="req-row" style={{border:'1px solid var(--line)',borderRadius:9,padding:'9px 10px',marginBottom:8}}>
+                  <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+                    <span style={{fontSize:12,color:'var(--ink-faint)',paddingTop:8,minWidth:18}} className="num">{i+1}.</span>
+                    <textarea className="form-input" rows={2} style={{margin:0,flex:1}} placeholder="เช่น จัดให้มี จป.วิชาชีพ…" value={r.text} onChange={e=>setRow(i,{text:e.target.value})}/>
+                    <button type="button" className="btn btn-ghost" style={{padding:'4px 8px',fontSize:11}} title="ลบข้อนี้" onClick={()=>delRow(i)}>✕</button>
+                  </div>
+                  {r.text.trim() && (
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:8,paddingLeft:26}}>
+                      <button type="button" className={'req-choice met'+(r.choice==='met'?' on':'')} title="ประเมินแล้ว: สอดคล้อง" onClick={()=>setRow(i,{choice:'met'})}>สอดคล้อง</button>
+                      <button type="button" className={'req-choice unmet'+(r.choice==='unmet'?' on':'')} title="ประเมินแล้ว: ไม่สอดคล้อง (NC)" onClick={()=>setRow(i,{choice:'unmet'})}>ไม่สอดคล้อง</button>
+                      <button type="button" className={'req-choice wait'+(r.choice==='waiting'?' on':'')} title="รอผู้เกี่ยวข้องประเมิน (ยังไม่ตัดสินความสอดคล้อง)" onClick={()=>setRow(i,{choice:'waiting'})}>
+                        <span className="req-choice-full">รอผู้เกี่ยวข้องประเมิน</span><span className="req-choice-short">รอผู้เกี่ยวข้อง</span>
+                      </button>
+                    </div>
+                  )}
+                  {r.text.trim() && r.choice==='waiting' && (
+                    <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:8,marginTop:8,paddingLeft:26}}>
+                      <div>
+                        <label className="form-label" style={{marginTop:0}}>ผู้รับผิดชอบ <span style={{color:'var(--bad)'}}>*</span></label>
+                        <input className="form-input" list="lg-resp-suggest" placeholder="พิมพ์ชื่อผู้รับผิดชอบ/แผนก…" value={r.responsible} onChange={e=>setRow(i,{responsible:e.target.value})}/>
+                      </div>
+                      <div>
+                        <label className="form-label" style={{marginTop:0}}>วันที่ต้องการคำตอบ</label>
+                        <input className="form-input" type="date" value={r.waitDate} onChange={e=>setRow(i,{waitDate:e.target.value})}/>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <datalist id="lg-resp-suggest">{respOptions.map(x=><option key={x} value={x}/>)}</datalist>
+              <button type="button" className="btn btn-ghost" style={{padding:'5px 12px',fontSize:12.5}} onClick={addRow}><I n="plus"/>เพิ่มข้อปฏิบัติ</button>
             </div>)}
 
             {dup && dup.blocked && (
@@ -238,7 +320,8 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
                 </div>
               </div>
             )}
-            <div className="modal-foot" style={{marginTop:14}}>
+            <div className="modal-foot" style={{marginTop:14,alignItems:'center'}}>
+              {selId && !allChosen && <span style={{fontSize:11.5,color:'var(--ink-faint)',marginRight:'auto'}}>เลือกผลประเมินให้ครบทุกข้อก่อนบันทึก ({chosenCount}/{activeRows.length})</span>}
               <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
               <button className="btn btn-primary" disabled={!valid||saving||!!dup} onClick={()=>submit(false)}>
                 {saving ? 'กำลังบันทึก…' : <><I n="check"/>เพิ่มเข้าทะเบียน ({previewCode})</>}
@@ -250,8 +333,8 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
         {step===2 && (
           <div className="modal-body">
             <div className="panel" style={{padding:'12px 16px',marginBottom:12,borderLeft:'3px solid var(--ok)'}}>
-              <div style={{fontWeight:600,fontSize:14}}>✓ เพิ่ม {newLaw?.code} เข้าทะเบียนแล้ว</div>
-              <div style={{fontSize:12,color:'var(--ink-faint)'}}>สถานะ: รอประเมิน · แนบไฟล์กฎหมาย/เอกสารได้ที่นี่</div>
+              <div style={{fontWeight:600,fontSize:14}}>✓ เพิ่ม {newLaw?.code} เข้าทะเบียนพร้อมผลประเมินแล้ว</div>
+              <div style={{fontSize:12,color:'var(--ink-faint)'}}>บันทึกผลประเมินรายข้อเรียบร้อย · แนบไฟล์กฎหมาย/เอกสารได้ที่นี่</div>
             </div>
             <label className="form-label">ไฟล์แนบ (กฎหมาย + เอกสารที่เกี่ยวข้อง)</label>
             {newLaw?.id && <Attachments refType="law" refId={newLaw.id}/>}

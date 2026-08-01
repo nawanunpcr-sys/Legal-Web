@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { STATUS, uploadEvidence, updateRequirementField, fetchReviewLog, addReviewLog, updateLawField } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
-import { daysTo } from '../lib/ui.jsx'
+import { daysTo, reqStats, reqKind, reqEvalTitle } from '../lib/ui.jsx'
 import { I } from './icons.jsx'
 import DeleteLawModal from './DeleteLawModal.jsx'
 
@@ -89,7 +89,7 @@ function RepealModal({ law, onConfirm, onClose }){
   )
 }
 
-export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, onRestore, onDuplicate, onToggleActive, onDelete, prog, thDate }){
+export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, onRestore, onDuplicate, onToggleActive, onDelete, thDate }){
   const { can } = useAuth()
   const inactive = law.active === false
   const [showRepealModal, setShowRepealModal] = useState(false)
@@ -104,7 +104,6 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
   const [reviewDate, setReviewDate] = useState(law.review_date)
   const [reportDue, setReportDue] = useState(law.report_due_date || '')
   const [uploadingReq, setUploadingReq] = useState(null)
-  const p = prog(law)
   const isRepealed = law.status === 'repealed'
   const cat = catMap?.[law.cat]
   const summary = law.reqs.slice(0,3).map(r=>r.text).join(' ').slice(0,280)
@@ -261,9 +260,12 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
             <div className="sec">
               <div className="sec-t">
                 ข้อปฏิบัติ & การประเมิน
-                <span style={{marginLeft:'auto',color:p===100?'var(--ok)':'var(--bad)'}}>{p}%</span>
+                {(()=>{ const s=reqStats(law); return <span style={{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}}>
+                  {s.waiting>0 && <span style={{fontSize:11.5,color:'var(--ink-faint)'}}>รอผู้เกี่ยวข้องประเมิน {s.waiting} ข้อ</span>}
+                  <span style={{color:s.pct==null?'var(--ink-faint)':s.pct===100?'var(--ok)':'var(--bad)'}}>{s.pct==null?'ยังไม่ประเมิน':s.pct+'%'}</span>
+                </span> })()}
               </div>
-              <p style={{fontSize:11.5,color:'var(--ink-faint)',marginBottom:10}}>คลิกกล่องสถานะเพื่อสลับ สอดคล้อง ↔ ยังไม่สอดคล้อง (บันทึกอัตโนมัติ)</p>
+              <p style={{fontSize:11.5,color:'var(--ink-faint)',marginBottom:10}}>คลิกกล่องสถานะเพื่อสลับ สอดคล้อง ↔ ยังไม่สอดคล้อง (บันทึกอัตโนมัติ) · ข้อสีเทา = รอผู้เกี่ยวข้องประเมิน</p>
               {law.reqs.map(r=>{
                 const ov = evOverrides[r.id] || {}
                 const evidenceUrl   = ov.evidence_url   || r.evidence_url
@@ -275,9 +277,9 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
                 const rdocs = ro.documents   ?? r.documents
                 const isEditing = editingId === r.id
                 return (
-                <div className={'req '+r.status} key={r.id}>
-                  <button className="ck" onClick={()=>onToggle(law,r)} disabled={!can('edit')||isEditing} title={can('edit')?'สลับสถานะ':NO_PERM}>
-                    {r.status==='met' ? 'C' : '·'}
+                <div className={'req '+(reqKind(r)==='waiting'?'waiting':r.status)} key={r.id}>
+                  <button className="ck" onClick={()=>onToggle(law,r)} disabled={!can('edit')||isEditing} title={can('edit')?(reqEvalTitle(r)+' · คลิกเพื่อสลับสถานะ'):NO_PERM}>
+                    {reqKind(r)==='met' ? 'C' : reqKind(r)==='unmet' ? 'NC' : '⏳'}
                   </button>
                   <div style={{flex:1}}>
                     {isEditing ? (

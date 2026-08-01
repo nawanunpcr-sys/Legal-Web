@@ -1,14 +1,18 @@
 // Registry & Compliance page (ทะเบียน & ความสอดคล้อง).
 // Includes Register, MonthlyCheckPanel, ComplianceLawRow, Compliance.
 // Moved verbatim from App.jsx (pure refactor).
+// P19 · รับ History + Repealed เข้ามาเป็นแท็บในหน้าเดียว (ลดเมนูหลักเหลือ 4 อัน)
 import { useState, useMemo, useEffect } from 'react'
 import { LAW_TYPES } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import AssessForm from '../components/AssessForm.jsx'
 import DeleteLawModal from '../components/DeleteLawModal.jsx'
+import ImportLawsModal from '../components/ImportLawsModal.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
-import { usePageFilters, Pill, ActiveBadge, thDate, TH_MONTHS, prog, lawBEYear } from '../lib/ui.jsx'
+import { usePageFilters, Pill, ActiveBadge, thDate, TH_MONTHS, prog, lawBEYear, sumReqStats, reqStats, reqKind, reqEvalTitle } from '../lib/ui.jsx'
+import History from './History.jsx'
+import Repealed from './Repealed.jsx'
 
 /* P13 · Task 3 — ไฮไลต์คำค้นในข้อความ (ตัดสั้น ~80 ตัวอักษรรอบคำที่เจอ) */
 function markSnippet(text, q) {
@@ -81,43 +85,71 @@ function splitLawDates(law){
   return { announce, effective:normThaiDate(law?.effective_date||embedded) }
 }
 
+const REGISTRY_TABS = [['register','ทะเบียนกฎหมาย'],['history','ประวัติการทำรายการ'],['repealed','กฎหมายที่ยกเลิก']]
+
 /* ─────────── REGISTRY + COMPLIANCE (merged view) ─────────── */
-export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,allLaws,round,onExportF259,onAddLaw,
+// P19 · เพิ่ม 3 แท็บบนสุด: ทะเบียนกฎหมาย / ประวัติการทำรายการ / กฎหมายที่ยกเลิก
+// History.jsx และ Repealed.jsx render ตรงๆ ไม่ได้แก้ไข component ทั้งสองไฟล์เลย
+export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,allLaws,round,onExportF259,onAddLaw,onImported,
     workflow=[],suggest={},onAssess,focus,onDelete,
-    monthsData=[],monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws}){
+    monthsData=[],monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws,
+    // P19 · props ใหม่สำหรับแท็บ ประวัติ/ยกเลิก
+    activity=[],settings={},searchLog=[],repealedLaws=[],onRestore}){
+  // จำแท็บที่เลือกไว้ (namespace แยกจาก 'registry' ที่ Register() ใช้อยู่แล้ว
+  // เพื่อกัน state ชนกันเวลาสอง component เขียน localStorage.lg_filters.registry พร้อมกัน)
+  const [tabF,setTabF]=usePageFilters('registryTabs',{tab:'register'})
+  const tab=tabF.tab, setTab=t=>setTabF('tab',t)
+
   const kpis=[
     {lab:'ข้อปฏิบัติทั้งหมด',   val:stats.req, accent:'#1C2431'},
     {lab:'ผ่านการประเมิน (C)', val:stats.met, accent:'#5F7A61'},
     {lab:'ยังไม่สอดคล้อง (NC)', val:stats.nc, accent:'#B4553F'},
+    {lab:'รอผู้เกี่ยวข้องประเมิน', val:stats.waiting||0, accent:'#8A8F98'},
   ]
   return <div className="view">
-    <div className="rc-stats">
-      {kpis.map((k,i)=>(
-        <div className="stat" key={i} style={{borderTopColor:k.accent}}>
-          <div className="lab">{k.lab}</div>
-          <div className="val num" style={{color:k.accent}}>{k.val}</div>
-        </div>
+    <div className="seg" style={{marginBottom:14}}>
+      {REGISTRY_TABS.map(([k,lbl])=>(
+        <button key={k} className={'seg-btn'+(tab===k?' active':'')} onClick={()=>setTab(k)}>
+          {lbl}{k==='repealed'&&repealedLaws.length>0?` (${repealedLaws.length})`:''}
+        </button>
       ))}
     </div>
 
-    {/* การตรวจสอบรายเดือน (ย้ายมาจาก Dashboard) */}
-    {onToggleMonth && <div style={{marginBottom:16}}>
-      <MonthlyCheckPanel months={monthsData} year={monthYear||new Date().getFullYear()} setYear={setMonthYear}
-        onToggle={onToggleMonth} onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
-    </div>}
+    {tab==='register' && <>
+      <div className="rc-stats">
+        {kpis.map((k,i)=>(
+          <div className="stat" key={i} style={{borderTopColor:k.accent}}>
+            <div className="lab">{k.lab}</div>
+            <div className="val num" style={{color:k.accent}}>{k.val}</div>
+          </div>
+        ))}
+      </div>
 
-    <Register laws={regLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
-      round={round} onExportF259={onExportF259} onAddLaw={onAddLaw}
-      workflow={workflow} suggest={suggest} onAssess={onAssess} focus={focus} onDelete={onDelete}/>
+      {/* การตรวจสอบรายเดือน (ย้ายมาจาก Dashboard) */}
+      {onToggleMonth && <div style={{marginBottom:16}}>
+        <MonthlyCheckPanel months={monthsData} year={monthYear||new Date().getFullYear()} setYear={setMonthYear}
+          onToggle={onToggleMonth} onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
+      </div>}
+
+      <Register laws={regLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
+        round={round} onExportF259={onExportF259} onAddLaw={onAddLaw} onImported={onImported}
+        workflow={workflow} suggest={suggest} onAssess={onAssess} focus={focus} onDelete={onDelete}/>
+    </>}
+
+    {tab==='history' && <History activity={activity} laws={allLaws} catMap={catMap} settings={settings}
+      workflowRows={workflow} searchLog={searchLog} onDeleteLaw={onDelete}/>}
+
+    {tab==='repealed' && <Repealed laws={repealedLaws} catMap={catMap} search={search} onOpen={onOpen} onRestore={onRestore}/>}
   </div>
 }
 
 /* ─────────────────────────── REGISTER ─────────────────────────── */
 // จัดลำดับหมวด: LA→LG
 const catOrder=(a,b)=>a.localeCompare(b)
-function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259,onAddLaw,
+function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259,onAddLaw,onImported,
     workflow=[],suggest={},onAssess,focus,onDelete}){
   const { can }=useAuth()
+  const [showImport,setShowImport]=useState(false)   // P20 · CSV import modal
   // Task 6.1 · จำ filter ต่อหน้า (lg_filters.registry)
   const [f,setF,resetF,filterActive]=usePageFilters('registry',{cat:'all',act:'all',sortKey:'code',sortDir:1})
   const {cat,act,sortKey,sortDir}=f
@@ -195,8 +227,10 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
       {(()=>{ const hasFilter=cat!=='all'||act!=='all'||!!q
         return <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>
           {hasFilter?`Export (${rows.length} ฉบับตามตัวกรอง)`:`ส่งออกทั้งหมด (${rows.length})`}</button> })()}
+      <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} disabled={!can('edit')} title={can('edit')?'นำเข้ากฎหมายเป็นชุดจากไฟล์ CSV':NO_PERM} onClick={()=>setShowImport(true)}><I n="download"/>นำเข้าจาก CSV</button>
       <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')||!onAddLaw} title={can('edit')?'':NO_PERM} onClick={()=>onAddLaw&&onAddLaw()}><I n="plus"/>เพิ่มกฎหมาย</button>
     </div>
+    {showImport && <ImportLawsModal cats={cats} allLaws={allLaws} onClose={()=>setShowImport(false)} onImported={()=>onImported&&onImported()}/>}
     {sel.size>0 && (
       <div className="bulkbar">
         <b>เลือก {sel.size} ฉบับ</b>
@@ -211,12 +245,13 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
         <div className="hier-cat-header" style={{borderLeftColor:catMap[c]?.color||'var(--brand)'}}>
           <span style={{color:catMap[c]?.color,fontWeight:700}}>{c}</span>
           <span style={{marginLeft:8,color:'var(--ink-soft)'}}>{catMap[c]?.name}</span>
-          {(()=>{ const ls=rows.filter(l=>l.cat===c); let r=0,m=0; ls.forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++})); const pc=r?Math.round(m/r*100):100; const left=r-m;
-            const col=pc===100?'var(--ok)':pc>=70?'var(--review)':'var(--bad)';
+          {(()=>{ const ls=rows.filter(l=>l.cat===c); const s=sumReqStats(ls);
+            const col=s.pct==null?'var(--ink-faint)':s.pct===100?'var(--ok)':s.pct>=70?'var(--review)':'var(--bad)';
             return <span style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-              <span className="pill" style={{fontSize:11.5,fontWeight:700,background:'color-mix(in srgb,'+col+' 12%,transparent)',color:col}}>สอดคล้อง {pc}%</span>
-              <span style={{fontSize:12,color:'var(--ok)'}}>C {m}/{r} ข้อ</span>
-              {left>0 && <span style={{fontSize:12,color:'var(--bad)'}}>เหลือ {left} ข้อ</span>}
+              <span className="pill" style={{fontSize:11.5,fontWeight:700,background:'color-mix(in srgb,'+col+' 12%,transparent)',color:col}}>{s.pct==null?'ยังไม่ประเมิน':'สอดคล้อง '+s.pct+'%'}</span>
+              <span style={{fontSize:12,color:'var(--ok)'}}>C {s.met}/{s.assessed} ข้อ</span>
+              {s.unmet>0 && <span style={{fontSize:12,color:'var(--bad)'}}>NC {s.unmet} ข้อ</span>}
+              {s.waiting>0 && <span style={{fontSize:12,color:'var(--ink-faint)'}}>รอผู้เกี่ยวข้องประเมิน {s.waiting} ข้อ</span>}
               <span style={{fontSize:12,color:'var(--ink-faint)'}}>{ls.length} ฉบับ</span>
             </span> })()}
         </div>
@@ -347,28 +382,33 @@ export function MonthlyCheckPanel({ months, year, setYear, onToggle, onMarkNoNew
 function ComplianceLawRow({l,onToggle,onOpen}){
   const { can }=useAuth()
   const [open,setOpen]=useState(false)
-  const met=l.reqs.filter(r=>r.status==='met').length
+  const s=reqStats(l)
   return (
     <div style={{borderBottom:'1px solid var(--line-soft)'}}>
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',paddingLeft:8}}>
         <button onClick={()=>setOpen(o=>!o)} title="กางข้อปฏิบัติ" style={{border:'none',background:'none',cursor:'pointer',color:'var(--ink-faint)',width:18}}>{open?'▾':'▸'}</button>
         <span className="law-code">{l.code}</span>
         <span style={{fontSize:13,flex:1,cursor:'pointer'}} onClick={()=>setOpen(o=>!o)}>{l.name.slice(0,60)}{l.name.length>60?'…':''}</span>
-        <span style={{fontSize:12,color:'var(--ink-faint)'}} className="num">{met}/{l.reqs.length} ข้อ</span>
+        <span style={{fontSize:12,color:'var(--ink-faint)'}} className="num" title={`สอดคล้อง ${s.met} · ไม่สอดคล้อง ${s.unmet} · รอผู้เกี่ยวข้องประเมิน ${s.waiting}`}>
+          {s.pct==null?'ยังไม่ประเมิน':`C ${s.met}/${s.assessed}`}{s.waiting>0?` · รอ ${s.waiting}`:''}</span>
         <Pill s={l.status}/>
         <button className="btn btn-ghost" style={{padding:'2px 9px',fontSize:11}} onClick={()=>onOpen(l)}>เปิด</button>
       </div>
       {open && (
         <div style={{paddingLeft:34,paddingBottom:10}}>
           {l.reqs.length===0 && <div style={{fontSize:12,color:'var(--ink-faint)',padding:'4px 0'}}>ไม่มีข้อปฏิบัติ</div>}
-          {l.reqs.map(r=>(
+          {l.reqs.map(r=>{ const k=reqKind(r)
+            const bg=k==='met'?'var(--ok)':k==='unmet'?'var(--bad)':'var(--grayfill)'
+            const fg=k==='waiting'?'var(--ink-faint)':'#fff'
+            const lab=k==='met'?'C':k==='unmet'?'NC':'รอ'
+            return (
             <div key={r.id} style={{display:'flex',gap:9,padding:'6px 0',alignItems:'flex-start'}}>
-              <button onClick={()=>onToggle(l,r)} disabled={!can('edit')} title={can('edit')?'สลับ สอดคล้อง/ยังไม่สอดคล้อง':NO_PERM}
-                style={{flexShrink:0,width:22,height:22,borderRadius:5,border:'none',cursor:can('edit')?'pointer':'not-allowed',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',
-                  background:r.status==='met'?'var(--ok)':'var(--grayfill)',color:r.status==='met'?'#fff':'var(--ink-faint)'}}>{r.status==='met'?'C':'·'}</button>
-              <span style={{fontSize:12.5,flex:1,lineHeight:1.5,color:r.status==='met'?'var(--ink-soft)':'var(--ink)'}}>{r.text}</span>
+              <button onClick={()=>onToggle(l,r)} disabled={!can('edit')} title={can('edit')?(reqEvalTitle(r)+' · คลิกเพื่อสลับสอดคล้อง/ไม่สอดคล้อง'):NO_PERM}
+                style={{flexShrink:0,minWidth:22,height:22,padding:'0 5px',borderRadius:5,border:'none',cursor:can('edit')?'pointer':'not-allowed',fontSize:k==='waiting'?9.5:11,fontWeight:700,fontFamily:'var(--mono)',
+                  background:bg,color:fg}}>{lab}</button>
+              <span style={{fontSize:12.5,flex:1,lineHeight:1.5,color:k==='met'?'var(--ink-soft)':'var(--ink)'}} title={reqEvalTitle(r)}>{r.text}</span>
             </div>
-          ))}
+          )})}
         </div>
       )}
     </div>
@@ -381,14 +421,14 @@ function Compliance({laws,cats,onOpen,onToggle}){
     <div className="panel" style={{marginTop:0}}><div className="panel-h"><h3>สถานะรายหมวด / ลำดับชั้นกฎหมาย</h3><span className="sub" style={{marginLeft:'auto'}}>คลิกที่กฎหมายเพื่อดูข้อปฏิบัติและแก้ไข</span></div>
       <div className="panel-b">
         {cats.filter(c=>byCat[c.code]).map(c=>{
-          let r=0,m=0; byCat[c.code].forEach(l=>l.reqs.forEach(x=>{r++;if(x.status==='met')m++}))
-          const p=r?Math.round(m/r*100):100
+          const s=sumReqStats(byCat[c.code])
           const byTier={}; byCat[c.code].forEach(l=>{ const t=l.hierarchy_level||5; (byTier[t]=byTier[t]||[]).push(l) })
           return <details key={c.code} style={{marginBottom:12}} open={c.code==='LA'}>
             <summary style={{cursor:'pointer',display:'flex',alignItems:'center',gap:12,padding:'12px 14px',background:'var(--surface-2)',border:'1px solid var(--line)',borderRadius:8,listStyle:'none'}}>
               <span style={{width:8,height:8,borderRadius:2,background:c.color,flexShrink:0}}/>
               <b style={{}}>{c.code}</b><span style={{flex:1}}>{c.name}</span>
-              <span className="num" style={{color:c.color,fontWeight:700}}>{p}%</span>
+              {s.waiting>0 && <span style={{fontSize:11.5,color:'var(--ink-faint)'}}>รอประเมิน {s.waiting}</span>}
+              <span className="num" style={{color:c.color,fontWeight:700}} title="% นับเฉพาะข้อที่ประเมินแล้ว">{s.pct==null?'ยังไม่ประเมิน':s.pct+'%'}</span>
               <span style={{fontSize:12,color:'var(--ink-faint)'}}>{byCat[c.code].length} ฉบับ</span>
             </summary>
             <div style={{padding:'6px 14px'}}>
