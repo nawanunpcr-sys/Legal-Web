@@ -254,11 +254,8 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
       ))}
     </div>
     <div className="filterbar">
+      {/* P20e · ปุ่มส่งออก (F-259 / Export) ย้ายไปอยู่เมนู "ส่งออก ▾" บนหัวหน้าทะเบียนแล้ว — toolbar เหลือแค่ นำเข้า/เพิ่ม */}
       <span className="right" style={{marginLeft:'auto'}}>พบ {rows.length} ฉบับ</span>
-      {onExportF259 && <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="พิมพ์/บันทึกเป็น PDF ตามฟอร์ม F-259 (สำหรับ audit ISO 45001)" onClick={onExportF259}><I n="download"/>ส่งออกแบบ F-259</button>}
-      {(()=>{ const hasFilter=cat!=='all'||act!=='all'||!!q
-        return <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} title="ส่งออกเฉพาะรายการที่กรองอยู่" onClick={()=>exportLawsToExcel(rows,Object.fromEntries(cats.map(c=>[c.code,c])))}>
-          {hasFilter?`Export (${rows.length} ฉบับตามตัวกรอง)`:`ส่งออกทั้งหมด (${rows.length})`}</button> })()}
       <button className="btn btn-ghost" style={{padding:'6px 12px',fontSize:12.5}} disabled={!can('edit')} title={can('edit')?'นำเข้ากฎหมายเป็นชุดจากไฟล์ CSV':NO_PERM} onClick={()=>setShowImport(true)}><I n="download"/>นำเข้าจาก CSV</button>
       <div style={{position:'relative',display:'inline-flex'}}>
         <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')||!onAddLaw} title={can('edit')?'':NO_PERM} onClick={()=>onAddLaw&&onAddLaw()}><I n="plus"/>เพิ่มกฎหมาย</button>

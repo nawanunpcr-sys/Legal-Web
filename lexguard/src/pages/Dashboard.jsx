@@ -202,9 +202,7 @@ export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],onGoView,
   ]
 
   return <div className="view">
-    {/* เห็นโดยไม่ต้องเลื่อน: การ์ด "ต้องทำตอนนี้" + KPI strip */}
-    <NowCard taskRows={taskRows} waitingCount={stats.waiting}
-      onOpenTasks={()=>onGoView&&onGoView('tasks')} onOpenRegistry={()=>onGoView&&onGoView('registry')}/>
+    {/* P20e · ตัวเลขภาพรวมขึ้นบนสุด แล้วค่อยการ์ด "ต้องทำตอนนี้" */}
     <div className="dash-strip">
       {strip.map((s,i)=>(<div className={'dash-strip-cell'+(s.go?' stat-link':'')} key={i}
         role={s.go?'button':undefined} tabIndex={s.go?0:undefined} onClick={s.go||undefined}
@@ -214,6 +212,8 @@ export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],onGoView,
         <div className="dash-strip-lab">{s.lab}</div>
       </div>))}
     </div>
+    <NowCard taskRows={taskRows} waitingCount={stats.waiting}
+      onOpenTasks={()=>onGoView&&onGoView('tasks')} onOpenRegistry={()=>onGoView&&onGoView('registry')}/>
 
     {/* พับเก็บได้ — ค่าเริ่มต้น = พับ (จำสถานะใน localStorage) */}
     <Collapsible storageKey="dash_open_monthly" title="สถิติรายเดือน — กฎหมายเพิ่ม/ยกเลิก">

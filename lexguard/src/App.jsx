@@ -45,7 +45,7 @@ const NAV_GROUPS = [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
     { id:'registry',      label:'ทะเบียนกฎหมาย',        icon:'book'    },
     { id:'tasks',         label:'รายการที่ต้องทำ',        icon:'update'  },
-    { id:'comm',          label:'สื่อสาร & ส่งรายงาน',    icon:'chat', sub:true },
+    { id:'comm',          label:'สื่อสาร & ส่งรายงาน',    icon:'chat'    },
     { id:'summary',       label:'สรุปกฎหมาย (AI)',       icon:'spark'   },
   ]},
 ]
@@ -58,7 +58,7 @@ const TITLES = {
   register:      ['ทะเบียนกฎหมาย',         'กฎหมายที่เกี่ยวข้องและสถานะการปฏิบัติ'],
   compliance:    ['ติดตามความสอดคล้อง',    'สถานะรายข้อปฏิบัติแยกตามหมวดและลำดับชั้น'],
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
-  comm:          ['สื่อสาร & ส่งรายงาน',   'ตารางการสื่อสาร (ISD-86) และการส่งรายงานราชการในหน้าเดียว'],
+  comm:          ['สื่อสาร & ส่งรายงาน',   'ตารางการสื่อสาร (ISD-86) และการส่งรายงานราชการ'],
   summary:       ['สรุปกฎหมาย (AI)',       'สรุปกฎหมายด้วย AI + คลังสรุป + ส่งต่อเข้าทะเบียน'],
   notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
   settings:      ['ตั้งค่า',                'ข้อมูลองค์กรและการแสดงผลของระบบ'],
@@ -562,6 +562,7 @@ export default function App(){
               <div className="menu-scrim" onClick={()=>setAvatarOpen(false)}/>
               <div className="menu">
                 <div className="menu-user"><div className="mu-name">{session?.name||'ผู้ใช้งาน'}</div><div className="mu-role">{ROLE_LABELS[role]||role}</div></div>
+                {can(role,'delete') && <button className="menu-item" onClick={()=>{ setView('settings'); setAvatarOpen(false) }}><I n="gear"/>ตั้งค่า</button>}
                 <button className="menu-item" onClick={()=>{ setDark(d=>!d); setAvatarOpen(false) }}><I n={dark?'sun':'moon'}/>{dark?'โหมดสว่าง':'โหมดมืด'}</button>
                 <button className="menu-item" onClick={async()=>{ setAvatarOpen(false); await authSignOut(); setSession(await getAuthSession()) }}><I n="logout"/>ออกจากระบบ</button>
               </div>
@@ -574,7 +575,7 @@ export default function App(){
           <div className="page-head no-print">
             <div><h2>{title[0]}</h2><p>{title[1]}</p></div>
             <div className="page-actions">
-              {(view==='registry'||view==='dashboard') && (
+              {view==='registry' && (
                 <div className="tb-menu">
                   <button className="btn btn-ghost" onClick={()=>setExportOpen(o=>!o)}><I n="download"/>ส่งออก ▾</button>
                   {exportOpen && (<>

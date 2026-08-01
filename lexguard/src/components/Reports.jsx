@@ -26,11 +26,11 @@ function EventDateModal({ report, onSave, onClose }){
   const preview=useMemo(()=>{ if(!date) return null; const d=new Date(date); d.setDate(d.getDate()+off); return d.toISOString().slice(0,10) },[date,off])
   return createPortal(<><div className="scrim" onClick={onClose}/>
     <div className="modal">
-      <div className="modal-head"><h3>กรอกวันเกิดเหตุ → คำนวณกำหนดส่ง</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
+      <div className="modal-head"><h3>กรอกวันที่บันทึก → คำนวณกำหนดส่ง</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
       <div className="modal-body">
         <p style={{fontSize:13,color:'var(--ink-soft)',marginBottom:8}}>{report.title}</p>
         <p style={{fontSize:12.5,color:'var(--ink-faint)',marginBottom:14}}>{report.timeline_text}</p>
-        <label className="form-label">วันที่เกิดเหตุ / ตรวจวัด / แต่งตั้ง</label>
+        <label className="form-label">วันที่บันทึก / ตรวจวัด / แต่งตั้ง</label>
         <input className="form-input" type="date" value={date} onChange={e=>setDate(e.target.value)}/>
         {preview && <div style={{marginTop:14,background:'var(--brand-tint)',border:'1px solid var(--brand)',borderRadius:9,padding:'10px 16px',display:'flex',alignItems:'center',gap:10}}>
           <span style={{fontSize:12,color:'var(--brand)',fontWeight:600}}>ต้องส่งภายใน ({off} วัน)</span>
@@ -88,7 +88,7 @@ function SubmitModal({ report, onSave, onClose }){
           <I n="info"/>
           {isRecurring
             ? <span>เมื่อยืนยัน ระบบจะเลื่อนกำหนดส่งไปยังรอบถัดไป ({RECURRENCE_LABELS[report.recurrence]}) โดยอัตโนมัติ</span>
-            : <span>เมื่อยืนยัน รายการนี้จะรอกรอกวันเกิดเหตุครั้งถัดไป</span>}
+            : <span>เมื่อยืนยัน รายการนี้จะรอกรอกวันที่บันทึกครั้งถัดไป</span>}
         </div>
       </div>
       <div className="modal-foot">
@@ -141,14 +141,14 @@ export default function Reports({ reports, onSetEvent, onSubmit }){
       <div className="panel" style={{padding:16}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>รายงานทั้งหมด</div><div className="num" style={{fontSize:26,fontWeight:700}}>{reports.length}</div></div>
       <div className="panel" style={{padding:16}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>เกินกำหนด</div><div className="num" style={{fontSize:26,fontWeight:700,color:'var(--bad)'}}>{counts.overdue}</div></div>
       <div className="panel" style={{padding:16}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>ใกล้ครบกำหนด</div><div className="num" style={{fontSize:26,fontWeight:700,color:'var(--warn)'}}>{counts.upcoming}</div></div>
-      <div className="panel" style={{padding:16}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>รอกรอกวันเกิดเหตุ</div><div className="num" style={{fontSize:26,fontWeight:700,color:'var(--ink-soft)'}}>{counts.pending}</div></div>
+      <div className="panel" style={{padding:16}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>รอกรอกวันที่บันทึก</div><div className="num" style={{fontSize:26,fontWeight:700,color:'var(--ink-soft)'}}>{counts.pending}</div></div>
     </div>
 
     <div className="filterbar">
       <span className={'chip'+(filter==='all'?' active':'')} onClick={()=>setFilter('all')}>ทั้งหมด ({reports.length})</span>
       <span className={'chip'+(filter==='overdue'?' active':'')} onClick={()=>setFilter('overdue')}>เกินกำหนด ({counts.overdue})</span>
       <span className={'chip'+(filter==='upcoming'?' active':'')} onClick={()=>setFilter('upcoming')}>ใกล้ครบกำหนด ({counts.upcoming})</span>
-      <span className={'chip'+(filter==='pending'?' active':'')} onClick={()=>setFilter('pending')}>รอกรอกวันเกิดเหตุ ({counts.pending})</span>
+      <span className={'chip'+(filter==='pending'?' active':'')} onClick={()=>setFilter('pending')}>รอกรอกวันที่บันทึก ({counts.pending})</span>
       <select className="form-input" style={{maxWidth:150,margin:0,marginLeft:'auto'}} value={month} onChange={e=>setMonth(e.target.value)} title="กรองตามเดือนกำหนดส่ง">
         <option value="all">ทุกเดือน</option>
         {monthOptions.map(p=>{ const [y,m]=p.split('-'); return <option key={p} value={p}>{TH_MONTHS[+m]} {(+y)+543}</option> })}
@@ -180,12 +180,12 @@ export default function Reports({ reports, onSetEvent, onSubmit }){
           <td style={{fontSize:12,whiteSpace:'nowrap'}}>
             {r.next_due_date
               ? <><div>{thDate(r.next_due_date)}</div>{countdownChip(r.next_due_date)}</>
-              : <span style={{color:'var(--ink-faint)'}}>{r.trigger_type==='event'?'รอกรอกวันเกิดเหตุ':'ยังไม่ตั้งค่า'}</span>}
+              : <span style={{color:'var(--ink-faint)'}}>{r.trigger_type==='event'?'รอกรอกวันที่บันทึก':'ยังไม่ตั้งค่า'}</span>}
           </td>
           <td style={{fontSize:12.5,color:'var(--ink-soft)'}}>{r.responsible||'—'}</td>
           <td><div style={{display:'flex',gap:4}}>
             {r.trigger_type==='event' &&
-              <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11}} disabled={!can('edit')} onClick={()=>setEventModal(r)} title={can('edit')?'กรอกวันเกิดเหตุ':NO_PERM}>วันเกิดเหตุ</button>}
+              <button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11}} disabled={!can('edit')} onClick={()=>setEventModal(r)} title={can('edit')?'กรอกวันที่บันทึก':NO_PERM}>วันที่บันทึก</button>}
             <button className="btn btn-primary" style={{padding:'3px 8px',fontSize:11}} disabled={!can('edit')} onClick={()=>setSubmitModal(r)} title={can('edit')?'บันทึกการส่ง':NO_PERM}>ส่งแล้ว</button>
           </div></td>
         </tr>
