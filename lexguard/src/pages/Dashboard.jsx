@@ -2,7 +2,7 @@
 // P19 · จัดใหม่: เห็นโดยไม่ต้องเลื่อน = การ์ด "ต้องทำตอนนี้" + KPI strip
 //   ที่เหลือ (CatBars/NC list/สถิติรายเดือน) พับเก็บ ค่าเริ่มต้น=พับ จำสถานะใน localStorage
 import { useState, useMemo } from 'react'
-import { Pill, Tag, ActiveBadge, thDate, daysTo, TH_MONTHS, monthlyByAnnounce, announceYears, announceMonth, sumReqStats, usePersist } from '../lib/ui.jsx'
+import { Pill, Tag, ActiveBadge, thDate, TH_MONTHS, monthlyByAnnounce, announceYears, announceMonth, sumReqStats, usePersist } from '../lib/ui.jsx'
 import { I } from '../components/icons.jsx'
 
 /* P19 · ส่วนที่พับเก็บได้ — จำสถานะเปิด/ปิดต่อบล็อกใน localStorage (ค่าเริ่มต้น = พับ) */
@@ -17,42 +17,6 @@ function Collapsible({ storageKey, title, right, children, defaultOpen = false }
         <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }} onClick={e => e.stopPropagation()}>{right}</span>
       </button>
       {open && <div className="panel-b" style={{ borderTop: '1px solid var(--line)', paddingTop: 14 }}>{children}</div>}
-    </div>
-  )
-}
-
-/* P19 · การ์ด "ต้องทำตอนนี้" — รวม MonthDueCard(เดิม) + ReportDeadlinesPanel(เดิม) เป็นการ์ดเดียว
-   3 ตัวเลข: เกินกำหนด / ครบกำหนดใน 7 วัน / รอผู้เกี่ยวข้องตอบ — คลิกแต่ละตัวกระโดดไปหน้าที่เกี่ยวข้อง
-   (เกินกำหนด, ครบกำหนดใน 7 วัน → "รายการที่ต้องทำ" ซึ่ง group หัวข้อ "เกินกำหนด"/"สัปดาห์นี้" ให้อยู่แล้ว
-    รอผู้เกี่ยวข้องตอบ → "ทะเบียนกฎหมาย" เพราะเป็นข้อมูลระดับข้อปฏิบัติ ไม่ใช่ task ใน lg_tasks) */
-function NowCard({ taskRows = [], waitingCount = 0, onOpenTasks, onOpenRegistry }) {
-  const { overdue, dueWeek } = useMemo(() => {
-    const od = taskRows.filter(t => t.state === 'overdue').length
-    const wk = taskRows.filter(t => t.state === 'todo' && (() => { const d = daysTo(t.due_date); return d >= 0 && d <= 7 })()).length
-    return { overdue: od, dueWeek: wk }
-  }, [taskRows])
-  const nums = [
-    { val: overdue, lab: 'เกินกำหนด', color: overdue > 0 ? 'var(--bad)' : 'var(--ink-faint)', onClick: onOpenTasks },
-    { val: dueWeek, lab: 'ครบกำหนดใน 7 วัน', color: dueWeek > 0 ? 'var(--warn)' : 'var(--ink-faint)', onClick: onOpenTasks },
-    { val: waitingCount, lab: 'รอผู้เกี่ยวข้องตอบ', color: waitingCount > 0 ? 'var(--review)' : 'var(--ink-faint)', onClick: onOpenRegistry },
-  ]
-  const accent = overdue > 0 ? 'var(--bad)' : (dueWeek > 0 || waitingCount > 0) ? 'var(--review)' : 'var(--ok)'
-  return (
-    <div className="panel" style={{ marginBottom: 16, borderTop: '3px solid ' + accent, padding: '14px 18px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <span style={{ fontSize: 20 }}>🗓️</span>
-        <h3 style={{ margin: 0, fontSize: 15 }}>ต้องทำตอนนี้</h3>
-        <button className="btn btn-primary" style={{ marginLeft: 'auto', padding: '6px 14px' }} onClick={onOpenTasks}>ดูรายการที่ต้องทำ →</button>
-      </div>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {nums.map((n, i) => (
-          <button key={i} onClick={n.onClick} type="button"
-            style={{ flex: '1 1 140px', minWidth: 140, textAlign: 'left', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 14px', background: 'var(--surface-2)', cursor: 'pointer' }}>
-            <div className="num" style={{ fontSize: 22, fontWeight: 800, color: n.color, lineHeight: 1.1 }}>{n.val}</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2 }}>{n.lab}</div>
-          </button>
-        ))}
-      </div>
     </div>
   )
 }
@@ -173,8 +137,8 @@ function MonthlyAddRepealChart({laws,cats,catMap}){
 }
 
 // P19 · reports/onGoReports/comms/workflow/lawMap ไม่ใช้แล้ว — ReportDeadlinesPanel/MonthDueCard(เดิม)
-// ถูกรวมเป็น NowCard ซึ่งอ่านจาก taskRows (view lg_tasks) อย่างเดียว
-export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],onGoView,monthsData=[]}){
+// P20f · เอาการ์ด "ต้องทำตอนนี้" ออกจาก Dashboard แล้ว (ดูงานค้างที่หน้า "รายการที่ต้องทำ")
+export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[]}){
   // วันที่ตรวจสอบรายเดือนล่าสุด (เชื่อมกับการเช็คในหน้าทะเบียน & ความสอดคล้อง)
   const lastCheck = useMemo(()=>{
     const done=(monthsData||[]).filter(m=>m.checked_at && (m.status||m.checked))
@@ -197,7 +161,6 @@ export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],onGoView,
     {val:String(cats.length),                 lab:'หมวด (LA–LG)'},
     {val:stats.total.toLocaleString('en-US'), lab:'ข้อปฏิบัติรายข้อ'},
     {val:stats.unmet.toLocaleString('en-US'), lab:'ยังไม่สอดคล้อง (ข้อ)', bad:true, go:()=>goRegistry('compliance')},
-    {val:stats.waiting.toLocaleString('en-US'), lab:'รอผู้เกี่ยวข้องประเมิน (ข้อ)'},
     {val:stats.assessed?((stats.met/stats.assessed*100).toFixed(1)+'%'):'ยังไม่ประเมิน', lab:stats.assessed?('ความสอดคล้อง ('+stats.met+'/'+stats.assessed+')'):'ยังไม่มีข้อที่ประเมิน', accent:true},
   ]
 
@@ -212,8 +175,6 @@ export default function Dashboard({laws,cats,catMap,onOpen,taskRows=[],onGoView,
         <div className="dash-strip-lab">{s.lab}</div>
       </div>))}
     </div>
-    <NowCard taskRows={taskRows} waitingCount={stats.waiting}
-      onOpenTasks={()=>onGoView&&onGoView('tasks')} onOpenRegistry={()=>onGoView&&onGoView('registry')}/>
 
     {/* พับเก็บได้ — ค่าเริ่มต้น = พับ (จำสถานะใน localStorage) */}
     <Collapsible storageKey="dash_open_monthly" title="สถิติรายเดือน — กฎหมายเพิ่ม/ยกเลิก">

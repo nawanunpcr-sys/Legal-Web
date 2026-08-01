@@ -5,7 +5,7 @@ import { supabase, hasSupabase, fetchAll,
          markCommSent, updateCommSchedule, addComm, deleteComm,
          fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
          logActivity, fetchActivity, fetchQuarterStats, suggestionLists, listDepartments,
-         fetchReports, setReportEvent, markReportSubmitted, fetchTasks,
+         fetchReports, setReportEvent, markReportSubmitted, saveReport, fetchTasks,
          fetchWorkflow, subscribeWorkflow, subscribeLaws, createAddWorkflow, createMonitorWorkflow,
          submitWorkflowAssessment, closeWorkflowPlan, fetchDiscoveredLaws, fetchSearchLog,
          fetchSettings, saveSettings, DEFAULT_SETTINGS } from './lib/supabase.js'
@@ -426,6 +426,10 @@ export default function App(){
     try{ await markReportSubmitted(id, fileRef, sentDate); await loadReports() }
     catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
+  async function handleReportAdd(r){   // P20f · เพิ่มรายการรายงานราชการใหม่
+    try{ await saveReport(r); await loadReports(); loadTasks(); toast('เพิ่มรายการรายงานแล้ว','success') }
+    catch(e){ toast('เพิ่มไม่สำเร็จ: '+e.message); throw e }
+  }
 
   async function handleToggleMonth(year, month){
     const existing = months.find(m=>m.year===year && m.month===month)
@@ -590,7 +594,7 @@ export default function App(){
             </div>
           </div>
           <div className="view-swap" key={view}>
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} taskRows={taskRows} onGoView={goView}
+          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} onGoView={goView}
             monthsData={months}/>}
           {view==='tasks'         && <Tasks taskRows={taskRows} workflowRows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest} focusSignal={trackerFocus}
             onStartMonitor={async(...a)=>{ await handleStartMonitor(...a); loadTasks() }}
@@ -617,7 +621,7 @@ export default function App(){
               <button className={'seg-btn'+(commTab==='reports'?' active':'')} onClick={()=>setCommTab('reports')}>ส่งรายงานราชการ</button>
             </div>
             {commTab==='comm'    && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate} onAdd={handleCommAdd} onDelete={handleCommDelete}/>}
-            {commTab==='reports' && <Reports reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit}/>}
+            {commTab==='reports' && <Reports reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit} onAdd={handleReportAdd}/>}
           </div>)}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={goView}/>}
           {view==='settings'      && (can(role,'delete')

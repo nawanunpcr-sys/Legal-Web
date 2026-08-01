@@ -98,7 +98,48 @@ function SubmitModal({ report, onSave, onClose }){
     </div></>, document.body)
 }
 
-export default function Reports({ reports, onSetEvent, onSubmit }){
+// P20f · เพิ่มรายการรายงานราชการใหม่ (บันทึกลง lg_reports ผ่าน saveReport)
+function AddReportModal({ onSave, onClose }){
+  const [title,setTitle]=useState('')
+  const [authority,setAuthority]=useState('')
+  const [responsible,setResponsible]=useState('')
+  const [recurrence,setRecurrence]=useState('annually')
+  const [nextDue,setNextDue]=useState('')
+  const [note,setNote]=useState('')
+  const [saving,setSaving]=useState(false)
+  const valid=title.trim()
+  async function save(){ if(!valid||saving) return; setSaving(true)
+    try{ await onSave({ title:title.trim(), authority:authority.trim()||null, responsible:responsible.trim()||null,
+      recurrence, trigger_type:'fixed', next_due_date:nextDue||null, timeline_text:note.trim()||null }); onClose() }
+    catch{ /* toast แจ้งใน handler */ } finally{ setSaving(false) } }
+  return createPortal(<><div className="scrim" onClick={onClose}/>
+    <div className="modal" style={{width:560,maxWidth:'94vw'}}>
+      <div className="modal-head"><h3>เพิ่มรายการรายงานราชการ</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
+      <div className="modal-body">
+        <label className="form-label">ชื่อรายงาน / เอกสาร <span style={{color:'var(--bad)'}}>*</span></label>
+        <input className="form-input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="เช่น รายงานผลการดำเนินงานของ จป. (จป.ว)" autoFocus/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <div><label className="form-label">หน่วยงานที่รับ</label><input className="form-input" value={authority} onChange={e=>setAuthority(e.target.value)} placeholder="เช่น กรมสวัสดิการฯ"/></div>
+          <div><label className="form-label">ผู้รับผิดชอบ</label><input className="form-input" value={responsible} onChange={e=>setResponsible(e.target.value)}/></div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <div><label className="form-label">ความถี่</label>
+            <select className="form-input" value={recurrence} onChange={e=>setRecurrence(e.target.value)}>
+              {Object.entries(RECURRENCE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+            </select></div>
+          <div><label className="form-label">กำหนดส่งถัดไป</label><input className="form-input" type="date" value={nextDue} onChange={e=>setNextDue(e.target.value)}/></div>
+        </div>
+        <label className="form-label">รายละเอียด / เงื่อนไขเวลา (ถ้ามี)</label>
+        <input className="form-input" value={note} onChange={e=>setNote(e.target.value)} placeholder="เช่น ยื่นภายใน 30 วันนับแต่ 31 ธ.ค."/>
+      </div>
+      <div className="modal-foot">
+        <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
+        <button className="btn btn-primary" disabled={!valid||saving} onClick={save}>{saving?'กำลังบันทึก…':'เพิ่มรายการ'}</button>
+      </div>
+    </div></>, document.body)
+}
+
+export default function Reports({ reports, onSetEvent, onSubmit, onAdd }){
   const { can }=useAuth()
   // Task 6.1 · จำ filter ต่อหน้า (lg_filters.reports) — สถานะ + เดือน
   const [f,setFF,resetF,filterActive]=usePageFilters('reports',{filter:'all',month:'all'})
@@ -106,6 +147,7 @@ export default function Reports({ reports, onSetEvent, onSubmit }){
   const setFilter=v=>setFF('filter',v), setMonth=v=>setFF('month',v)
   const [eventModal,setEventModal]=useState(null)
   const [submitModal,setSubmitModal]=useState(null)
+  const [addModal,setAddModal]=useState(false)   // P20f · เพิ่มรายการใหม่
 
   const monthOptions=useMemo(()=>{
     const set=new Set()
@@ -136,6 +178,7 @@ export default function Reports({ reports, onSetEvent, onSubmit }){
   return <div className="view">
     {eventModal  && <EventDateModal report={eventModal}  onSave={onSetEvent} onClose={()=>setEventModal(null)}/>}
     {submitModal && <SubmitModal    report={submitModal} onSave={onSubmit}   onClose={()=>setSubmitModal(null)}/>}
+    {addModal    && <AddReportModal  onSave={onAdd}        onClose={()=>setAddModal(false)}/>}
 
     <div className="grid" style={{gridTemplateColumns:'repeat(4,1fr)',marginBottom:16}}>
       <div className="panel" style={{padding:16}}><div style={{fontSize:13,color:'var(--ink-faint)'}}>รายงานทั้งหมด</div><div className="num" style={{fontSize:26,fontWeight:700}}>{reports.length}</div></div>
@@ -154,6 +197,7 @@ export default function Reports({ reports, onSetEvent, onSubmit }){
         {monthOptions.map(p=>{ const [y,m]=p.split('-'); return <option key={p} value={p}>{TH_MONTHS[+m]} {(+y)+543}</option> })}
       </select>
       {filterActive && <span className="chip" style={{cursor:'pointer'}} onClick={resetF} title="ล้างตัวกรอง">✕ ล้างตัวกรอง</span>}
+      {onAdd && <button className="btn btn-primary" style={{padding:'6px 14px',fontSize:12.5}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>setAddModal(true)}><I n="plus"/>เพิ่มรายการ</button>}
     </div>
 
     <div className="panel"><div className="tablewrap"><table>

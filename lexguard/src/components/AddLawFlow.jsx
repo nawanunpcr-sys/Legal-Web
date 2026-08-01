@@ -80,12 +80,10 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const isPrefill = !!initialData
   const srcUrl = initialData?.law?.source_url || initialData?.source_url || ''
   const [verified, setVerified] = useState(false)
-  // P20b · แหล่งที่มา (ลิงก์ตัวบท) + ประเภทกฎหมาย — ต้องแสดงตลอด (เดิมไม่มีช่องเลย → ฐานว่าง 150/150)
+  // P20b · แหล่งที่มา (ลิงก์ตัวบท) + ประเภทกฎหมาย — แสดงตลอด · P20f · ลิงก์ไม่บังคับ (ถ้ามี)
   const [sourceUrl, setSourceUrl] = useState(srcUrl)
-  const [skipSource, setSkipSource] = useState(false)
   const [lawType, setLawType] = useState(mapLawType(il.type))
   const srcValid = /^https?:\/\//i.test(sourceUrl.trim())
-  const srcOk = srcValid || skipSource
   // P20 · ย่อฟอร์ม: ข้อมูลเพิ่มเติม (ลำดับชั้น/กระทรวง/วันที่/เอกสาร) พับไว้ — กางอัตโนมัติถ้า prefill มีข้อมูล
   const [advOpen, setAdvOpen] = useState(() => !!(il.ministry || il.announce_date || il.effective_date || il.documents))
 
@@ -138,7 +136,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   }
 
   // P15·T1 · prefill ต้องติ๊กยืนยันตรวจทานก่อน · P18 · ทุกข้อต้องเลือกผลประเมิน + ข้อที่ "รอ" ต้องมีผู้รับผิดชอบ
-  const valid = owner.trim() && selId && cat && name.trim() && (!isPrefill || verified) && allChosen && waitingOk && srcOk
+  const valid = owner.trim() && selId && cat && name.trim() && (!isPrefill || verified) && allChosen && waitingOk
 
   async function submit(force = false) {
     if (!valid || saving) return
@@ -267,19 +265,12 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
                 {LAW_TYPE_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
               </select>
 
-              {/* P20b · ลิงก์แหล่งที่มา (ตัวบทจริง) — แสดงตลอด · บังคับกรอกหรือกดข้ามเอง */}
-              <label className="form-label">ลิงก์แหล่งที่มา (ราชกิจจานุเบกษา / ตัวบท) <span style={{color:'var(--bad)'}}>*</span></label>
+              {/* P20f · ลิงก์แหล่งที่มา (ตัวบทจริง) — ไม่บังคับ (ถ้ามี) */}
+              <label className="form-label">ลิงก์แหล่งที่มา (ราชกิจจานุเบกษา / ตัวบท) <span style={{color:'var(--ink-faint)',fontWeight:400}}>(ถ้ามี)</span></label>
               <input className="form-input" type="url" placeholder="https://ratchakitcha.soc.go.th/…"
-                value={sourceUrl} onChange={e=>{ setSourceUrl(e.target.value); setSkipSource(false) }}/>
+                value={sourceUrl} onChange={e=>setSourceUrl(e.target.value)}/>
               {sourceUrl.trim() && !srcValid && (
-                <div style={{fontSize:11.5,color:'var(--bad)',marginTop:3}}>ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://</div>
-              )}
-              {!srcValid && (
-                <div style={{marginTop:5,fontSize:11.5}}>
-                  {skipSource
-                    ? <span style={{color:'var(--warn)'}}>⚠ ข้ามลิงก์แหล่งที่มาไว้ก่อน — เพิ่มภายหลังได้ที่หน้าทะเบียน <button type="button" className="req-bulk" onClick={()=>setSkipSource(false)}>ยกเลิกการข้าม</button></span>
-                    : <span style={{color:'var(--ink-faint)'}}>ยังไม่มีลิงก์ตัวบท? <button type="button" className="req-bulk" onClick={()=>setSkipSource(true)}>ข้ามไปก่อน (ยืนยันเอง)</button></span>}
-                </div>
+                <div style={{fontSize:11.5,color:'var(--warn)',marginTop:3}}>ลิงก์ควรขึ้นต้นด้วย http:// หรือ https:// (ถ้ารูปแบบไม่ถูก จะไม่ถูกบันทึก)</div>
               )}
 
               {/* P20 · ข้อมูลเพิ่มเติม (ไม่บังคับ) — พับไว้ */}
