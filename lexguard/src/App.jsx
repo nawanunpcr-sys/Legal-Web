@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { supabase, hasSupabase, fetchAll,
          setRequirementStatus, recomputeLawStatus, bulkSetCompliance, setLawActive,
          repealLaw, restoreLaw, createLaw, createLawFull, deleteLaw,
@@ -15,7 +15,7 @@ import LawDrawer from './components/LawDrawer.jsx'
 import Reports from './components/Reports.jsx'
 import { I } from './components/icons.jsx'
 import Login from './components/Login.jsx'
-import NotifyPopup, { isOverdueItem } from './components/NotifyPopup.jsx'
+import NotifyPopup from './components/NotifyPopup.jsx'
 import { DashboardSkeleton } from './components/Skeleton.jsx'
 import Toaster from './components/Toaster.jsx'
 import ConfirmHost from './components/ConfirmHost.jsx'
@@ -245,16 +245,12 @@ export default function App(){
     return out.sort((a,b)=>(a.type==='bad'?-1:0)-(b.type==='bad'?-1:0))
   },[activeLaws,comms,notifs,reports,training,searchLog])
 
+  // P20g · เด้ง popup แจ้งเตือน "เฉพาะตอนเข้าแอปครั้งแรก" ของ session เท่านั้น (ครั้งเดียวต่อการเปิด/ล็อกอิน)
+  const notifyShownRef = useRef(false)
   useEffect(()=>{
-    if(!authed || loading || bellNotifications.length===0) return
-    const hasOverdue = bellNotifications.some(isOverdueItem)
-    const today = new Date().toISOString().slice(0,10)
-    let lastSeen=null
-    try{ lastSeen = localStorage.getItem('lex_notify_last_seen') }catch{}
-    if(hasOverdue || lastSeen!==today){
-      setShowNotify(true)
-      try{ localStorage.setItem('lex_notify_last_seen', today) }catch{}
-    }
+    if(!authed || loading || notifyShownRef.current || bellNotifications.length===0) return
+    notifyShownRef.current = true
+    setShowNotify(true)
   },[authed, loading, bellNotifications])
 
   async function toggleReq(law, req){
