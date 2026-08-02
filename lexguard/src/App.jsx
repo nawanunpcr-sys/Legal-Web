@@ -25,7 +25,7 @@ import { confirmDialog } from './lib/confirm.js'
 import { buildReport } from './components/PdfExport.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
 import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, currentRound,
-         jorporReportDeadlines, effectiveInfo, trainingStatus, sumReqStats } from './lib/ui.jsx'
+         jorporReportDeadlines, effectiveInfo, sumReqStats } from './lib/ui.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Tasks from './pages/Tasks.jsx'
 import LawSummary from './pages/LawSummary.jsx'
@@ -95,7 +95,6 @@ export default function App(){
   const [avatarOpen,setAvatarOpen] = useState(false)   // avatar menu (UI only)
   const [monthYear,setMonthYear] = useState(new Date().getFullYear())
   const [round,setRound]     = usePersist('cr_round', currentRound())   // รอบประเมิน F-259 { q, by(พ.ศ.) }
-  const [training,setTraining] = usePersist('lex_training', { hours:0, target:12, year:new Date().getFullYear()+543 })  // อบรม จป. 12 ชม./ปี
   const [months,setMonths]   = useState([])
   const [activity,setActivity] = useState([])
   const [,setQuarterStats] = useState([])   // lg_law_quarter_stats: ยังอัปเดตไว้ (ใช้ maintainance) แต่ไม่แสดงผลแล้ว (P17)
@@ -233,8 +232,7 @@ export default function App(){
     activeLaws.forEach(l=>{ if(!l.report_due_date) return; const d=daysTo(l.report_due_date)
       if(d<0) out.push({type:'bad',law:l,text:l.code+' เกินกำหนดส่งรายงานราชการ',sub:'เกิน '+Math.abs(d)+' วัน — '+thDate(l.report_due_date)})
       else if(d<=30) out.push({type:'report_law',law:l,days:d,text:l.code+' ใกล้ครบกำหนดส่งรายงานราชการ',sub:'อีก '+d+' วัน — '+thDate(l.report_due_date)}) })
-    // อบรม จป. 12 ชม./ปี: เตือนเมื่อเหลือ <90 วันแล้วยังไม่ครบ
-    { const ts=trainingStatus(training); if(ts.alert) out.push({type:'training',goView:'settings',text:'อบรมพัฒนาความรู้ จป. ยังไม่ครบ '+ts.target+' ชม.',sub:'ทำได้ '+ts.hours+' ชม. · เหลืออีก '+ts.remain+' ชม. · เหลือเวลา '+ts.daysLeft+' วัน'}) }
+    // P20g · แจ้งเตือน "อบรม จป." ถูกปิดไว้ก่อน (พร้อมการ์ดในหน้าตั้งค่า)
     // Task 12: เดือนนี้ยังไม่มีการค้นหากฎหมายใหม่ (เตือนตั้งแต่วันที่ 25 — หลักฐาน ISO 45001)
     { const now=new Date()
       if(now.getDate()>=25){
@@ -243,7 +241,7 @@ export default function App(){
         if(!hasSearchThisMonth) out.push({type:'search_missing',goView:'discovery',text:'เดือนนี้ยังไม่มีการค้นหากฎหมายใหม่',sub:'บันทึกหลักฐานการติดตามกฎหมาย (ISO 45001 ข้อ 6.1.3)'})
       } }
     return out.sort((a,b)=>(a.type==='bad'?-1:0)-(b.type==='bad'?-1:0))
-  },[activeLaws,comms,notifs,reports,training,searchLog])
+  },[activeLaws,comms,notifs,reports,searchLog])
 
   // P20g · เด้ง popup แจ้งเตือน "เฉพาะตอนเข้าแอปครั้งแรก" ของ session เท่านั้น (ครั้งเดียวต่อการเปิด/ล็อกอิน)
   const notifyShownRef = useRef(false)
@@ -624,7 +622,7 @@ export default function App(){
           </div>)}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={goView}/>}
           {view==='settings'      && (can(role,'delete')
-            ? <SettingsPage settings={settings} onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }} training={training} setTraining={setTraining}/>
+            ? <SettingsPage settings={settings} onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }}/>
             : <div className="view"><div className="panel" style={{padding:'50px 20px',textAlign:'center',color:'var(--ink-faint)'}}>เฉพาะผู้ดูแลระบบ (admin) เท่านั้นที่เข้าถึงหน้าตั้งค่าได้ — {NO_PERM}</div></div>)}
           </div>
         </div>
