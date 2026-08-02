@@ -271,11 +271,14 @@ export default function App(){
     }))
     setOpenLaw(prev=>prev&&prev.id===law.id?{...prev,reqs:prev.reqs.map(r=>r.id===req.id?{...r,...stamp}:r),status:prev.reqs.map(r=>r.id===req.id?{...r,...stamp}:r).some(r=>r.status==='unmet')?'bad':'ok'}:prev)
     try{
-      await setRequirementStatus(req.id,next); await recomputeLawStatus(law.id,law.reqs.map(r=>r.id===req.id?{...r,status:next}:r))
-      await logActivity({ action:'requirement', law_id:law.id, law_code:law.code, law_name:law.name, detail:(next==='met'?'ปรับเป็นสอดคล้อง: ':'ปรับเป็นยังไม่สอดคล้อง: ')+(req.text||'').slice(0,80) })
-      fetchActivity().then(setActivity)
+      // เขียนสถานะจริงก่อน — ถ้าตรงนี้ไม่พังถือว่า "บันทึกสำเร็จ"
+      await setRequirementStatus(req.id,next)
+      await recomputeLawStatus(law.id,law.reqs.map(r=>r.id===req.id?{...r,status:next}:r))
     }
-    catch(e){ setLaws(prevLaws); setOpenLaw(prevOpen); toast('บันทึกไม่สำเร็จ: '+e.message,'error') }
+    catch(e){ setLaws(prevLaws); setOpenLaw(prevOpen); toast('บันทึกไม่สำเร็จ: '+e.message,'error'); return }
+    // บันทึก audit log + รีเฟรชประวัติ = best-effort (ล้มเหลวไม่ถือว่าบันทึกสถานะไม่สำเร็จ)
+    logActivity({ action:'requirement', law_id:law.id, law_code:law.code, law_name:law.name, detail:(next==='met'?'ปรับเป็นสอดคล้อง: ':'ปรับเป็นยังไม่สอดคล้อง: ')+(req.text||'').slice(0,80) })
+      .then(()=>fetchActivity().then(setActivity)).catch(err=>console.warn('activity log failed (ignored):',err?.message))
   }
 
   async function handleRepeal(law, data){

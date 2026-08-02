@@ -160,6 +160,7 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
     {val:(active.length+inactive.length).toLocaleString('en-US'), lab:'กฎหมายในทะเบียน (ฉบับ)'},
     {val:String(cats.length),                 lab:'หมวด (LA–LG)'},
     {val:stats.total.toLocaleString('en-US'), lab:'ข้อปฏิบัติรายข้อ'},
+    {val:stats.met.toLocaleString('en-US'),   lab:'สอดคล้องแล้ว (ข้อ)', ok:true},
     {val:stats.unmet.toLocaleString('en-US'), lab:'ยังไม่สอดคล้อง (ข้อ)', bad:true, go:()=>goRegistry('compliance')},
     {val:stats.assessed?((stats.met/stats.assessed*100).toFixed(1)+'%'):'ยังไม่ประเมิน', lab:stats.assessed?('ความสอดคล้อง ('+stats.met+'/'+stats.assessed+')'):'ยังไม่มีข้อที่ประเมิน', accent:true},
   ]
@@ -171,7 +172,7 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
         role={s.go?'button':undefined} tabIndex={s.go?0:undefined} onClick={s.go||undefined}
         onKeyDown={s.go?(e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); s.go() } }):undefined}
         style={s.go?{cursor:'pointer'}:undefined}>
-        <div className={'dash-strip-val'+(s.accent?' is-accent':'')} style={s.bad?{color:'var(--bad)'}:undefined}>{s.val}</div>
+        <div className={'dash-strip-val'+(s.accent?' is-accent':'')} style={s.bad?{color:'var(--bad)'}:s.ok?{color:'var(--ok)'}:undefined}>{s.val}</div>
         <div className="dash-strip-lab">{s.lab}</div>
       </div>))}
     </div>
