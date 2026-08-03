@@ -69,7 +69,7 @@ export function exportLawsToExcel(laws, catMap = {}) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `ComplyRegister_${today.toISOString().slice(0, 10)}.xls`
+  a.download = `ComplianceRegister_${today.toISOString().slice(0, 10)}.xls`
   document.body.appendChild(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

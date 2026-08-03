@@ -44,7 +44,7 @@ export function advanceByRecurrence(baseDate, recurrence) {
 }
 
 // ---- Settings ----
-export const DEFAULT_SETTINGS = { company_name:'Comply Register', subtitle:'ทะเบียนกฎหมาย SHE และกฎหมายอื่นๆ ที่เกี่ยวข้อง', org_name:'จัสเทล เน็ทเวิร์ค', user_name:'จป. วิชาชีพ', brand_mark:'CR' }
+export const DEFAULT_SETTINGS = { company_name:'Compliance Register', subtitle:'ทะเบียนกฎหมาย SHE และกฎหมายอื่นๆ ที่เกี่ยวข้อง', org_name:'จัสเทล เน็ทเวิร์ค', user_name:'จป. วิชาชีพ', brand_mark:'CR' }
 export async function fetchSettings() {
   if (!hasSupabase) return { ...DEFAULT_SETTINGS }
   const { data } = await supabase.from('lg_settings').select('*').eq('id', 1).maybeSingle()

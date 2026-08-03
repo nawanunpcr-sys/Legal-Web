@@ -104,7 +104,7 @@ export default function Landing({ onEnter }) {
           {logoOk
             ? <img src="/jastel-logo.png" alt="JasTel Network" onError={() => setLogoOk(false)} />
             : <span className="lgl-brand-mark">SHE</span>}
-          <span className="lgl-brand-name">Comply Register</span>
+          <span className="lgl-brand-name">Compliance Register</span>
         </div>
         <nav className="lgl-links">
           {nav.map((n, i) => (
@@ -233,7 +233,7 @@ export default function Landing({ onEnter }) {
       </section>
 
       <footer className="lgl-foot">
-        <span>Comply Register · ทะเบียนกฎหมาย SHE และกฎหมายอื่นๆ ที่เกี่ยวข้อง</span>
+        <span>Compliance Register · ทะเบียนกฎหมาย SHE และกฎหมายอื่นๆ ที่เกี่ยวข้อง</span>
         <span>© {new Date().getFullYear() + 543} Jastel Network Co., Ltd.</span>
       </footer>
     </div>

@@ -492,7 +492,7 @@ export default function App(){
           onClick={()=>setView('dashboard')}
           onKeyDown={e=>{ if(e.key==='Enter'||e.key===' ') setView('dashboard') }}>
           <div className="brand-mark">{settings.brand_mark||'CR'}</div>
-          <h1>{settings.company_name||'Comply Register'}</h1>
+          <h1>{settings.company_name||'Compliance Register'}</h1>
           <span>{settings.subtitle||'ทะเบียนกฎหมาย SHE'}</span>
         </div>
 
