@@ -5,6 +5,7 @@ import { toast } from '../lib/toast.js'
 import { daysTo, reqStats, reqKind, reqEvalTitle } from '../lib/ui.jsx'
 import { I } from './icons.jsx'
 import DeleteLawModal from './DeleteLawModal.jsx'
+import { buildLawReport } from './PdfExport.jsx'
 
 const REVIEW_RESULTS = ['ไม่มีการเปลี่ยนแปลง', 'มีการแก้ไข', 'ถูกยกเลิก']
 
@@ -89,7 +90,7 @@ function RepealModal({ law, onConfirm, onClose }){
   )
 }
 
-export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, onRestore, onDuplicate, onToggleActive, onDelete, thDate }){
+export default function LawDrawer({ law, catMap, settings, onClose, onToggle, onRepeal, onRestore, onDuplicate, onToggleActive, onDelete, thDate }){
   const { can } = useAuth()
   const inactive = law.active === false
   const [showRepealModal, setShowRepealModal] = useState(false)
@@ -360,7 +361,10 @@ export default function LawDrawer({ law, catMap, onClose, onToggle, onRepeal, on
               <button className="btn btn-danger" style={{flex:1}} disabled={!can('delete')} title={can('delete')?'':NO_PERM} onClick={()=>setShowRepealModal(true)}>ยกเลิกใช้</button>
               {/* ลบถาวร (hard delete) = admin เท่านั้น */}
               {onDelete && <button className="btn btn-danger" style={{flex:'0 0 auto',padding:'0 12px'}} disabled={!can('delete')} title={can('delete')?'ลบกฎหมายถาวร (กู้คืนไม่ได้)':NO_PERM} onClick={()=>setShowDeleteModal(true)}><I n="ban"/>ลบ</button>}
-              <button className="btn btn-primary" style={{flex:1}} onClick={()=>window.print()}>PDF</button>
+              <button className="btn btn-primary" style={{flex:1}} onClick={()=>{
+                buildLawReport({ law, catName: cat?.name || law.cat, catColor: cat?.color, settings })
+                setTimeout(()=>window.print(), 80)
+              }}>PDF</button>
             </>
           )}
           {isRepealed && (

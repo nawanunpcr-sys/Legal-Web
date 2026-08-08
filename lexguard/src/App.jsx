@@ -470,7 +470,7 @@ export default function App(){
       .filter(l=>l.reqs.some(r=>r.status==='unmet'))
       .map(l=>({...l, reqs:l.reqs.filter(r=>r.status==='unmet')}))
     setShowPdf(false)
-    buildReport({ laws:list, catName:Object.fromEntries(cats.map(c=>[c.code,c.name])), settings, mode })
+    buildReport({ laws:list, catName:Object.fromEntries(cats.map(c=>[c.code,c.name])), catColor:Object.fromEntries(cats.map(c=>[c.code,c.color])), settings, mode })
     setTimeout(()=>window.print(),80)
   }
 
@@ -629,7 +629,7 @@ export default function App(){
       </div>
 
       {openLaw && (
-        <LawDrawer law={openLaw} catMap={catMap} onClose={()=>setOpenLaw(null)}
+        <LawDrawer law={openLaw} catMap={catMap} settings={settings} onClose={()=>setOpenLaw(null)}
           onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive} onDelete={handleDeleteLaw}
           thDate={thDate}/>
       )}

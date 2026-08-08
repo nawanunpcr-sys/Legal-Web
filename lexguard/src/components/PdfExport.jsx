@@ -2,7 +2,7 @@
 // #print-report, then App calls window.print(). Layout mirrors the real
 // source-data/F-259 workbook: form no. top-right, per-category pages, C/NC
 // evaluation and an end-of-report signature block.
-import { thDate } from '../lib/ui.jsx'
+import { thDate, reqStats, reqKind } from '../lib/ui.jsx'
 
 const ESC = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
@@ -136,7 +136,7 @@ export function buildMonthlyReport({ month, year, settings = {}, activity = [], 
   </div>`
 }
 
-export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' }) {
+export function buildReport({ laws, catName = {}, catColor = {}, settings = {}, mode = 'all' }) {
   const el = document.getElementById('print-report')
   if (!el) return
   const company = settings.company_name || settings.org_name || 'บริษัท จัสเทล เน็ทเวิร์ค จำกัด'
@@ -151,8 +151,10 @@ export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' })
 
   const sections = cats.map((c, ci) => {
     let n = 0
+    const accent = catColor[c] || '#8a8a8a'
     const body = byCat[c].map(l => {
       n++
+      const shade = n % 2 === 0 ? ' style="background:#f7f8fa"' : ''
       const reqs = l.reqs.length ? l.reqs : [{}]
       const span = reqs.length
       return reqs.map((r, i) => {
@@ -168,11 +170,11 @@ export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' })
         const evidence = [r.documents, r.evidence_label].filter(Boolean).join(' · ')
         // ใส่ลิงก์ตัวบทจริง (source_url) ไว้ในคอลัมน์เอกสารที่เกี่ยวข้อง — แถวแรกของกฎหมาย
         const srcLine = i === 0 && l.source_url ? `<div class="src">ตัวบท: <a href="${ESC(l.source_url)}">${ESC(l.source_url)}</a></div>` : ''
-        return `<tr>${preCells}
+        return `<tr${shade}>${preCells}
           <td class="req">${ESC(r.text || '—')}</td>
           ${dateCell}
           <td>${ESC(r.responsible || '—')}</td>
-          <td class="ctr ${met ? 'ok' : nc ? 'bad' : ''}">${met ? 'C' : nc ? 'NC' : '—'}</td>
+          <td class="ctr"><span class="badge ${met ? 'ok' : nc ? 'bad' : 'wait'}">${met ? 'C' : nc ? 'NC' : '—'}</span></td>
           <td>${ESC(r.frequency || '—')}</td>
           <td>${ESC(r.report || '—')}</td>
           <td>${ESC(evidence || '—')}${srcLine}</td>
@@ -184,7 +186,8 @@ export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' })
     return `
       <table class="reg" style="${ci > 0 ? 'page-break-before:always' : ''}">
         ${colgroup}
-        <tr><td class="catband" colspan="${COLS.length}">หมวด ${ESC(c)} : ${ESC(catName[c] || '')} — ${byCat[c].length} ฉบับ</td></tr>
+        <tr><td class="catband" colspan="${COLS.length}" style="border-left:5px solid ${accent};background:linear-gradient(0deg, ${accent}14, ${accent}14)">
+          <span class="catdot" style="background:${accent}"></span>หมวด ${ESC(c)} : ${ESC(catName[c] || '')} — ${byCat[c].length} ฉบับ</td></tr>
         ${headRow}
         ${body}
       </table>`
@@ -201,33 +204,39 @@ export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' })
 
   el.innerHTML = `
   <style>
-    #print-report .doc { font-family: 'Angsana New','AngsanaUPC','TH Sarabun New','Sarabun',serif; color:#000; font-size:13px; line-height:1.25 }
+    #print-report .doc { font-family: 'Angsana New','AngsanaUPC','TH Sarabun New','Sarabun',serif; color:#17181c; font-size:13px; line-height:1.3 }
     #print-report table { width:100%; border-collapse:collapse; table-layout:fixed }
-    #print-report .head td { border:1px solid #000; padding:3px 8px; vertical-align:top }
-    #print-report .head .title { text-align:center }
-    #print-report .head .title .th1 { font-size:17px; font-weight:700 }
-    #print-report .head .title .en  { font-size:14px; font-weight:700; letter-spacing:.3px }
-    #print-report .head .form { text-align:left; font-size:11px }
-    #print-report .head .form .fno { font-size:14px; font-weight:700 }
-    #print-report .head .conf { text-align:right; font-size:11px; font-weight:700 }
-    #print-report .reg { margin-top:8px; page-break-inside:auto }
-    #print-report .reg th, #print-report .reg td { border:1px solid #000; padding:2px 5px; vertical-align:top; word-wrap:break-word; overflow-wrap:anywhere }
-    #print-report .reg .ch th { background:#d9d9d9; text-align:center; font-weight:700; font-size:11.5px }
-    #print-report .reg .catband { background:#bfbfbf; font-weight:700; font-size:14px; padding:4px 8px }
+    #print-report .topbar { height:5px; background:linear-gradient(90deg,#1c2431,#3a6a97); margin-bottom:10px; border-radius:2px }
+    #print-report .head { border:1px solid #cfd3da; border-radius:4px; overflow:hidden }
+    #print-report .head td { border:1px solid #cfd3da; padding:6px 10px; vertical-align:top }
+    #print-report .head .title { text-align:center; background:#fbfbfc }
+    #print-report .head .title .th1 { font-size:18px; font-weight:700; color:#1c2431 }
+    #print-report .head .title .en  { font-size:12.5px; font-weight:700; letter-spacing:1.2px; color:#5f6772; margin-top:2px }
+    #print-report .head .form { text-align:left; font-size:11px; background:#f7f8fa; color:#3a3f47 }
+    #print-report .head .form .fno { font-size:14px; font-weight:700; color:#1c2431 }
+    #print-report .head .conf { text-align:right; font-size:10.5px; font-weight:700; color:#8a5a1c; background:#fdf4e3 }
+    #print-report .reg { margin-top:10px; page-break-inside:auto; border-radius:4px; overflow:hidden }
+    #print-report .reg th, #print-report .reg td { border:1px solid #d7dae0; padding:3px 6px; vertical-align:top; word-wrap:break-word; overflow-wrap:anywhere }
+    #print-report .reg .ch th { background:#eef1f5; color:#1c2431; text-align:center; font-weight:700; font-size:11.5px; padding:5px }
+    #print-report .reg .catband { font-weight:700; font-size:14px; padding:6px 10px; color:#1c2431 }
+    #print-report .reg .catdot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:7px; vertical-align:middle }
     #print-report .reg .ctr { text-align:center }
     #print-report .reg .num { font-variant-numeric: tabular-nums }
-    #print-report .reg .ok  { color:#0a7a32; font-weight:700 }
-    #print-report .reg .bad { color:#c4271d; font-weight:700 }
-    #print-report .reg .law { font-weight:600 }
+    #print-report .badge { display:inline-block; min-width:22px; padding:1.5px 6px; border-radius:9px; font-weight:700; font-size:11px }
+    #print-report .badge.ok  { color:#0a7a32; background:#e3f5e8 }
+    #print-report .badge.bad { color:#c4271d; background:#fbe6e4 }
+    #print-report .badge.wait{ color:#777; background:#eee }
+    #print-report .reg .law { font-weight:700; color:#1c2431 }
     #print-report .reg .req { white-space:pre-wrap }
     #print-report .reg .src { font-size:9.5px; color:#0a58ca; word-break:break-all; margin-top:2px }
     #print-report .reg tr { page-break-inside: avoid }
-    #print-report .sign { margin-top:22px; page-break-inside:avoid }
-    #print-report .sign td { border:none; text-align:center; padding:26px 10px 4px; font-size:13px; width:33.33% }
-    #print-report .sign .role { margin-top:6px; font-weight:700 }
-    #print-report .sign .dt { margin-top:4px; color:#333 }
+    #print-report .sign { margin-top:26px; page-break-inside:avoid }
+    #print-report .sign td { border:none; text-align:center; padding:28px 10px 4px; font-size:13px; width:33.33% }
+    #print-report .sign .role { margin-top:6px; font-weight:700; color:#1c2431 }
+    #print-report .sign .dt { margin-top:4px; color:#666 }
   </style>
   <div class="doc">
+    <div class="topbar"></div>
     <table class="head">
       <tr>
         <td class="conf" style="width:22%">ใช้ภายใน</td>
@@ -247,6 +256,139 @@ export function buildReport({ laws, catName = {}, settings = {}, mode = 'all' })
       </tr>
     </table>
     ${sections || '<div style="padding:24px;text-align:center">ไม่มีรายการตามเงื่อนไขที่เลือก</div>'}
+    ${signature}
+  </div>`
+}
+
+// ── Single-law "PDF" button on LawDrawer · A4 portrait law compliance profile ──
+export function buildLawReport({ law, catName = '', catColor = '', settings = {} }) {
+  const el = document.getElementById('print-report')
+  if (!el) return
+  const company = settings.company_name || settings.org_name || 'บริษัท จัสเทล เน็ทเวิร์ค จำกัด'
+  const printedOn = thDate(new Date().toISOString())
+  const accent = catColor || '#1c2431'
+  const stats = reqStats(law)
+  const reqs = law.reqs || []
+
+  const kv = (k, v) => v ? `<div class="kv"><div class="k">${ESC(k)}</div><div class="v">${v}</div></div>` : ''
+  const info = [
+    kv('รหัสกฎหมาย', ESC(law.code)),
+    kv('หมวด', `${ESC(law.cat)} — ${ESC(catName || law.cat)}`),
+    law.law_type && kv('ประเภทกฎหมาย', ESC(law.law_type)),
+    law.hierarchy_level && kv('ลำดับชั้น', `ชั้น ${ESC(law.hierarchy_level)}`),
+    kv('กระทรวง/หน่วยงาน', ESC(law.ministry || '—')),
+    law.responsible && kv('หน่วยงานที่รับผิดชอบ', ESC(law.responsible)),
+    law.issue_date && kv('วันที่ประกาศ', ESC(law.issue_date)),
+    law.effective_date && kv('วันที่บังคับใช้', ESC(law.effective_date)),
+    law.review_date && kv('กำหนดทบทวนถัดไป', ESC(thDate(law.review_date))),
+    law.report_due_date && kv('ครบกำหนดส่งรายงานราชการ', ESC(thDate(law.report_due_date))),
+    law.doc_list && kv('เอกสารที่เกี่ยวข้อง', ESC(law.doc_list)),
+  ].filter(Boolean).join('')
+
+  const stat = (n, lab, cls = '') => `<td class="st ${cls}"><div class="stn">${ESC(String(n))}</div><div class="stl">${ESC(lab)}</div></td>`
+  const summary = `<table class="msum"><tr>
+      ${stat(reqs.length, 'ข้อปฏิบัติทั้งหมด')}
+      ${stat(stats.met, 'สอดคล้อง', 'ok')}
+      ${stat(stats.unmet, 'ไม่สอดคล้อง', 'bad')}
+      ${stat(stats.waiting, 'รอประเมิน', 'wait')}
+      ${stat(stats.pct == null ? '—' : stats.pct + '%', '% ความสอดคล้อง')}
+    </tr></table>`
+
+  const reqRows = reqs.length ? reqs.map((r, i) => {
+    const kind = reqKind(r)
+    const badge = kind === 'met' ? '<span class="badge ok">C</span>' : kind === 'unmet' ? '<span class="badge bad">NC</span>' : '<span class="badge wait">—</span>'
+    const evidence = [r.documents, r.evidence_label].filter(Boolean).join(' · ') || '—'
+    const evalLine = r.evaluated_by ? `${ESC(r.evaluated_by)}${r.evaluated_at ? ' · ' + thDate(r.evaluated_at) : ''}` : 'ยังไม่ได้ประเมิน'
+    return `<tr>
+      <td class="ctr num">${i + 1}</td>
+      <td class="req">${ESC(r.text || '—')}</td>
+      <td>${ESC(r.responsible || '—')}</td>
+      <td>${ESC(r.frequency || '—')}</td>
+      <td class="ctr">${badge}</td>
+      <td>${ESC(evidence)}</td>
+      <td>${evalLine}</td>
+      <td>${ESC(r.note || '—')}</td>
+    </tr>`
+  }).join('') : `<tr><td colspan="8" class="empty">ยังไม่มีข้อปฏิบัติบันทึกไว้</td></tr>`
+
+  const signature = `
+    <table class="sign">
+      <tr>
+        <td>ลงชื่อ ...............................................<div class="role">ผู้จัดทำ (จป.วิชาชีพ)</div><div class="dt">วันที่ ......... / ......... / .........</div></td>
+        <td>ลงชื่อ ...............................................<div class="role">ผู้ทบทวน</div><div class="dt">วันที่ ......... / ......... / .........</div></td>
+      </tr>
+    </table>`
+
+  el.innerHTML = `
+  <style>
+    #print-report .doc { font-family:'Angsana New','AngsanaUPC','TH Sarabun New','Sarabun',serif; color:#17181c; font-size:13.5px; line-height:1.3 }
+    #print-report table { width:100%; border-collapse:collapse }
+    #print-report .topbar { height:5px; margin-bottom:12px; border-radius:2px }
+    #print-report .lhead { margin-bottom:10px }
+    #print-report .lhead .t1 { font-size:19px; font-weight:700; text-align:center; color:#1c2431 }
+    #print-report .lhead .t2 { font-size:12px; text-align:center; letter-spacing:1.2px; color:#8a8f98; margin-top:2px }
+    #print-report .lhead .meta { font-size:12px; margin-top:8px; display:flex; justify-content:space-between; color:#3a3f47 }
+    #print-report .lawname { border:1px solid #d7dae0; border-left-width:5px; border-radius:4px; padding:8px 12px; margin-bottom:14px; background:#fbfbfc }
+    #print-report .lawname .code { font-size:11.5px; color:#5f6772; font-weight:700 }
+    #print-report .lawname .name { font-size:15px; font-weight:700; margin-top:3px; color:#17181c }
+    #print-report .sect { font-size:14px; font-weight:700; margin:14px 0 6px; color:#1c2431 }
+    #print-report .infogrid { display:grid; grid-template-columns:1fr 1fr; border:1px solid #d7dae0; border-radius:4px; overflow:hidden }
+    #print-report .infogrid .kv { display:flex; border-bottom:1px solid #e5e7eb; border-right:1px solid #e5e7eb }
+    #print-report .infogrid .kv:nth-child(2n) { border-right:none }
+    #print-report .infogrid .k { width:42%; padding:5px 10px; background:#f7f8fa; color:#5f6772; font-size:11px }
+    #print-report .infogrid .v { flex:1; padding:5px 10px; font-size:12.5px; color:#17181c; font-weight:600 }
+    #print-report .msum { margin:0 0 4px; table-layout:fixed }
+    #print-report .msum .st { border:1px solid #d7dae0; text-align:center; padding:8px 4px; border-radius:4px }
+    #print-report .msum .st.ok  { background:#e3f5e8 }
+    #print-report .msum .st.bad { background:#fbe6e4 }
+    #print-report .msum .st.wait{ background:#f0f0f0 }
+    #print-report .msum .stn { font-size:20px; font-weight:700; color:#1c2431 }
+    #print-report .msum .stl { font-size:10.5px; color:#5f6772; margin-top:2px }
+    #print-report .reg { margin-top:4px }
+    #print-report .reg th, #print-report .reg td { border:1px solid #d7dae0; padding:4px 6px; vertical-align:top; font-size:12px; word-wrap:break-word; overflow-wrap:anywhere }
+    #print-report .reg .ch th { background:#eef1f5; color:#1c2431; text-align:center; font-weight:700; font-size:11px; padding:5px }
+    #print-report .reg .ctr { text-align:center }
+    #print-report .reg .num { font-variant-numeric:tabular-nums }
+    #print-report .reg .req { white-space:pre-wrap }
+    #print-report .reg .empty { text-align:center; color:#8a8f98; padding:16px }
+    #print-report .reg tr { page-break-inside:avoid }
+    #print-report .badge { display:inline-block; min-width:22px; padding:1.5px 6px; border-radius:9px; font-weight:700; font-size:11px }
+    #print-report .badge.ok  { color:#0a7a32; background:#e3f5e8 }
+    #print-report .badge.bad { color:#c4271d; background:#fbe6e4 }
+    #print-report .badge.wait{ color:#777; background:#eee }
+    #print-report .srcline { margin-top:10px; font-size:10.5px; color:#0a58ca; word-break:break-all }
+    #print-report .sign { margin-top:26px; page-break-inside:avoid }
+    #print-report .sign td { border:none; text-align:center; padding:28px 10px 4px; font-size:13px; width:50% }
+    #print-report .sign .role { margin-top:6px; font-weight:700; color:#1c2431 }
+    #print-report .sign .dt { margin-top:4px; color:#666 }
+    @page { size:A4 portrait; margin:14mm }
+  </style>
+  <div class="doc">
+    <div class="topbar" style="background:linear-gradient(90deg,${accent},${accent}99)"></div>
+    <div class="lhead">
+      <div class="t1">เอกสารสรุปกฎหมายและข้อปฏิบัติ</div>
+      <div class="t2">LAW COMPLIANCE PROFILE</div>
+      <div class="meta"><span>${ESC(company)}</span><span>วันที่พิมพ์ : ${printedOn}</span></div>
+    </div>
+    <div class="lawname" style="border-left-color:${accent}">
+      <div class="code">${ESC(law.code)} · หมวด ${ESC(law.cat)} — ${ESC(catName || law.cat)}</div>
+      <div class="name">${ESC(law.name || '')}</div>
+    </div>
+
+    <div class="sect">ข้อมูลทะเบียน</div>
+    <div class="infogrid">${info}</div>
+
+    <div class="sect">สรุปความสอดคล้อง</div>
+    ${summary}
+
+    <div class="sect">ข้อปฏิบัติ &amp; การประเมิน</div>
+    <table class="reg">
+      <colgroup><col style="width:4%"><col style="width:27%"><col style="width:11%"><col style="width:9%"><col style="width:7%"><col style="width:14%"><col style="width:16%"><col style="width:12%"></colgroup>
+      <tr class="ch"><th>#</th><th>ข้อปฏิบัติ</th><th>ผู้รับผิดชอบ</th><th>ความถี่</th><th>สถานะ</th><th>หลักฐาน/เอกสาร</th><th>ผู้ประเมิน</th><th>หมายเหตุ</th></tr>
+      ${reqRows}
+    </table>
+    ${law.source_url ? `<div class="srcline">ตัวบทกฎหมาย: <a href="${ESC(law.source_url)}">${ESC(law.source_url)}</a></div>` : ''}
+
     ${signature}
   </div>`
 }
