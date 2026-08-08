@@ -67,7 +67,15 @@
       "Read(//tmp/**)",
       "Bash(rm -f /Users/nawanunlakornrach/Desktop/Web/normalize_dates.mjs /tmp/dates_update.sql /tmp/dates_flags.txt && echo \"cleaned\")",
       "Bash(node -e \"try{require.resolve\\('pdf-parse'\\);console.log\\('pdf-parse ok'\\)}catch\\(e\\){console.log\\('no pdf-parse'\\)}\")",
-      "Bash(pip3 install *)"
+      "Bash(pip3 install *)",
+      "Read(//Users/nawanunlakornrach/Downloads/**)",
+      "WebSearch",
+      "Bash(sed -n '95,120p' src/components/LawDrawer.jsx)",
+      "Bash(sed -n '158,170p' src/pages/Registry.jsx)",
+      "Bash(ls -la api/)",
+      "Bash(grep -rln \"agent\\\\|gazette\\\\|law-update\\\\|law_update\\\\|discovered\\\\|Discovered\\\\|เฝ้าระวัง\\\\|กฎหมายใหม่\" src/ api/)",
+      "Bash(python3 -)",
+      "mcp__claude_ai_Supabase__execute_sql"
     ]
   }
 }
