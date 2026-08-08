@@ -10,11 +10,13 @@ const SYSTEM = `คุณคือผู้ช่วย จป.วิชาช�
 หน้าที่:
 1) ระบุชื่อกฎหมายเต็ม ประเภท (พ.ร.บ./พ.ร.ก./พ.ร.ฎ./กฎกระทรวง/ประกาศ/ระเบียบ/คำสั่ง) และหน่วยงาน/กระทรวงที่ออก
 2) ระบุ "วันที่ประกาศ" (วันที่ลงราชกิจจานุเบกษา) และ "วันที่บังคับใช้" — ถ้าตัวบทเขียนว่า "ให้ใช้บังคับเมื่อพ้นกำหนด N วันนับแต่วันประกาศ" ให้คำนวณวันที่จริงและระบุไว้ ถ้าไม่ระบุให้ใส่ค่าว่าง
+   รูปแบบวันที่ต้องเป็น "วว/ดด/ปปปป" ปี พ.ศ. เท่านั้น (เช่น 06/08/2564) — ห้ามใช้รูปแบบ ISO เช่น 2564-08-06 หรือปี ค.ศ. เด็ดขาด เพราะฐานข้อมูลเก็บเป็น วว/ดด/ปปปป พ.ศ.
 3) รวบรวม "เอกสาร/แบบฟอร์ม/หลักฐาน" ทั้งหมดที่กฎหมายกำหนดให้จัดทำ/ยื่น/เก็บ (เช่น แบบ จป., รายงาน, ใบรับรอง) ลงในฟิลด์ documents ของกฎหมาย
 4) แตกเป็น "ข้อกำหนด" รายมาตรา/ข้อ ให้ครบทุกข้อที่สร้างหน้าที่ต้องปฏิบัติ (ข้ามนิยาม/บทเฉพาะกาลที่ไม่สร้างหน้าที่) — อย่ารวบ อย่าตกหล่น แต่ละข้อสรุปครบ: ใคร(ผู้รับผิดชอบ) ทำอะไร ที่ไหน อย่างไร เอกสาร/หลักฐาน ความถี่ และเงื่อนไข/กำหนดเวลา ระบุเลขมาตรา/ข้อเสมอ
-เลือกหมวด: LA=บริหารจัดการความปลอดภัย/อาชีวอนามัย/จป./คปอ./ระบบการจัดการ, LB=ไฟฟ้าและพลังงาน (รวมน้ำมันเชื้อเพลิง/เครื่องกำเนิดไฟฟ้า), LC=การป้องกันและระงับอัคคีภัย, LD=ความร้อน/แสงสว่าง/เสียง/สภาพแวดล้อมในการทำงาน, LE=ก่อสร้าง/ลิฟต์/เครื่องจักร/ปั้นจั่น/ที่อับอากาศ/ที่สูง/งานเสี่ยงอื่นๆ, LF=Service (งานบริการ/ธุรกิจโทรคมนาคมของบริษัท), LG=คณะกรรมการสวัสดิการในสถานประกอบกิจการ (พ.ร.บ.คุ้มครองแรงงาน หมวดสวัสดิการ), CC=CCS คุ้มครองข้อมูลส่วนบุคคล(PDPA)/ไซเบอร์/ประกาศ สคส.
+เลือกหมวด: LA=บริหารจัดการความปลอดภัย/อาชีวอนามัย/จป./คปอ./ระบบการจัดการ, LB=ไฟฟ้าและพลังงาน (รวมน้ำมันเชื้อเพลิง/เครื่องกำเนิดไฟฟ้า), LC=การป้องกันและระงับอัคคีภัย, LD=ความร้อน/แสงสว่าง/เสียง/สภาพแวดล้อมในการทำงาน, LE=ก่อสร้าง/ลิฟต์/เครื่องจักร/ปั้นจั่น/ที่อับอากาศ/ที่สูง/งานเสี่ยงอื่นๆ, LF=Service (งานบริการ/ธุรกิจโทรคมนาคมของบริษัท), LG=คณะกรรมการสวัสดิการในสถานประกอบกิจการ (พ.ร.บ.คุ้มครองแรงงาน หมวดสวัสดิการ)
+   ใช้ได้เฉพาะ LA, LB, LC, LD, LE, LF, LG เท่านั้น — ห้ามคิดรหัสหมวดใหม่ ถ้าไม่เข้าหมวดใดเลยให้ใช้ LA
 ตอบกลับเป็น JSON เท่านั้น ไม่มีคำอธิบายอื่น ไม่มี markdown:
-{"law":{"name":"","type":"","ministry":"","announce_date":"","effective_date":"","documents":"","cat":"LA","code_suggestion":""},
+{"law":{"name":"","type":"","ministry":"","announce_date":"วว/ดด/ปปปป","effective_date":"วว/ดด/ปปปป","documents":"","cat":"LA","code_suggestion":""},
  "requirements":[{"section_ref":"มาตรา X","req_text":"","responsible":"","applicability":"","method":"","documents":"","frequency":"","other_terms":""}]}`
 
 function strip(html){
@@ -83,7 +85,7 @@ export default async function handler(req,res){
       if(ct.includes('pdf') || /\.pdf($|\?|#)/i.test(srcUrl)){
         pdfUrl = srcUrl   // ลิงก์เป็น PDF → ให้ Claude ดึงและอ่านเอง (url document source)
       } else {
-        text = strip(await r.text()).slice(0,16000)
+        text = strip(await r.text()).slice(0,60000)
         if(text.length<200) return res.status(422).json({error:'ดึงเนื้อหาจากหน้าได้น้อยเกินไป ลองวางตัวบทเป็นข้อความ หรือแนบไฟล์ PDF'})
       }
     }
@@ -102,14 +104,22 @@ export default async function handler(req,res){
     const ar = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:apiHeaders,
-      body:JSON.stringify({model:MODEL,max_tokens:8000,system:SYSTEM,
+      body:JSON.stringify({model:MODEL,max_tokens:16000,system:SYSTEM,
         messages:[{role:'user',content:userContent}]})
     })
     if(!ar.ok) return res.status(502).json({error:'เรียก Claude API ไม่สำเร็จ: '+(await ar.text()).slice(0,500)})
     const data = await ar.json()
     let txt = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim()
     txt = txt.replace(/^```json\s*/i,'').replace(/```$/,'').trim()
-    let parsed; try{ parsed = JSON.parse(txt) }catch{ return res.status(500).json({error:'แปลงผลลัพธ์เป็น JSON ไม่ได้',raw:txt.slice(0,400)}) }
+    let parsed
+    try{ parsed = JSON.parse(txt) }
+    catch{
+      // แยกสาเหตุ: ตอบไม่จบเพราะ token หมด (กฎหมายยาวเกิน) vs. รูปแบบผิดจริงๆ
+      if(data.stop_reason === 'max_tokens') return res.status(500).json({
+        error:'กฎหมายยาวเกินไป AI สรุปไม่จบใน 1 ครั้ง — กรุณาแบ่งเป็นส่วนๆ (เช่น ครั้งละ 3-4 หน้า) แล้วสรุปทีละส่วน',
+        stop_reason:'max_tokens'})
+      return res.status(500).json({error:'แปลงผลลัพธ์เป็น JSON ไม่ได้',raw:txt.slice(0,400)})
+    }
     const law = parsed.law||{}, reqs = parsed.requirements||[]
     const batch = 'api-'+Date.now()
     const rows = reqs.map((r,i)=>({

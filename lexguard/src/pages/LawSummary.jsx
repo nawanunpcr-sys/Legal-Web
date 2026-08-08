@@ -182,6 +182,14 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
         <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>รองรับ PDF ≤ 4MB (เหมาะกับลิงก์ราชกิจจาฯ ที่เป็นไฟล์ PDF)</span>
       </div>
 
+      {/* กฎหมายยาว (~6 หน้า) ใช้เวลาราว 2-3 นาที — บอกผู้ใช้ไม่ให้ปิดหน้าต่างระหว่างรอ */}
+      {busy && (
+        <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--warn-soft, rgba(255,176,32,.12))', fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.6 }}>
+          กำลังให้ AI อ่านและแตกข้อปฏิบัติ — กฎหมายสั้นราว 30 วินาที ส่วนกฎหมายยาว (5–10 หน้า) อาจใช้เวลา <b>2–3 นาที</b><br />
+          กรุณาอย่าปิดหน้าต่างหรือกดซ้ำระหว่างรอ
+        </div>
+      )}
+
       {law && (
         <div style={{ marginTop: 16, borderTop: '1px solid var(--line)', paddingTop: 14 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
