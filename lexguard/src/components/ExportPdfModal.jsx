@@ -11,7 +11,7 @@ export default function ExportPdfModal({ cats, onClose, onExport }){
   return (
     <><div className="scrim" style={{zIndex:400}} onClick={onClose}/>
     <div className="modal" style={{zIndex:401,width:460}}>
-      <div className="modal-head"><h3>ส่งออก PDF — ทะเบียนกฎหมาย (F-259)</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
+      <div className="modal-head"><h3>ส่งออก PDF — ทะเบียนกฎหมาย</h3><button className="close" onClick={onClose}><I n="x"/></button></div>
       <div className="modal-body">
         <label className="form-label">ขอบเขตรายงาน</label>
         <div style={{display:'flex',flexDirection:'column',gap:8}}>

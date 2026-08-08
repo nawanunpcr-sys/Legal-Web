@@ -583,7 +583,7 @@ export default function App(){
                     <div className="menu-scrim" onClick={()=>setExportOpen(false)}/>
                     <div className="menu">
                       <button className="menu-item" onClick={()=>{ exportLawsToExcel(activeLaws,catMap); setExportOpen(false) }}><I n="download"/>ส่งออก Excel</button>
-                      <button className="menu-item" onClick={()=>{ setShowPdf(true); setExportOpen(false) }}><I n="download"/>ส่งออก PDF (F-259)</button>
+                      <button className="menu-item" onClick={()=>{ setShowPdf(true); setExportOpen(false) }}><I n="download"/>ส่งออก PDF</button>
                     </div>
                   </>)}
                 </div>
