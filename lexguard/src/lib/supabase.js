@@ -394,7 +394,9 @@ export async function uploadEvidence(file) {
   return supabase.storage.from('law-docs').getPublicUrl(path).data.publicUrl
 }
 
-// ---- Attachments (lg_attachments) — CAR / report / comm ----
+// ---- Attachments (lg_attachments) — law / assess / report / comm (car = ของเดิม) ----
+// ref_type ต้องตรงกับ constraint lg_attachments_ref_type_check ในฐาน
+// ถ้าเพิ่มหน้าใหม่ที่แนบไฟล์ ต้องเพิ่มค่าใน constraint ด้วย ไม่งั้น insert จะถูกปฏิเสธ
 export async function uploadAttachment(file, refType, refId) {
   if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
   const safe = file.name.replace(/[^\w.\-]+/g, '_')
@@ -405,7 +407,11 @@ export async function uploadAttachment(file, refType, refId) {
   const { data, error } = await supabase.from('lg_attachments').insert({
     ref_type: refType, ref_id: refId, file_url, file_name: file.name, uploaded_by: currentUserName(),
   }).select().single()
-  if (error) throw error
+  if (error) {
+    // ไฟล์ขึ้น storage ไปแล้วแต่แถว DB ไม่ผ่าน — ลบไฟล์ทิ้งกันขยะค้าง (best-effort ไม่บังผิดพลาดเดิม)
+    try { await supabase.storage.from('law-docs').remove([path]) } catch { /* orphan ยอมรับได้ */ }
+    throw error
+  }
   return data
 }
 export async function fetchAttachments(refType, refId) {
