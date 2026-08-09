@@ -949,11 +949,24 @@ export async function fetchDiscoveredLaws() {
     .select('*').neq('status', 'deleted').order('created_at', { ascending: false })
   return data || []
 }
+// lg_ai_discovered_laws เก็บวันที่เป็นชนิด date จริง (ต่างจาก lg_laws ที่เป็น text "วว/ดด/ปปปป" พ.ศ.)
+// AI ส่งมาเป็น "วว/ดด/ปปปป" พ.ศ. — ถ้าปล่อยเข้าไปตรงๆ Postgres (DateStyle=MDY) จะอ่านเป็น เดือน/วัน/ปี
+// แล้วสลับวันกับเดือน จึงต้องแปลงเป็น ปปปป-ดด-วว ค.ศ. ก่อน · แปลงไม่ได้ = null (คอลัมน์ nullable)
+// เขียนซ้ำในไฟล์นี้แทน import beToISO จาก ui.jsx เพราะ ui.jsx import supabase.js อยู่แล้ว (กัน circular import)
+function beDateToISO(v) {
+  const m = String(v || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{3,4})$/)
+  if (!m) return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '').trim()) ? v : null
+  let [, d, mo, y] = m; y = +y; if (y > 2400) y -= 543
+  const dt = new Date(y, +mo - 1, +d)
+  if (isNaN(dt) || dt.getMonth() !== +mo - 1 || dt.getDate() !== +d) return null
+  const pad = n => String(n).padStart(2, '0')
+  return `${y}-${pad(+mo)}-${pad(+d)}`
+}
 export async function saveDiscoveredLaw(row) {
   const payload = {
     law_name: row.law_name, source: row.source || 'manual', summary: row.summary || null,
     source_url: row.source_url || null,
-    announced_date: row.announced_date || null, effective_date: row.effective_date || null,
+    announced_date: beDateToISO(row.announced_date), effective_date: beDateToISO(row.effective_date),
     ministry: row.ministry || null, related_docs: row.related_docs || null,
     status: row.status || 'imported', searched_at: row.searched_at || new Date().toISOString(),
     ai_payload: row.ai_payload !== undefined ? row.ai_payload : undefined,  // P12: {law, requirements} เต็มไว้ prefill
