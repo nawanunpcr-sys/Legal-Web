@@ -26,7 +26,6 @@ export default function Login({ onAuthed }) {
           {logoOk
             ? <img src="/jastel-logo.png" alt="JasTel Network" className="login-logo" onError={() => setLogoOk(false)} />
             : <div className="login-mark">SHE</div>}
-          <h1 className="login-title">ทะเบียนกฎหมาย SHE และกฎหมายอื่นๆ ที่เกี่ยวข้อง</h1>
           <p className="login-tagline">Safety · Health · Environment</p>
           <p className="login-sub">ระบบบริหารทะเบียนกฎหมายและการประเมินความสอดคล้อง</p>
           <p className="login-company">บริษัท จัสเทล เน็ทเวิร์ค จำกัด · Jastel Network Co., Ltd.</p>
@@ -74,7 +73,7 @@ export default function Login({ onAuthed }) {
           <a className="login-site" href="https://www.jastel.co.th/" target="_blank" rel="noreferrer">www.jastel.co.th</a>
         </div>
 
-        <div className="login-foot">© {new Date().getFullYear() + 543} JasTel Network · ทะเบียนกฎหมาย SHE และกฎหมายอื่นๆ ที่เกี่ยวข้อง</div>
+        <div className="login-foot">© {new Date().getFullYear() + 543} JasTel Network · Compliance Register</div>
       </div>
     </div>
   )
