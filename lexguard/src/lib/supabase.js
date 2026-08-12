@@ -126,6 +126,37 @@ export async function updateRequirementField(reqId, patch) {
   if (error) throw error
 }
 
+// เพิ่มข้อปฏิบัติใหม่ให้กฎหมายที่ขึ้นทะเบียนแล้ว — ต่อท้าย seq เดิม
+// choice ใช้กติกาเดียวกับ createLawFull (P18): met/unmet = ประเมินแล้ว, waiting = ยังไม่ตัดสิน (unmet + note marker)
+export async function addRequirement(lawId, { text, responsible = '', frequency = '', documents = '', choice = 'waiting', waitDate = '' } = {}) {
+  const t = (text || '').trim()
+  if (!t) throw new Error('ข้อความข้อปฏิบัติห้ามว่าง')
+  const { data: last } = await supabase.from('lg_requirements')
+    .select('seq').eq('law_id', lawId).order('seq', { ascending: false }).limit(1)
+  const evaluated = choice === 'met' || choice === 'unmet'
+  const now = new Date().toISOString()
+  let note = null
+  if (!evaluated) {
+    const parts = ['รอผู้เกี่ยวข้องประเมิน: ' + (responsible.trim() || '-')]
+    if (waitDate) parts.push('ต้องการคำตอบภายใน ' + waitDate)
+    note = parts.join(' · ')
+  }
+  const { data, error } = await supabase.from('lg_requirements').insert({
+    law_id: lawId,
+    seq: (last?.[0]?.seq ?? -1) + 1,
+    text: t,
+    status: choice === 'met' ? 'met' : 'unmet',
+    responsible: responsible.trim() || null,
+    frequency: frequency.trim() || null,
+    documents: documents.trim() || null,
+    evaluated_at: evaluated ? now : null,
+    evaluated_by: evaluated ? currentUserName() : null,
+    note,
+  }).select().single()
+  if (error) throw error
+  return data
+}
+
 // Bulk: set all requirements of given laws to met/unmet, then sync law status
 export async function bulkSetCompliance(lawIds, met = true) {
   if (!lawIds.length) return

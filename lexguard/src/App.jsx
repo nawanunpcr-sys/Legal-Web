@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { supabase, hasSupabase, fetchAll,
-         setRequirementStatus, recomputeLawStatus, bulkSetCompliance, setLawActive,
+         setRequirementStatus, recomputeLawStatus, addRequirement, bulkSetCompliance, setLawActive,
          repealLaw, restoreLaw, createLaw, createLawFull, deleteLaw,
          markCommSent, updateCommSchedule, addComm, deleteComm,
          fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
@@ -273,6 +273,18 @@ export default function App(){
     // บันทึก audit log + รีเฟรชประวัติ = best-effort (ล้มเหลวไม่ถือว่าบันทึกสถานะไม่สำเร็จ)
     logActivity({ action:'requirement', law_id:law.id, law_code:law.code, law_name:law.name, detail:(next==='met'?'ปรับเป็นสอดคล้อง: ':'ปรับเป็นยังไม่สอดคล้อง: ')+(req.text||'').slice(0,80) })
       .then(()=>fetchActivity().then(setActivity)).catch(err=>console.warn('activity log failed (ignored):',err?.message))
+  }
+
+  // เพิ่มข้อปฏิบัติใหม่เข้ากฎหมายที่อยู่ในทะเบียนแล้ว (จาก LawDrawer)
+  async function addReq(law, form){
+    const newReq = await addRequirement(law.id, form)
+    const merge = l => { const reqs=[...l.reqs, newReq]; return {...l, reqs, status: reqs.some(r=>r.status==='unmet')?'bad':'ok'} }
+    setLaws(prev=>prev.map(l=>l.id===law.id?merge(l):l))
+    setOpenLaw(prev=>prev&&prev.id===law.id?merge(prev):prev)
+    await recomputeLawStatus(law.id, [...law.reqs, newReq])
+    logActivity({ action:'requirement', law_id:law.id, law_code:law.code, law_name:law.name, detail:'เพิ่มข้อปฏิบัติ: '+(newReq.text||'').slice(0,80) })
+      .then(()=>fetchActivity().then(setActivity)).catch(err=>console.warn('activity log failed (ignored):',err?.message))
+    return newReq
   }
 
   async function handleRepeal(law, data){
@@ -630,7 +642,7 @@ export default function App(){
 
       {openLaw && (
         <LawDrawer law={openLaw} catMap={catMap} settings={settings} onClose={()=>setOpenLaw(null)}
-          onToggle={toggleReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive} onDelete={handleDeleteLaw}
+          onToggle={toggleReq} onAddReq={addReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive} onDelete={handleDeleteLaw}
           thDate={thDate}/>
       )}
       {showAddLaw && <AddLawFlow cats={cats} allLaws={laws} suggest={suggest} initialData={addLawInit}

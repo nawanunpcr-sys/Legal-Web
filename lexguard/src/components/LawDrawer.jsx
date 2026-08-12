@@ -90,7 +90,9 @@ function RepealModal({ law, onConfirm, onClose }){
   )
 }
 
-export default function LawDrawer({ law, catMap, settings, onClose, onToggle, onRepeal, onRestore, onDuplicate, onToggleActive, onDelete, thDate }){
+const EMPTY_NEW_REQ = { text:'', responsible:'', frequency:'', documents:'', choice:'waiting', waitDate:'' }
+
+export default function LawDrawer({ law, catMap, settings, onClose, onToggle, onAddReq, onRepeal, onRestore, onDuplicate, onToggleActive, onDelete, thDate }){
   const { can } = useAuth()
   const inactive = law.active === false
   const [showRepealModal, setShowRepealModal] = useState(false)
@@ -102,6 +104,9 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
   const [editingId, setEditingId] = useState(null)     // req id ที่กำลังแก้ไข
   const [editForm, setEditForm] = useState({ text:'', responsible:'', frequency:'', documents:'' })
   const [savingReq, setSavingReq] = useState(false)
+  const [addingReq, setAddingReq] = useState(false)   // เปิดฟอร์ม "เพิ่มข้อปฏิบัติ"
+  const [newReq, setNewReq] = useState(EMPTY_NEW_REQ)
+  const [savingNew, setSavingNew] = useState(false)
   const [reviewDate, setReviewDate] = useState(law.review_date)
   const [reportDue, setReportDue] = useState(law.report_due_date || '')
   const [uploadingReq, setUploadingReq] = useState(null)
@@ -111,6 +116,7 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
 
   useEffect(()=>{
     setEvOverrides({}); setReqOverrides({}); setEditingId(null)
+    setAddingReq(false); setNewReq(EMPTY_NEW_REQ)
     setReviewDate(law.review_date); setReportDue(law.report_due_date || '')
     let alive = true
     fetchReviewLog(law.id).then(r=>{ if(alive) setReviews(r) }).catch(()=>{})
@@ -163,6 +169,19 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
       toast('บันทึกข้อปฏิบัติแล้ว','success')
     }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
     finally{ setSavingReq(false) }
+  }
+
+  async function saveNewReq(){
+    if(savingNew) return
+    if(!newReq.text.trim()){ toast('ข้อความข้อปฏิบัติห้ามว่าง'); return }
+    if(newReq.choice==='waiting' && !newReq.responsible.trim()){ toast('ระบุผู้รับผิดชอบที่ต้องประเมินข้อนี้'); return }
+    setSavingNew(true)
+    try{
+      await onAddReq(law, newReq)
+      setNewReq(EMPTY_NEW_REQ); setAddingReq(false)
+      toast('เพิ่มข้อปฏิบัติแล้ว','success')
+    }catch(e){ toast('เพิ่มข้อปฏิบัติไม่สำเร็จ: '+e.message) }
+    finally{ setSavingNew(false) }
   }
 
   async function saveReportDue(v){
@@ -265,6 +284,9 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
                   {s.waiting>0 && <span style={{fontSize:11.5,color:'var(--ink-faint)'}}>รอผู้เกี่ยวข้องประเมิน {s.waiting} ข้อ</span>}
                   <span style={{color:s.pct==null?'var(--ink-faint)':s.pct===100?'var(--ok)':'var(--bad)'}}>{s.pct==null?'ยังไม่ประเมิน':s.pct+'%'}</span>
                 </span> })()}
+                {onAddReq && <button className="btn btn-primary" style={{marginLeft:8,padding:'4px 11px',fontSize:11}}
+                  disabled={!can('edit')||addingReq} title={can('edit')?'เพิ่มข้อปฏิบัติใหม่ให้กฎหมายฉบับนี้':NO_PERM}
+                  onClick={()=>{ setEditingId(null); setNewReq(EMPTY_NEW_REQ); setAddingReq(true) }}>+ เพิ่มข้อปฏิบัติ</button>}
               </div>
               <p style={{fontSize:11.5,color:'var(--ink-faint)',marginBottom:10}}>คลิกกล่องสถานะเพื่อสลับ สอดคล้อง ↔ ยังไม่สอดคล้อง (บันทึกอัตโนมัติ) · ข้อสีเทา = รอผู้เกี่ยวข้องประเมิน</p>
               {law.reqs.map(r=>{
@@ -323,7 +345,39 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
                   </div>
                 </div>
               )})}
-              {law.reqs.length===0 && <p style={{fontSize:13,color:'var(--ink-faint)'}}>ยังไม่มีข้อปฏิบัติบันทึกไว้</p>}
+              {law.reqs.length===0 && !addingReq && <p style={{fontSize:13,color:'var(--ink-faint)'}}>ยังไม่มีข้อปฏิบัติบันทึกไว้ — กด “+ เพิ่มข้อปฏิบัติ” เพื่อเพิ่มข้อแรก</p>}
+
+              {addingReq && (
+                <div className="req" style={{borderStyle:'dashed'}}>
+                  <div style={{flex:1,display:'flex',flexDirection:'column',gap:8}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'var(--ink-soft)'}}>ข้อปฏิบัติใหม่ (ข้อที่ {law.reqs.length+1})</div>
+                    <textarea className="form-input" rows={5} value={newReq.text}
+                      onChange={e=>setNewReq(f=>({...f,text:e.target.value}))}
+                      placeholder="ข้อความข้อปฏิบัติ…" style={{resize:'vertical',whiteSpace:'pre-wrap'}} autoFocus/>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                      <input className="form-input" value={newReq.responsible} onChange={e=>setNewReq(f=>({...f,responsible:e.target.value}))} placeholder="ผู้รับผิดชอบ"/>
+                      <input className="form-input" value={newReq.frequency} onChange={e=>setNewReq(f=>({...f,frequency:e.target.value}))} placeholder="ความถี่"/>
+                    </div>
+                    <input className="form-input" value={newReq.documents} onChange={e=>setNewReq(f=>({...f,documents:e.target.value}))} placeholder="เอกสาร/หลักฐานที่ต้องมี"/>
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                      <button type="button" className={'req-choice met'+(newReq.choice==='met'?' on':'')} title="ประเมินแล้ว: สอดคล้อง" onClick={()=>setNewReq(f=>({...f,choice:'met'}))}>สอดคล้อง</button>
+                      <button type="button" className={'req-choice unmet'+(newReq.choice==='unmet'?' on':'')} title="ประเมินแล้ว: ไม่สอดคล้อง (NC)" onClick={()=>setNewReq(f=>({...f,choice:'unmet'}))}>ไม่สอดคล้อง</button>
+                      <button type="button" className={'req-choice wait'+(newReq.choice==='waiting'?' on':'')} title="รอผู้เกี่ยวข้องประเมิน (ยังไม่ตัดสินความสอดคล้อง)" onClick={()=>setNewReq(f=>({...f,choice:'waiting'}))}>รอผู้เกี่ยวข้องประเมิน</button>
+                    </div>
+                    {newReq.choice==='waiting' && (
+                      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',fontSize:11.5,color:'var(--ink-faint)'}}>
+                        <span>ต้องการคำตอบภายใน</span>
+                        <input className="form-input" type="date" style={{maxWidth:170,padding:'4px 8px'}} value={newReq.waitDate} onChange={e=>setNewReq(f=>({...f,waitDate:e.target.value}))}/>
+                        <span>· ต้องระบุผู้รับผิดชอบด้วย</span>
+                      </div>
+                    )}
+                    <div style={{display:'flex',gap:8}}>
+                      <button className="btn btn-primary" style={{padding:'5px 14px',fontSize:12.5}} disabled={savingNew} onClick={saveNewReq}>{savingNew?'กำลังเพิ่ม…':'เพิ่มข้อปฏิบัติ'}</button>
+                      <button className="btn btn-ghost" style={{padding:'5px 14px',fontSize:12.5}} disabled={savingNew} onClick={()=>{ setAddingReq(false); setNewReq(EMPTY_NEW_REQ) }}>ยกเลิก</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
