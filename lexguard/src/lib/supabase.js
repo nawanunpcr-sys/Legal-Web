@@ -63,6 +63,18 @@ export async function addCategory({ code, name, color, sort_order }) {
   if (error) throw error
 }
 
+// แก้ได้เฉพาะชื่อกับสี — รหัสห้ามแก้ เพราะ lg_laws.cat อ้างอิงรหัสนี้เป็นข้อความตรงๆ
+export async function updateCategory(code, { name, color }) {
+  const { error } = await supabase.from('lg_categories').update({ name, color }).eq('code', code)
+  if (error) throw error
+}
+
+// ผู้เรียกต้องตรวจก่อนว่าไม่มีกฎหมายผูกอยู่ — ไม่มี FK ในฐานข้อมูล ลบแล้วกฎหมายจะกำพร้าเงียบๆ
+export async function deleteCategory(code) {
+  const { error } = await supabase.from('lg_categories').delete().eq('code', code)
+  if (error) throw error
+}
+
 // ---- Auth ----
 export async function getSession() {
   if (!hasSupabase) return null

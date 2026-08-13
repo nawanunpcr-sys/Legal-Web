@@ -2,7 +2,8 @@
 // Moved verbatim from App.jsx (pure refactor).
 import { useState } from 'react'
 import { toast } from '../lib/toast.js'
-import { addCategory } from '../lib/supabase.js'
+import { confirmDialog } from '../lib/confirm.js'
+import { addCategory, updateCategory, deleteCategory } from '../lib/supabase.js'
 
 // สีเริ่มต้นให้เลือกตอนเพิ่มหมวด — ชุดเดียวกับโทนของหมวดเดิม (CAT_COLORS ใน lib/ui.jsx)
 const CAT_SWATCHES = ['#1C2431', '#3A6A97', '#B4553F', '#B58A3C', '#5F7A61', '#2A3547', '#6E6E73', '#00B3A4']
@@ -10,7 +11,79 @@ const CAT_SWATCHES = ['#1C2431', '#3A6A97', '#B4553F', '#B58A3C', '#5F7A61', '#2
 /* ── หมวดกฎหมาย — ดูรายการเดิม + เพิ่มหมวดใหม่ ──
    prompt ของ /api/law-analyze อ่านรายการหมวดจาก lg_categories ตอนรัน
    เพิ่มที่นี่แล้ว AI เลือกหมวดใหม่ได้ทันที ไม่ต้อง deploy ใหม่ */
-function CategoryCard({ cats, onAdded }) {
+/* แถวหมวด 1 แถว — โหมดดู / โหมดแก้ไข · ลบได้เฉพาะหมวดที่ไม่มีกฎหมายผูกอยู่ */
+function CatRow({ c, lawCount, onChanged }) {
+  const [edit, setEdit] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [name, setName] = useState(c.name || '')
+  const [color, setColor] = useState(c.color || CAT_SWATCHES[0])
+
+  const dirty = name.trim() !== (c.name || '') || color !== (c.color || '')
+
+  async function save() {
+    if (!name.trim() || busy) return
+    setBusy(true)
+    try {
+      await updateCategory(c.code, { name: name.trim(), color })
+      toast(`แก้ไขหมวด ${c.code} แล้ว`, 'success')
+      setEdit(false); onChanged && onChanged()
+    } catch (e) { toast('แก้ไขไม่สำเร็จ: ' + e.message) }
+    setBusy(false)
+  }
+
+  async function remove() {
+    if (lawCount > 0 || busy) return
+    if (!(await confirmDialog(`ลบหมวด ${c.code} — ${c.name}?`, { danger: true, okLabel: 'ลบหมวด' }))) return
+    setBusy(true)
+    try {
+      await deleteCategory(c.code)
+      toast(`ลบหมวด ${c.code} แล้ว`, 'success')
+      onChanged && onChanged()
+    } catch (e) { toast('ลบไม่สำเร็จ: ' + e.message) }
+    setBusy(false)
+  }
+
+  if (!edit) return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+      <span style={{ width: 10, height: 10, borderRadius: 3, background: c.color || 'var(--ink-faint)', flexShrink: 0 }} />
+      <b className="num" style={{ minWidth: 34 }}>{c.code}</b>
+      <span style={{ color: 'var(--ink-soft)', flex: 1, minWidth: 0 }}>{c.name}</span>
+      <span className="num" style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>{lawCount} ฉบับ</span>
+      <button className="btn btn-ghost" style={{ padding: '3px 9px', fontSize: 12 }} onClick={() => setEdit(true)}>แก้ไข</button>
+      <button className="btn btn-ghost" style={{ padding: '3px 9px', fontSize: 12, opacity: lawCount > 0 ? .4 : 1 }}
+        disabled={lawCount > 0}
+        title={lawCount > 0 ? `ลบไม่ได้ — มีกฎหมาย ${lawCount} ฉบับอยู่ในหมวดนี้ ย้ายออกให้หมดก่อน` : 'ลบหมวดนี้'}
+        onClick={remove}>ลบ</button>
+    </div>
+  )
+
+  return (
+    <div style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px' }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <b className="num" style={{ minWidth: 34 }}>{c.code}</b>
+        <input className="form-input" style={{ marginTop: 0 }} value={name} onChange={e => setName(e.target.value)} maxLength={60} />
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10, marginLeft: 44 }}>
+        {CAT_SWATCHES.map(sw => (
+          <button key={sw} onClick={() => setColor(sw)} title={sw} aria-label={`เลือกสี ${sw}`}
+            style={{
+              width: 24, height: 24, borderRadius: 6, background: sw, cursor: 'pointer',
+              border: color === sw ? '2px solid var(--brand)' : '1px solid var(--line)',
+            }} />
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, marginLeft: 44 }}>
+        <button className="btn btn-primary" style={{ padding: '5px 12px', fontSize: 12.5 }}
+          disabled={!name.trim() || !dirty || busy} onClick={save}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+        <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 12.5 }} disabled={busy}
+          onClick={() => { setName(c.name || ''); setColor(c.color || CAT_SWATCHES[0]); setEdit(false) }}>ยกเลิก</button>
+        <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', alignSelf: 'center' }}>รหัส {c.code} แก้ไม่ได้ — กฎหมายที่บันทึกไว้อ้างอิงรหัสนี้</span>
+      </div>
+    </div>
+  )
+}
+
+function CategoryCard({ cats, laws, onAdded }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [code, setCode] = useState('')
@@ -42,13 +115,10 @@ function CategoryCard({ cats, onAdded }) {
     <div className="panel" style={{ maxWidth: 560, marginTop: 16 }}>
       <div className="panel-h"><h3>หมวดกฎหมาย ({cats.length})</h3></div>
       <div className="panel-b">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {cats.map(c => (
-            <div key={c.code} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-              <span style={{ width: 10, height: 10, borderRadius: 3, background: c.color || 'var(--ink-faint)', flexShrink: 0 }} />
-              <b className="num" style={{ minWidth: 34 }}>{c.code}</b>
-              <span style={{ color: 'var(--ink-soft)' }}>{c.name}</span>
-            </div>
+            <CatRow key={c.code} c={c} onChanged={onAdded}
+              lawCount={laws.filter(l => l.cat === c.code).length} />
           ))}
         </div>
 
@@ -99,7 +169,7 @@ function CategoryCard({ cats, onAdded }) {
 }
 
 // P20g · การ์ด "อบรมพัฒนาความรู้ จป. (ชั่วโมงสะสม)" ถูกตัดออกจากหน้าตั้งค่าไว้ก่อน
-export default function SettingsPage({ settings, onSave, cats = [], onCatsChanged }) {
+export default function SettingsPage({ settings, onSave, cats = [], laws = [], onCatsChanged }) {
   const [f, setF] = useState(settings)
   const [busy, setBusy] = useState(false)
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -126,7 +196,7 @@ export default function SettingsPage({ settings, onSave, cats = [], onCatsChange
         </div>
       </div>
 
-      <CategoryCard cats={cats} onAdded={onCatsChanged} />
+      <CategoryCard cats={cats} laws={laws} onAdded={onCatsChanged} />
     </div>
   )
 }
