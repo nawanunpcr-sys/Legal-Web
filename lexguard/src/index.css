@@ -2036,7 +2036,20 @@ tbody tr.row-danger td:first-child { box-shadow: inset 3px 0 0 var(--bad) }
 /* ═══════════════════════════════════════════════════════════════
    RESPONSIVE (tablet / mobile)
    ═══════════════════════════════════════════════════════════════ */
+/* ─── scrim หลัง sidebar บนจอแคบ — แตะพื้นที่ว่างแล้วปิดเมนู ───────────
+   บนจอ ≤820px sidebar เป็น position:fixed ทับปุ่ม 3 ขีดใน topbar (z 60 > 40)
+   ถ้าไม่มี scrim จะเปิดแล้วปิดไม่ได้ · z อยู่ระหว่าง topbar กับ sidebar */
+.sidebar-scrim { display: none }
+
 @media (max-width: 820px) {
+  .sidebar-scrim {
+    display: block;
+    position: fixed; inset: 0;
+    z-index: 50;
+    background: rgba(10,20,15,.35);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
   .sidebar { position: fixed; z-index: 60; height: 100vh; box-shadow: var(--shadow-lg) }
   .app.nav-collapsed .sidebar { width: 0 }
   .topbar { padding: 10px 16px; gap: 8px; flex-wrap: wrap }
