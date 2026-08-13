@@ -61,6 +61,21 @@ function buildSystem(cats){
 {"status":"not_a_law","reason":"อธิบายสั้นๆ ว่าเอกสารนี้คืออะไร และทำไมจึงสรุปเป็นทะเบียนกฎหมายไม่ได้"}`
 }
 
+// error จาก Claude API เป็นภาษาอังกฤษล้วน เด้งดิบๆ ให้ จป. เห็นแล้วไม่รู้ว่าต้องทำอะไรต่อ
+// แปลงเคสที่เจอบ่อยเป็นภาษาไทยพร้อมบอกว่าใครต้องแก้ · เคสอื่นคงข้อความเดิมไว้ให้ debug ได้
+function friendlyApiError(raw){
+  const t = String(raw || '')
+  if(/credit balance is too low|insufficient.*credit/i.test(t))
+    return 'เครดิต AI หมด — กรุณาแจ้งผู้ดูแลระบบให้เติมเครดิตที่บัญชี Anthropic API'
+  if(/rate_limit|rate limit/i.test(t))
+    return 'เรียกใช้ AI ถี่เกินไป — กรุณารอสักครู่แล้วลองใหม่'
+  if(/authentication_error|invalid x-api-key|permission_error/i.test(t))
+    return 'คีย์ AI ไม่ถูกต้องหรือหมดสิทธิ์ — กรุณาแจ้งผู้ดูแลระบบตรวจสอบ ANTHROPIC_API_KEY ใน Vercel'
+  if(/overloaded_error/i.test(t))
+    return 'ระบบ AI ไม่ว่างชั่วคราว — กรุณาลองใหม่อีกครั้งในอีกสักครู่'
+  return 'เรียก Claude API ไม่สำเร็จ: ' + t.slice(0, 500)
+}
+
 function strip(html){
   return html.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ')
              .replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim()
@@ -163,7 +178,7 @@ export default async function handler(req,res){
       body:JSON.stringify({model:MODEL,max_tokens:16000,system:buildSystem(await fetchCats()),
         messages:[{role:'user',content:userContent}]})
     })
-    if(!ar.ok) return res.status(502).json({error:'เรียก Claude API ไม่สำเร็จ: '+(await ar.text()).slice(0,500)})
+    if(!ar.ok) return res.status(502).json({error: friendlyApiError(await ar.text())})
     const data = await ar.json()
     let txt = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim()
     txt = txt.replace(/^```json\s*/i,'').replace(/```$/,'').trim()
