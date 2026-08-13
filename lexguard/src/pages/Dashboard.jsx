@@ -85,7 +85,6 @@ function MonthlyAddRepealChart({laws,cats,catMap}){
         <div style={{display:'flex',gap:18,marginBottom:16,fontSize:12.5,flexWrap:'wrap'}}>
           <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--chart-add)',display:'inline-block'}}/>เพิ่ม <b className="num" style={{fontSize:15,fontWeight:800,color:'var(--chart-add)'}}>{totalAdded}</b> ฉบับ</span>
           <span style={{display:'flex',alignItems:'center',gap:6}}><span className="dot" style={{width:8,height:8,borderRadius:2,background:'var(--chart-rep)',display:'inline-block'}}/>ยกเลิก <b className="num" style={{fontSize:15,fontWeight:800,color:'var(--chart-rep)'}}>{totalRepealed}</b> ฉบับ</span>
-          <span style={{color:'var(--ink-faint)',marginLeft:'auto'}}>นับตามวันที่ประกาศใช้ — รายเดือน</span>
         </div>
         <div className="mchart" style={{gridTemplateColumns:'repeat(12,1fr)'}}>
           {TH_MONTHS.map((mo,i)=>(
