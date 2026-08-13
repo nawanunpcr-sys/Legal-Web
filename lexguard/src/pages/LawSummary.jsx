@@ -38,12 +38,23 @@ function readFileBase64(file) {
 // เว็บราชการที่ "วางลิงก์" ได้ (ต้องตรงกับ ALLOWED_HOSTS ใน api/law-analyze.js)
 const ALLOWED_SITES = [
   ['ราชกิจจานุเบกษา', 'ratchakitcha.soc.go.th'],
+  ['สำนักงานคณะกรรมการกฤษฎีกา', 'krisdika.go.th'],
   ['กรมสวัสดิการและคุ้มครองแรงงาน', 'dlpw.go.th'],
   ['กระทรวงแรงงาน', 'labour.go.th'],
   ['สมาคมส่งเสริมความปลอดภัยฯ (ShawPat)', 'shawpat.or.th'],
   ['กรมควบคุมโรค', 'ddc.moph.go.th'],
   ['กระทรวงสาธารณสุข', 'moph.go.th'],
   ['กรมโรงงานอุตสาหกรรม', 'diw.go.th'],
+  ['กสทช.', 'nbtc.go.th'],
+  ['กระทรวงดิจิทัลเพื่อเศรษฐกิจและสังคม', 'mdes.go.th'],
+  ['สำนักงานคุ้มครองข้อมูลส่วนบุคคล (PDPA)', 'pdpc.or.th'],
+  ['สำนักงานความมั่นคงปลอดภัยไซเบอร์', 'ncsa.or.th'],
+  ['กรมทรัพย์สินทางปัญญา', 'ipthailand.go.th'],
+  ['กรมสรรพากร', 'rd.go.th'],
+  ['สำนักงานประกันสังคม', 'sso.go.th'],
+  ['กรมควบคุมมลพิษ', 'pcd.go.th'],
+  ['สำนักงานนโยบายและแผนทรัพยากรธรรมชาติฯ', 'onep.go.th'],
+  ['กรมพัฒนาธุรกิจการค้า', 'dbd.go.th'],
 ]
 
 // req ดิบจาก AI → แถวแก้ไขได้
@@ -53,6 +64,9 @@ const toReqRows = (reqs = []) => reqs.map(q => ({
   applicability: q.applicability || '', method: q.method || '',
   documents: q.documents || '', other_terms: q.other_terms || '',
   from_related_law: q.from_related_law || null,   // Skill 3 · ชื่อกฎหมายต้นทาง (null = ข้อของฉบับหลัก)
+  from_law_url: q.from_law_url || '',             // ลิงก์ไฟล์ตัวบทของกฎหมายต้นทาง
+  from_law_confidence: q.from_law_confidence || '',
+  from_law_note: q.from_law_note || '',
 }))
 
 // ชื่อกฎหมายเต็มยาวเกินกว่าจะใส่ใน badge — ตัดให้สั้น เก็บชื่อเต็มไว้ใน title
@@ -85,13 +99,26 @@ function ReqRow({ r, i, onChange, onRemove, suggest }) {
         <textarea className="form-input" rows={1} style={{ marginTop: 0 }} value={r.req_text} onChange={e => set('req_text', e.target.value)} placeholder="เนื้อหาข้อปฏิบัติ…" />
         <button className="btn btn-ghost" style={{ padding: '7px 9px' }} onClick={() => onRemove(i)}><I n="x" /></button>
       </div>
-      {/* Skill 3 · ข้อที่ดึงมาจากกฎหมายที่ถูกอ้างถึง — บอกที่มาให้ จป. ตรวจย้อนได้ */}
+      {/* Skill 3 · ข้อที่ดึงมาจากกฎหมายที่ถูกอ้างถึง — เปิดตัวบทตรวจเองได้ + เตือนข้อที่ยังไม่ยืนยัน */}
       {r.from_related_law && (
-        <div style={{ marginLeft: 30, marginTop: 4 }}>
-          <span title={r.from_related_law} style={{
-            display: 'inline-block', fontSize: 11, lineHeight: 1.5, padding: '1px 7px', borderRadius: 999,
-            background: 'var(--line)', color: 'var(--ink-faint)', whiteSpace: 'nowrap',
-          }}>จาก {shortLaw(r.from_related_law)}</span>
+        <div style={{ marginLeft: 30, marginTop: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {r.from_law_url ? (
+            <a href={r.from_law_url} target="_blank" rel="noreferrer" title={`เปิดตัวบท: ${r.from_related_law}`} style={{
+              display: 'inline-block', fontSize: 11, lineHeight: 1.5, padding: '1px 7px', borderRadius: 999,
+              background: 'var(--line)', color: 'var(--ink-soft)', textDecoration: 'none', whiteSpace: 'nowrap',
+            }}>จาก {shortLaw(r.from_related_law)} ↗</a>
+          ) : (
+            <span title={r.from_related_law} style={{
+              display: 'inline-block', fontSize: 11, lineHeight: 1.5, padding: '1px 7px', borderRadius: 999,
+              background: 'var(--line)', color: 'var(--ink-faint)', whiteSpace: 'nowrap',
+            }}>จาก {shortLaw(r.from_related_law)}</span>
+          )}
+          {r.from_law_confidence && r.from_law_confidence !== 'high' && (
+            <span title={r.from_law_note || 'ยังยืนยันตัวบทได้ไม่ครบ ควรเปิดกฎหมายต้นทางตรวจเอง'} style={{
+              display: 'inline-block', fontSize: 11, lineHeight: 1.5, padding: '1px 7px', borderRadius: 999,
+              background: 'var(--warn-bg)', color: 'var(--warn)', whiteSpace: 'nowrap', cursor: 'help',
+            }}>⚠ ควรตรวจตัวบทเอง</span>
+          )}
         </div>
       )}
       <div style={{ display: 'flex', gap: 8, marginTop: 6, marginLeft: 30 }}>

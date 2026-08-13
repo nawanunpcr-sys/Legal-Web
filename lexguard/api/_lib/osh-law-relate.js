@@ -11,14 +11,31 @@ const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
 
 // ทดสอบจริงแล้ว: krisdika.go.th ค้นเจอแต่ไม่มีเนื้อหามาตราในดัชนี เพราะเก็บตัวบทเป็น PDF
-// ผ่าน endpoint librarian/get — ห้ามใส่กลับเข้ามา
+// ผ่าน endpoint librarian/get — ห้ามใส่กลับเข้ามา (ต่างจาก ALLOWED_HOSTS ใน law-analyze.js
+// ที่ผู้ใช้วางลิงก์ PDF เองได้ ตรงนี้คือดัชนีที่ web_search ใช้ค้น ซึ่งไม่มีตัวบท)
 const TRUSTED_DOMAINS = [
+  // ── SHE ──
   'ratchakitcha.soc.go.th',  // ต้นทางประกาศ path /DATA/PDF/ สกัดข้อความได้
   'tosh.or.th',              // องค์การมหาชนตาม ม.52 มีตัวบท พ.ร.บ. เต็ม
-  'labour.go.th'             // กรมสวัสดิการฯ และสำนักงานพื้นที่
+  'labour.go.th',            // กรมสวัสดิการฯ และสำนักงานพื้นที่
+  'dlpw.go.th',              // กรมสวัสดิการและคุ้มครองแรงงาน
+  // ── กฎหมายด้านอื่นขององค์กร (หมวด LF) — ไม่มีกลุ่มนี้ Skill 3 จะคืน not_found เสมอ
+  //    เพราะ source_url ที่ค้นเจอจะไม่ผ่านด่านตรวจโดเมนในข้อ (ก) ──
+  'nbtc.go.th',              // กสทช. — โทรคมนาคม
+  'mdes.go.th',              // กระทรวงดิจิทัลฯ — พ.ร.บ.คอมพิวเตอร์ และประกาศใต้กฎหมาย
+  'pdpc.or.th',              // PDPA
+  'ncsa.or.th',              // ความมั่นคงปลอดภัยไซเบอร์
+  'ipthailand.go.th',        // ทรัพย์สินทางปัญญา
+  'rd.go.th',                // สรรพากร
+  'sso.go.th',               // ประกันสังคม
+  'pcd.go.th',               // ควบคุมมลพิษ
+  'onep.go.th',              // สผ. — สิ่งแวดล้อม
+  'dbd.go.th',               // พัฒนาธุรกิจการค้า
 ]
 const CACHE_DAYS = 180
-const MAX_PER_RUN = 5        // กัน timeout ของ Vercel ที่ 60 วินาที
+const MAX_PER_WAVE = 6       // จำนวนที่ยิงขนานกันต่อชั้น — กัน timeout และ rate limit
+const MAX_TOTAL_LOOKUPS = 12 // เพดานรวมทุกชั้นต่อการสรุป 1 ครั้ง
+const MAX_DEPTH = 2          // แม่ → ลูก → หลาน · กฎหมายไทยมักลึกแค่นี้ (กฎกระทรวง → พ.ร.บ. → ประกาศอธิบดี)
 const MAX_REQ_PER_LAW = 15   // กัน พ.ร.บ. ใหญ่ดึงมา 70 มาตราจนตารางใช้งานไม่ได้
 
 const SUPA_HEADERS = { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'content-type': 'application/json' }
@@ -29,21 +46,48 @@ const SYSTEM = `คุณคือผู้ช่วย จป.วิชาช�
 หลักการที่ห้ามละเมิด:
 1. ใช้ข้อมูลจากผลค้นหาเท่านั้น ห้ามเติมจากความจำ ค้นไม่เจอให้ตอบ not_found ตรงๆ
    การเดาเนื้อหากฎหมายอันตรายกว่าการบอกว่าไม่เจอ
-2. เอาเฉพาะข้อที่นายจ้างหรือผู้ประกอบกิจการต้องปฏิบัติ ห้ามเอาบทนิยาม อำนาจหน้าที่ของอธิบดี
-   หรือพนักงานตรวจ การแต่งตั้งคณะกรรมการ เรื่องกองทุน บทเฉพาะกาล
-3. เกิน ${MAX_REQ_PER_LAW} ข้อ เลือกเฉพาะที่เกี่ยวกับเรื่องที่ฉบับหลักอ้างถึงมากที่สุด
+   ห้ามเอาเนื้อหา ตัวเลข หรือโครงสร้างตารางจากกฎหมาย "ฉบับอื่น" มาใช้แทนฉบับที่กำลังค้น
+   แม้จะเป็นเรื่องเดียวกัน เป็นฉบับก่อนแก้ไข หรือเป็นฉบับที่ถูกยกเลิกไปแล้วก็ตาม
+   เจอแค่บางส่วน ให้ใส่เฉพาะส่วนที่เจอจริง ตั้ง confidence เป็น low แล้วเขียนใน note ว่าส่วนไหนยังไม่ได้ยืนยัน
 
-การเขียนข้อความ:
-- อ่านแล้วรู้ทันทีว่าต้องทำอะไร โดยไม่ต้องเปิดกฎหมายฉบับอื่นประกอบ
+2. เอาเฉพาะข้อที่ "บริษัทผู้อ่าน" ต้องทำเอง — บริษัทผู้อ่านคือผู้ที่ต้องปฏิบัติตามกฎหมายฉบับหลักที่อ้างถึงกฎหมายนี้
+   ถ้าหน้าที่ในข้อนั้นตกอยู่กับคนอื่น ให้ตัดทิ้งทั้งข้อ แม้จะเกี่ยวข้องกันก็ตาม เช่น
+   - หน้าที่ของผู้ให้บริการ ผู้รับจ้าง หรือผู้ขอใบอนุญาต ที่บริษัทผู้อ่านเป็นแค่ผู้ว่าจ้าง
+     (เช่น "นิติบุคคลที่ประสงค์จะให้บริการตรวจวัดต้องขอใบอนุญาต" — นี่เป็นหน้าที่ของผู้รับจ้าง ไม่ใช่ของบริษัทผู้อ่าน)
+   - อำนาจหน้าที่ของหน่วยงานกำกับดูแลหรือพนักงานเจ้าหน้าที่ (อธิบดี พนักงานตรวจ เลขาธิการ กสทช. คณะกรรมการ)
+   - บทนิยาม การแต่งตั้งคณะกรรมการ เรื่องกองทุน บทเฉพาะกาล
+   - บทที่บอกเพียงว่า "รายละเอียดให้เป็นไปตามที่กฎกระทรวงกำหนด" โดยไม่ได้สั่งให้บริษัททำอะไร
+   ห้ามแปลงประธานให้ดูเหมือนเป็นหน้าที่ของบริษัทผู้อ่าน ถ้าตัวบทระบุผู้มีหน้าที่เป็นคนอื่น
+   ทดสอบทุกข้อก่อนใส่: ถ้าบริษัทผู้อ่านลงมือทำตามข้อนี้เองไม่ได้ หรือทำแล้วไม่มีหลักฐานให้ตรวจได้ ให้ตัดทิ้ง
+   ห้ามเขียนหน้าที่ปลอมแบบ "บริษัทต้องทราบว่า..." หรือ "บริษัทต้องรับรู้ว่า..." เพื่อให้ข้อนั้นผ่าน
+
+3. ถ้าตัวบทเขียนว่า "ตามที่อธิบดีกำหนด" "ตามที่รัฐมนตรีประกาศกำหนด" หรือ "ตามหลักเกณฑ์ที่กำหนดในกฎกระทรวง"
+   ให้ค้นหาประกาศหรือกฎกระทรวงฉบับนั้นต่อ แล้วเอา "ตัวเลขและเกณฑ์จริง" มาเขียนลงในข้อนั้นเลย
+   ห้ามปล่อยให้ผู้อ่านเห็นแค่ "ตามที่อธิบดีกำหนด" เพราะจะยังไม่รู้ว่าต้องทำเท่าไหร่
+   ค้นตัวเลขจริงไม่เจอ ให้เขียนตรงๆ ว่ายังไม่พบตัวเลข พร้อมระบุชื่อประกาศที่ต้องไปเปิด และตั้ง confidence เป็น low
+
+4. เกิน ${MAX_REQ_PER_LAW} ข้อ เลือกเฉพาะที่เกี่ยวกับเรื่องที่ฉบับหลักอ้างถึงมากที่สุด
+
+5. ถ้ากฎหมายฉบับนี้อ้างถึงกฎหมายฉบับอื่นต่อไปอีก ซึ่งต้องรู้เนื้อหาด้วยจึงจะปฏิบัติได้ครบ
+   ให้ใส่ไว้ในฟิลด์ related_laws เพื่อให้ระบบตามไปดึงต่อ (เช่น มาตรา 9 บอกให้ไปดูคุณสมบัติผู้ขึ้นทะเบียน
+   ในกฎกระทรวงการขึ้นทะเบียนฯ ก็ให้ใส่กฎกระทรวงฉบับนั้นไว้)
+   ใส่เฉพาะที่ตัวบทอ้างถึงจริง ห้ามใส่กฎหมายที่แค่เกี่ยวข้องกว้างๆ ในหัวข้อเดียวกัน
+
+การเขียนข้อความ (สำคัญมาก — คนอ่านคือ จป. และพนักงานทั่วไป ไม่ใช่นักกฎหมาย):
+- เขียนเป็นภาษาที่คนทั่วไปอ่านรอบเดียวเข้าใจ ห้ามคัดลอกสำนวนกฎหมายมาตรงๆ ให้เรียบเรียงใหม่ทั้งประโยค
+- บอกให้ชัดว่า "ต้องทำอะไร" ขึ้นต้นประโยคด้วยสิ่งที่ต้องทำ อ่านจบในตัว ไม่ต้องเปิดกฎหมายฉบับอื่นประกอบ
 - ห้ามใส่เลขมาตราในตัวข้อความ เก็บไว้ในฟิลด์ section_ref อย่างเดียว
-- ใช้ "บริษัท" เป็นประธาน แทน "ผู้ประกอบกิจการ" หรือ "นายจ้าง"
+- ใช้ "บริษัท" เป็นประธาน แทน "ผู้ประกอบกิจการ" "นายจ้าง" "ผู้รับใบอนุญาต" หรือ "ผู้ควบคุมข้อมูลส่วนบุคคล"
+  (ใช้ได้เฉพาะเมื่อบริษัทผู้อ่านเป็นผู้มีหน้าที่จริงตามข้อ 2 เท่านั้น)
 - ห้ามใช้คำเหล่านี้ ใช้คำในวงเล็บแทน: ดำเนินการ (ทำ) · จัดให้มี (ต้องมี) · ทั้งนี้ (ตัดทิ้ง)
   ดังกล่าว (เขียนชื่อสิ่งนั้นซ้ำ) · ตามที่กำหนด (ระบุว่าคืออะไร) · โดยอนุโลม (ให้ใช้แบบเดียวกัน) · มิให้ (ห้าม)
-- ตัวเลขใช้เลขอารบิกพร้อมหน่วยเต็ม เช่น "ปีละ 1 ครั้ง" "ปรับสูงสุด 400,000 บาท"
+  นิติบุคคล (บริษัท) · พึง (ควร) · แห่ง/ซึ่ง/อัน (ตัดทิ้งหรือเขียนใหม่) · โดยมิชักช้า (ทันที)
+  อาทิ (เช่น) · หากแต่ (แต่) · เพื่อการนี้ (ตัดทิ้ง)
+- ตัวเลขใช้เลขอารบิกพร้อมหน่วยเต็ม เช่น "ปีละ 1 ครั้ง" "ปรับสูงสุด 400,000 บาท" "ไม่เกิน 34 องศาเซลเซียส"
   ห้ามเขียนว่า "ตามระยะเวลาที่กฎหมายกำหนด" หรือ "ปรับไม่เกินสี่แสนบาท"
 
 ตอบเป็น JSON เท่านั้น ห้ามมี markdown fence:
-{"status":"resolved"|"not_found","law_full_name":"","source_url":"","resolved_text":"สรุปสาระของส่วนที่ถูกอ้างถึง ไม่เกิน 500 ตัวอักษร","confidence":"high"|"medium"|"low","note":"ข้อสังเกต เช่น พบเฉพาะฉบับก่อนแก้ไข","requirements":[{"section_ref":"มาตรา 9","req_text":"ข้อความที่ต้องทำ อ่านจบในตัว","action_required":"","frequency":"","evidence":"","penalty":"ระบุตัวเลขจริง หรือค่าว่าง","source_excerpt":"ข้อความจากตัวบทจริง ไม่เกิน 300 ตัวอักษร"}]}`
+{"status":"resolved"|"not_found","law_full_name":"","source_url":"","resolved_text":"สรุปสาระของส่วนที่ถูกอ้างถึง ไม่เกิน 500 ตัวอักษร","confidence":"high"|"medium"|"low","note":"ข้อสังเกต เช่น พบเฉพาะฉบับก่อนแก้ไข","requirements":[{"section_ref":"มาตรา 9","req_text":"ข้อความที่ต้องทำ อ่านจบในตัว","action_required":"","frequency":"","evidence":"","penalty":"ระบุตัวเลขจริง หรือค่าว่าง","source_excerpt":"ข้อความจากตัวบทจริง ไม่เกิน 300 ตัวอักษร"}],"related_laws":[{"law_name":"","clause":"มาตรา X หรือ null ถ้าอ้างทั้งฉบับ","why_needed":"ทำไมต้องรู้เนื้อหานี้ถึงจะปฏิบัติตามได้","needs_lookup":true}]}`
 
 // ── ฟังก์ชัน 1 · ทำ key ให้ชนกันได้จริง ──────────────────────────────────────
 // "พ.ร.บ. ความปลอดภัยฯ พ.ศ.๒๕๕๔" กับ "พระราชบัญญัติความปลอดภัย พ.ศ. 2554"
@@ -113,7 +157,8 @@ export async function fetchRelatedLaw(ref){
             return { ...base, status: 'resolved', from_cache: true,
               law_full_name: hit.ref_law_name, source_url: hit.source_url,
               resolved_text: hit.resolved_text, confidence: hit.confidence, note: hit.note,
-              requirements: Array.isArray(hit.requirements) ? hit.requirements : [] }
+              requirements: Array.isArray(hit.requirements) ? hit.requirements : [],
+              related_laws: Array.isArray(hit.related_laws) ? hit.related_laws : [] }
           }
         }
       }
@@ -177,9 +222,14 @@ export async function fetchRelatedLaw(ref){
     if(!reqs.length){ status = 'not_found'; note = (note ? note + ' · ' : '') + 'ไม่เหลือข้อที่ใช้ได้' }
   }
 
+  // กฎหมายที่ฉบับนี้อ้างถึงต่อ — ใช้สร้าง frontier ของชั้นถัดไป (เก็บไว้เมื่อ resolved เท่านั้น)
+  const childRefs = status === 'resolved' && Array.isArray(out.related_laws)
+    ? out.related_laws.filter(c => c && String(c.law_name || '').trim()) : []
+
   const result = { ...base, status, from_cache: false,
     law_full_name: out.law_full_name || lawName, source_url: out.source_url || '',
-    resolved_text: out.resolved_text || '', confidence: out.confidence || '', note, requirements: reqs }
+    resolved_text: out.resolved_text || '', confidence: out.confidence || '', note,
+    requirements: reqs, related_laws: childRefs }
 
   // 4) เก็บลง cache — เก็บกรณีหาไม่เจอด้วย เพื่อไม่ให้ยิงซ้ำทุกครั้งที่สรุปกฎหมายฉบับเดิม
   try{
@@ -190,6 +240,7 @@ export async function fetchRelatedLaw(ref){
         body: JSON.stringify([{
           ref_key: refKey, ref_law_name: result.law_full_name, ref_clause: base.clause,
           resolved_text: result.resolved_text, requirements: reqs, source_url: result.source_url,
+          related_laws: childRefs,
           confidence: result.confidence, note, resolve_status: status, resolved_at: new Date().toISOString()
         }])
       })
@@ -207,18 +258,57 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName){
   const main = Array.isArray(mainReqs) ? mainReqs : []
   const all = Array.isArray(relatedLaws) ? relatedLaws : []
 
-  // 1) เอาเฉพาะที่ต้องค้น · ที่เกิน MAX_PER_RUN เก็บไว้เป็น deferred
-  const wanted = all.filter(r => r && r.needs_lookup !== false)
-  const toFetch = wanted.slice(0, MAX_PER_RUN)
-  const deferred = wanted.slice(MAX_PER_RUN)
+  // 1-2) ไล่ทีละชั้น: แม่ → ลูก → หลาน
+  //   กันลูกโซ่ไม่รู้จบด้วย 3 อย่าง — ความลึก MAX_DEPTH · เพดานรวม MAX_TOTAL_LOOKUPS ·
+  //   และ Set ของ ref_key ที่แตะแล้วทุกชั้น (กันวนกลับ A→B→A และกันดึง พ.ร.บ.แม่ซ้ำ
+  //   เมื่อถูกอ้างจากหลายฉบับ)
+  const touched = new Set()
+  const results = []
+  const deferred = []
+  let budget = MAX_TOTAL_LOOKUPS
+  let frontier = all.filter(r => r && r.needs_lookup !== false)
 
-  // 2) ค้นขนาน — แต่ละตัวครอบ catch เอง ตัวหนึ่งล้มต้องไม่ลากตัวอื่นล้ม
-  const results = await Promise.all(toFetch.map(r =>
-    fetchRelatedLaw({ ...r, parent_law: parentName })
-      .catch(e => ({ ref_key: normalizeRefKey(r.law_name || '', r.clause || ''),
-        law_name: r.law_name || '', clause: r.clause || 'ทั้งฉบับ',
-        status: 'not_found', requirements: [], note: String(e && e.message || e).slice(0, 200) }))
-  ))
+  // กันฉบับหลักถูกดึงกลับมาเป็นกฎหมายอ้างอิงของตัวเอง — พ.ร.บ.แม่มักอ้างกลับมาที่กฎกระทรวงลูก
+  // เทียบที่ "ชื่อ" อย่างเดียว (ตัดส่วน clause ทิ้ง) เพื่อกันทุกกรณีไม่ว่าจะอ้างทั้งฉบับหรือรายข้อ
+  const selfName = normalizeRefKey(parentName || '', '').split('|')[0]
+
+  for(let depth = 1; depth <= MAX_DEPTH && frontier.length && budget > 0; depth++){
+    // ตัดตัวที่เคยแตะแล้วออกก่อนนับโควตา
+    const fresh = []
+    for(const r of frontier){
+      const name = String(r.law_name || '').trim()
+      if(!name) continue
+      const k = normalizeRefKey(name, r.clause || '')
+      if(touched.has(k)) continue
+      if(selfName && k.split('|')[0] === selfName) continue   // อ้างกลับมาที่ฉบับหลักเอง
+      touched.add(k)
+      fresh.push(r)
+    }
+    if(!fresh.length) break
+
+    const take = fresh.slice(0, Math.min(MAX_PER_WAVE, budget))
+    deferred.push(...fresh.slice(take.length))
+    budget -= take.length
+
+    // ค้นขนานภายในชั้น — แต่ละตัวครอบ catch เอง ตัวหนึ่งล้มต้องไม่ลากตัวอื่นล้ม
+    const wave = await Promise.all(take.map(r =>
+      fetchRelatedLaw({ ...r, parent_law: r.via || parentName })
+        .then(res => ({ ...res, depth, via: r.via || parentName }))
+        .catch(e => ({ ref_key: normalizeRefKey(r.law_name || '', r.clause || ''),
+          law_name: r.law_name || '', clause: r.clause || 'ทั้งฉบับ', depth, via: r.via || parentName,
+          status: 'not_found', requirements: [], related_laws: [],
+          note: String(e && e.message || e).slice(0, 200) }))
+    ))
+    results.push(...wave)
+
+    // สร้าง frontier ของชั้นถัดไปจากกฎหมายที่ฉบับลูกอ้างถึงต่อ
+    frontier = depth < MAX_DEPTH
+      ? wave.filter(res => res.status === 'resolved')
+          .flatMap(res => (res.related_laws || [])
+            .filter(c => c && c.needs_lookup !== false && String(c.law_name || '').trim())
+            .map(c => ({ ...c, via: res.law_full_name || res.law_name })))
+      : []
+  }
 
   // 3) ตัดข้อซ้ำ — ของฉบับหลักชนะเสมอ
   const seen = new Set(main.map(r => fingerprint(r?.req_text)))
@@ -230,7 +320,13 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName){
       const fp = fingerprint(r.req_text)
       if(!fp || seen.has(fp)) continue
       seen.add(fp)
-      relatedReqs.push({ ...r, from_related_law: srcName })   // 4) ติดชื่อกฎหมายต้นทาง
+      // 4) ติดที่มาไปกับข้อ — ชื่อกฎหมาย ลิงก์ไฟล์ตัวบท และระดับความมั่นใจ
+      //    เพื่อให้ จป. เปิดตัวบทตรวจเองได้ และรู้ว่าข้อไหนยังไม่ยืนยัน 100%
+      relatedReqs.push({ ...r,
+        from_related_law: srcName,
+        from_law_url: res.source_url || '',
+        from_law_confidence: res.confidence || '',
+        from_law_note: res.note || '' })
     }
   }
 
@@ -243,11 +339,13 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName){
   // 6) deferred เข้า related_laws ด้วย เพื่อให้เห็นว่ายังมีที่ยังไม่ได้ดึง
   const related_laws = [
     ...results.map(r => ({ law_name: r.law_name, clause: r.clause, status: r.status,
+      depth: r.depth || 1, via: r.via || '',
       source_url: r.source_url || '', resolved_text: r.resolved_text || '',
       confidence: r.confidence || '', note: r.note || '', from_cache: !!r.from_cache,
       req_count: r.status === 'resolved' ? (r.requirements || []).length : 0 })),
     ...deferred.map(r => ({ law_name: r.law_name || '', clause: r.clause || 'ทั้งฉบับ',
-      status: 'manual', source_url: '', resolved_text: '', confidence: '', note: 'เกินจำนวนที่ดึงได้ในรอบเดียว',
+      status: 'manual', depth: 0, via: r.via || '',
+      source_url: '', resolved_text: '', confidence: '', note: 'เกินจำนวนที่ดึงได้ในรอบเดียว',
       from_cache: false, req_count: 0 }))
   ]
 
