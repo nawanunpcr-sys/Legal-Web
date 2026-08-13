@@ -668,7 +668,7 @@ export default function App(){
       <div id="print-report"/>
       <Toaster/>
       <ConfirmHost/>
-      <Clawdmeter/>
+      {import.meta.env.DEV && <Clawdmeter/>}
     </div>
     </AuthContext.Provider>
   )

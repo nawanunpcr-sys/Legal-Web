@@ -3,8 +3,10 @@ import { useEffect, useRef, useState } from 'react'
 // Clawdmeter — a floating desk-gadget-style widget showing real Claude usage.
 // Mirrors the hardware device: a dark rounded screen in a white bezel with two
 // windows (Current 5-hour block · Weekly) and a live "resets in" countdown.
-// Data comes from the dev-only /api/usage route; on hosts without that route
-// (e.g. production) it stays hidden.
+// Data comes from the dev-only /api/usage route, so App.jsx mounts this behind
+// import.meta.env.DEV and the whole widget is tree-shaken out of the production
+// bundle. The `gone` state below is the in-dev fallback for when that route
+// errors out (e.g. ccusage unavailable).
 
 const POLL_MS = 60_000
 
