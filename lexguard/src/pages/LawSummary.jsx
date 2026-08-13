@@ -20,7 +20,9 @@ async function analyzeSource({ source = '', sourceUrl = '', pdfBase64 = '', pdfN
   })
   const d = await r.json()
   if (!r.ok) throw new Error(d.error || 'สรุปไม่สำเร็จ')
-  return { law: d.law || {}, requirements: d.requirements || [] }
+  // Skill 3 · related_count/unresolved_count ต้องส่งต่อด้วย ไม่งั้นบรรทัดสรุปเหนือตารางไม่มีข้อมูล
+  return { law: d.law || {}, requirements: d.requirements || [],
+    related_count: d.related_count || 0, unresolved_count: d.unresolved_count || 0 }
 }
 
 // อ่านไฟล์เป็น base64 (ตัดส่วน "data:...;base64," นำหน้าออก)
@@ -50,7 +52,11 @@ const toReqRows = (reqs = []) => reqs.map(q => ({
   responsible: q.responsible || '', frequency: q.frequency || '',
   applicability: q.applicability || '', method: q.method || '',
   documents: q.documents || '', other_terms: q.other_terms || '',
+  from_related_law: q.from_related_law || null,   // Skill 3 · ชื่อกฎหมายต้นทาง (null = ข้อของฉบับหลัก)
 }))
+
+// ชื่อกฎหมายเต็มยาวเกินกว่าจะใส่ใน badge — ตัดให้สั้น เก็บชื่อเต็มไว้ใน title
+const shortLaw = n => { const s = String(n || '').trim(); return s.length > 30 ? s.slice(0, 30) + '…' : s }
 
 // แถวแก้ไข → payload สำหรับ prefill AddLawFlow / เก็บ ai_payload
 const buildInitialData = (law, reqRows, discoveredId = null) => ({
@@ -79,6 +85,15 @@ function ReqRow({ r, i, onChange, onRemove, suggest }) {
         <textarea className="form-input" rows={1} style={{ marginTop: 0 }} value={r.req_text} onChange={e => set('req_text', e.target.value)} placeholder="เนื้อหาข้อปฏิบัติ…" />
         <button className="btn btn-ghost" style={{ padding: '7px 9px' }} onClick={() => onRemove(i)}><I n="x" /></button>
       </div>
+      {/* Skill 3 · ข้อที่ดึงมาจากกฎหมายที่ถูกอ้างถึง — บอกที่มาให้ จป. ตรวจย้อนได้ */}
+      {r.from_related_law && (
+        <div style={{ marginLeft: 30, marginTop: 4 }}>
+          <span title={r.from_related_law} style={{
+            display: 'inline-block', fontSize: 11, lineHeight: 1.5, padding: '1px 7px', borderRadius: 999,
+            background: 'var(--line)', color: 'var(--ink-faint)', whiteSpace: 'nowrap',
+          }}>จาก {shortLaw(r.from_related_law)}</span>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 6, marginLeft: 30 }}>
         <input className="form-input" style={{ marginTop: 0 }} value={r.responsible} onChange={e => set('responsible', e.target.value)} placeholder="ผู้รับผิดชอบ" />
         <input className="form-input" style={{ marginTop: 0 }} value={r.frequency} onChange={e => set('frequency', e.target.value)} placeholder="ความถี่" />
@@ -97,14 +112,16 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
   const [saving, setSaving] = useState(false)
   const [law, setLaw] = useState(null)          // {name,type,ministry,...,cat}
   const [reqs, setReqs] = useState([])          // reqRows
+  const [related, setRelated] = useState({ count: 0, unresolved: 0 })   // Skill 3
 
   async function analyze() {
     if (!src.trim() || busy) return
-    setBusy(true); setLaw(null); setReqs([])
+    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0 })
     try {
-      const { law: l, requirements } = await analyzeSource({ source: src, sourceUrl: srcUrl.trim() })
+      const { law: l, requirements, related_count, unresolved_count } = await analyzeSource({ source: src, sourceUrl: srcUrl.trim() })
       setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
       setReqs(toReqRows(requirements))
+      setRelated({ count: related_count, unresolved: unresolved_count })
       toast('สรุปด้วย AI แล้ว — ตรวจ/แก้ไขได้', 'success')
     } catch (e) { toast('สรุปไม่สำเร็จ: ' + e.message) }
     setBusy(false)
@@ -113,12 +130,13 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
   async function analyzePdf(file) {
     if (!file || busy) return
     if (file.size > 4 * 1024 * 1024) { toast('ไฟล์ PDF ใหญ่เกิน 4MB — กรุณาแยกไฟล์ หรือ copy ตัวบทมาวางแทน'); return }
-    setBusy(true); setLaw(null); setReqs([])
+    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0 })
     try {
       const pdfBase64 = await readFileBase64(file)
-      const { law: l, requirements } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
+      const { law: l, requirements, related_count, unresolved_count } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
       setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
       setReqs(toReqRows(requirements))
+      setRelated({ count: related_count, unresolved: unresolved_count })
       toast('สรุปจากไฟล์ PDF แล้ว — ตรวจ/แก้ไขได้', 'success')
     } catch (e) { toast('สรุป PDF ไม่สำเร็จ: ' + e.message) }
     setBusy(false)
@@ -143,7 +161,7 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
         status: 'imported', searched_at: new Date().toISOString(),
       })
       toast('เก็บลงคิว "รอเข้าทะเบียน" แล้ว', 'success')
-      setLaw(null); setReqs([]); setSrc(''); setSrcUrl('')
+      setLaw(null); setReqs([]); setSrc(''); setSrcUrl(''); setRelated({ count: 0, unresolved: 0 })
       onQueued && onQueued()
     } catch (e) { toast('บันทึกลงคิวไม่สำเร็จ: ' + e.message) }
     setSaving(false)
@@ -211,6 +229,15 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
           <div className="sec-t" style={{ marginTop: 14, display: 'flex' }}>ข้อปฏิบัติ ({reqs.length})
             <button className="btn btn-ghost" style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 12 }} onClick={() => setReqs(p => [...p, { section_ref: '', req_text: '', responsible: '', frequency: '', documents: '' }])}><I n="plus" />เพิ่มข้อ</button>
           </div>
+          {/* Skill 3 · บอกว่ามีข้อที่ดึงมาจากกฎหมายที่ตัวบทอ้างถึงกี่ข้อ */}
+          {related.count > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--ink-faint)', margin: '2px 0 8px', lineHeight: 1.6 }}>
+              รวมข้อกำหนดจากกฎหมายที่อ้างถึง {related.count} ข้อ
+              {related.unresolved > 0 && (
+                <span style={{ color: 'var(--warn)' }}> · อีก {related.unresolved} ฉบับหาตัวบทไม่พบ ควรตรวจสอบเพิ่มเติม</span>
+              )}
+            </div>
+          )}
           {reqs.map((r, i) => <ReqRow key={i} r={r} i={i} onChange={setReq} onRemove={rmReq} suggest={suggest} />)}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>

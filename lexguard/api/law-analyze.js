@@ -2,6 +2,8 @@
 // Fetches a law (URL or pasted text), asks Claude to summarize it into registry-ready requirements,
 // and stages them in lg_import_staging for the user to approve on the "นำเข้า/รออนุมัติ" page.
 // No hardcoded fallbacks — secrets must come from the environment (never committed to git).
+import { relateAndMerge } from './_lib/osh-law-relate.js'
+
 const SUPA_URL = process.env.VITE_SUPABASE_URL
 const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
@@ -15,9 +17,12 @@ const SYSTEM = `คุณคือผู้ช่วย จป.วิชาช�
 4) แตกเป็น "ข้อกำหนด" รายมาตรา/ข้อ ให้ครบทุกข้อที่สร้างหน้าที่ต้องปฏิบัติ (ข้ามนิยาม/บทเฉพาะกาลที่ไม่สร้างหน้าที่) — อย่ารวบ อย่าตกหล่น แต่ละข้อสรุปครบ: ใคร(ผู้รับผิดชอบ) ทำอะไร ที่ไหน อย่างไร เอกสาร/หลักฐาน ความถี่ และเงื่อนไข/กำหนดเวลา ระบุเลขมาตรา/ข้อเสมอ
 เลือกหมวด: LA=บริหารจัดการความปลอดภัย/อาชีวอนามัย/จป./คปอ./ระบบการจัดการ, LB=ไฟฟ้าและพลังงาน (รวมน้ำมันเชื้อเพลิง/เครื่องกำเนิดไฟฟ้า), LC=การป้องกันและระงับอัคคีภัย, LD=ความร้อน/แสงสว่าง/เสียง/สภาพแวดล้อมในการทำงาน, LE=ก่อสร้าง/ลิฟต์/เครื่องจักร/ปั้นจั่น/ที่อับอากาศ/ที่สูง/งานเสี่ยงอื่นๆ, LF=Service (งานบริการ/ธุรกิจโทรคมนาคมของบริษัท), LG=คณะกรรมการสวัสดิการในสถานประกอบกิจการ (พ.ร.บ.คุ้มครองแรงงาน หมวดสวัสดิการ)
    ใช้ได้เฉพาะ LA, LB, LC, LD, LE, LF, LG เท่านั้น — ห้ามคิดรหัสหมวดใหม่ ถ้าไม่เข้าหมวดใดเลยให้ใช้ LA
+5) ระบุกฎหมายที่ถูกอ้างถึงในตัวบท ซึ่งจำเป็นต้องรู้เนื้อหาด้วยจึงจะปฏิบัติตามได้ครบ ได้แก่ กฎหมายแม่ที่ฉบับนี้ออกตามความใน / มาตราของกฎหมายฉบับอื่นที่ถูกอ้าง / ประกาศหรือหลักเกณฑ์ที่ตัวบทบอกให้ไปดูต่อ
+   ใส่เฉพาะที่ตัวบทอ้างถึงจริง ห้ามใส่กฎหมายที่แค่เกี่ยวข้องกว้างๆ ในหัวข้อเดียวกัน
 ตอบกลับเป็น JSON เท่านั้น ไม่มีคำอธิบายอื่น ไม่มี markdown:
 {"law":{"name":"","type":"","ministry":"","announce_date":"วว/ดด/ปปปป","effective_date":"วว/ดด/ปปปป","documents":"","cat":"LA","code_suggestion":""},
- "requirements":[{"section_ref":"มาตรา X","req_text":"","responsible":"","applicability":"","method":"","documents":"","frequency":"","other_terms":""}]}`
+ "requirements":[{"section_ref":"มาตรา X","req_text":"","responsible":"","applicability":"","method":"","documents":"","frequency":"","other_terms":""}],
+ "related_laws":[{"law_name":"","clause":"มาตรา 9 หรือ null ถ้าอ้างทั้งฉบับ","appears_in":"จุดในตัวบทที่อ้างถึง","why_needed":"ทำไมต้องรู้เนื้อหานี้ถึงจะปฏิบัติตามได้","needs_lookup":true}]}`
 
 function strip(html){
   return html.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ')
@@ -120,7 +125,20 @@ export default async function handler(req,res){
         stop_reason:'max_tokens'})
       return res.status(500).json({error:'แปลงผลลัพธ์เป็น JSON ไม่ได้',raw:txt.slice(0,400)})
     }
-    const law = parsed.law||{}, reqs = parsed.requirements||[]
+    const law = parsed.law||{}
+    // Skill 3 · ดึงข้อกำหนดจากกฎหมายที่ตัวบทอ้างถึง มารวมเป็นชุดเดียวกับของฉบับหลัก
+    // (กฎกระทรวงมักไม่เขียนซ้ำสิ่งที่อยู่ใน พ.ร.บ.แม่ — อ่านฉบับเดียวจึงตกข้อกำหนด)
+    let merged = { requirements: parsed.requirements||[], related_laws:[], related_count:0, unresolved_count:0 }
+    if(Array.isArray(parsed.related_laws) && parsed.related_laws.length){
+      try{
+        merged = await relateAndMerge(parsed.related_laws, parsed.requirements||[], law.name||'')
+      }catch(e){
+        console.error('osh-law-relate failed:', e)
+        // ล้มเหลวต้องไม่ทำให้การสรุปทั้งหมดพัง — ใช้ผลของฉบับหลักต่อไปตามเดิม
+        merged = { requirements: parsed.requirements||[], related_laws:[], related_count:0, unresolved_count:0 }
+      }
+    }
+    const reqs = merged.requirements
     const batch = 'api-'+Date.now()
     const rows = reqs.map((r,i)=>({
       batch, law_code: law.code_suggestion||('NEW-'+Date.now()%10000), law_name: law.name||'',
@@ -130,7 +148,8 @@ export default async function handler(req,res){
       req_seq: i, section_ref: r.section_ref||'', req_text: r.req_text||'', responsible: r.responsible||'',
       applicability: r.applicability||'', method: r.method||'', documents: r.documents||'',
       // กรณีวางตัวบทเป็นข้อความ (ไม่มี URL ที่ fetch) ให้ใช้ "ลิงก์ตัวบทจริง" ที่ผู้ใช้กรอกมา
-      frequency: r.frequency||'', other_terms: r.other_terms||'', source_url: srcUrl || (sourceUrl||'').trim(), status:'proposed'
+      frequency: r.frequency||'', other_terms: r.other_terms||'', source_url: srcUrl || (sourceUrl||'').trim(), status:'proposed',
+      from_related_law: r.from_related_law||null
     }))
     if(stage && rows.length){
       const sr = await fetch(`${SUPA_URL}/rest/v1/lg_import_staging`,{method:'POST',
@@ -138,6 +157,7 @@ export default async function handler(req,res){
         body:JSON.stringify(rows)})
       if(!sr.ok) return res.status(502).json({error:'บันทึกลง staging ไม่สำเร็จ: '+(await sr.text()).slice(0,200)})
     }
-    return res.status(200).json({law,count:reqs.length,batch,requirements:reqs})
+    return res.status(200).json({law,count:reqs.length,batch,requirements:reqs,
+      related_laws:merged.related_laws, related_count:merged.related_count, unresolved_count:merged.unresolved_count})
   }catch(e){ return res.status(500).json({error:String(e&&e.message||e)}) }
 }
