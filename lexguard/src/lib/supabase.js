@@ -55,6 +55,14 @@ export async function saveSettings(patch) {
   if (error) throw error
 }
 
+// ---- Categories ----
+// เพิ่มหมวดกฎหมายใหม่ · prompt ของ /api/law-analyze ดึงรายการหมวดจากตารางนี้ตอนรัน
+// เพิ่มแล้ว AI เลือกหมวดใหม่ได้ทันทีโดยไม่ต้อง deploy
+export async function addCategory({ code, name, color, sort_order }) {
+  const { error } = await supabase.from('lg_categories').insert({ code, name, color, sort_order })
+  if (error) throw error
+}
+
 // ---- Auth ----
 export async function getSession() {
   if (!hasSupabase) return null

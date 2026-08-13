@@ -140,6 +140,7 @@ export default function App(){
   async function loadTasks(){ try{ setTaskRows(await fetchTasks()) }catch(e){ console.warn('tasks reload',e) } }
   async function loadDiscovered(){ try{ setDiscovered(await fetchDiscoveredLaws()) }catch(e){ console.warn('discovered reload',e) } }
   async function loadLaws(){ try{ const d=await fetchAll(); setLaws(d.laws) }catch(e){ console.warn('laws reload',e) } }
+  async function loadCats(){ try{ const d=await fetchAll(); setCats(withCatColors(d.cats)) }catch(e){ console.warn('cats reload',e) } }
   function openAddLaw(init=null){ setAddLawInit(init); setShowAddLaw(true) }   // P12
   async function loadCurMonth(){ try{ setCurMonthRows(await fetchComplianceMonths(new Date().getFullYear())) }catch(e){ console.warn('cur month reload',e) } }
   // P10: staging/assessment/tracker/plans/reports views were removed. goView()
@@ -634,7 +635,8 @@ export default function App(){
           </div>)}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={goView}/>}
           {view==='settings'      && (can(role,'delete')
-            ? <SettingsPage settings={settings} onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }}/>
+            ? <SettingsPage settings={settings} cats={cats} onCatsChanged={loadCats}
+                onSave={async patch=>{ await saveSettings(patch); setSettings(s=>({...s,...patch})); toast('บันทึกการตั้งค่าแล้ว','success') }}/>
             : <div className="view"><div className="panel" style={{padding:'50px 20px',textAlign:'center',color:'var(--ink-faint)'}}>เฉพาะผู้ดูแลระบบ (admin) เท่านั้นที่เข้าถึงหน้าตั้งค่าได้ — {NO_PERM}</div></div>)}
           </div>
         </div>
