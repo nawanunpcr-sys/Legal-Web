@@ -10,7 +10,6 @@ export default function SettingsPage({ settings, onSave }) {
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
   const F = [
     ['company_name', 'ชื่อระบบ / บริษัท (หัวเมนู)'],
-    ['subtitle', 'คำบรรยายใต้ชื่อ'],
     ['brand_mark', 'อักษรย่อโลโก้ (เช่น CR)'],
     ['org_name', 'ชื่อองค์กร (มุมล่าง)'],
     ['user_name', 'ชื่อผู้ใช้ (มุมล่าง)'],

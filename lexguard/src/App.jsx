@@ -54,12 +54,12 @@ const TITLES = {
   dashboard:     ['Dashboard',             'สรุปสถานะความสอดคล้องตามกฎหมาย SHE'],
   tasks:         ['รายการที่ต้องทำ',        'งานที่ต้องดำเนินการทั้งหมด — ทวนสอบกฎหมาย · รายงานราชการ · การสื่อสาร'],
   // P19 · registry ตอนนี้มี 3 แท็บ (ทะเบียน/ประวัติ/ยกเลิก) — history และ repealed ไม่ใช่ view เดี่ยวๆ แล้ว
-  registry:      ['ทะเบียนกฎหมาย','ทะเบียนกฎหมาย พร้อมประวัติการทำรายการ และกฎหมายที่ยกเลิก'],
+  registry:      ['ทะเบียนกฎหมาย',        ''],
   register:      ['ทะเบียนกฎหมาย',         'กฎหมายที่เกี่ยวข้องและสถานะการปฏิบัติ'],
   compliance:    ['ติดตามความสอดคล้อง',    'สถานะรายข้อปฏิบัติแยกตามหมวดและลำดับชั้น'],
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
   comm:          ['สื่อสาร & ส่งรายงาน',   'ตารางการสื่อสาร (ISD-86) และการส่งรายงานราชการ'],
-  summary:       ['สรุปกฎหมาย (AI)',       'สรุปกฎหมายด้วย AI + คลังสรุป + ส่งต่อเข้าทะเบียน'],
+  summary:       ['สรุปกฎหมาย (AI)',       ''],
   notifications: ['ศูนย์การแจ้งเตือน',     'การแจ้งเตือนและการติดตามสถานะทั้งหมด'],
   settings:      ['ตั้งค่า',                'ข้อมูลองค์กรและการแสดงผลของระบบ'],
 }
@@ -506,7 +506,6 @@ export default function App(){
           onKeyDown={e=>{ if(e.key==='Enter'||e.key===' ') setView('dashboard') }}>
           <div className="brand-mark">{settings.brand_mark||'CR'}</div>
           <h1>{settings.company_name||'Compliance Register'}</h1>
-          <span>{settings.subtitle||'ทะเบียนกฎหมาย SHE'}</span>
         </div>
 
         {NAV_GROUPS.map((group,gi)=>(
@@ -587,7 +586,7 @@ export default function App(){
         <div className="content">
           {err && <div className="banner">{err}</div>}
           <div className="page-head no-print">
-            <div><h2>{title[0]}</h2><p>{title[1]}</p></div>
+            <div><h2>{title[0]}</h2>{title[1] && <p>{title[1]}</p>}</div>
             <div className="page-actions">
               {view==='registry' && (
                 <div className="tb-menu">
