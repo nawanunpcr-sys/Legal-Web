@@ -3,10 +3,10 @@
 //         lg_ai_discovered_laws (ai_payload) → กด "เพิ่มเข้าทะเบียน" prefill AddLawFlow (Workflow A).
 // โซนล่าง: คลังสรุปกฎหมายจากทะเบียน + AI สรุปย้อนหลังรายฉบับ (lg_laws.ai_summary, ไม่ทับของยืนยันแล้ว).
 import { useMemo, useState } from 'react'
-import { saveDiscoveredLaw, deleteDiscoveredLaw, saveLawAiSummary } from '../lib/supabase.js'
+import { saveDiscoveredLaw, deleteDiscoveredLaw, saveLawAiSummary, repealLaw } from '../lib/supabase.js'
 import { STATUS } from '../lib/supabase.js'
 import { I } from '../components/icons.jsx'
-import { Tag, thDate, findLawDuplicate } from '../lib/ui.jsx'
+import { Tag, thDate, findLawDuplicate, beToISO } from '../lib/ui.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
@@ -144,12 +144,36 @@ function RelatedLawsPanel({ items = [] }) {
 /* ── กฎหมายฉบับนี้ยกเลิกฉบับเดิม — จับคู่กับทะเบียนให้เลย ──
    ตัวบทเขียนแค่ "ให้ยกเลิก <ชื่อกฎหมาย>" ผู้ใช้ต้องไปไล่หาเองว่าคือรหัสไหนในทะเบียน
    หน้านี้มีรายการกฎหมายทั้งทะเบียนอยู่แล้ว จับคู่ด้วยตัวเทียบชื่อชุดเดียวกับที่ใช้กันเพิ่มซ้ำ */
-function RepealsPanel({ repeals = [], laws = [] }) {
+function RepealsPanel({ repeals = [], laws = [], newLaw = {}, onReloadLaws }) {
+  const { can } = useAuth()
+  const [busyId, setBusyId] = useState(null)
   const rows = useMemo(() => repeals.map(r => {
     const hit = findLawDuplicate(laws, r.law_name)
     return { ...r, match: hit && (hit.type === 'exact' || hit.sim >= 0.75) ? hit : null }
   }), [repeals, laws])
   if (!rows.length) return null
+
+  // ตั้งฉบับเดิมเป็น "ยกเลิก" จากหน้านี้เลย — ใช้ repealLaw ตัวเดิมของระบบ
+  //   (มันจัดการ log แจ้งเตือน + สถิติรายไตรมาสให้ครบอยู่แล้ว)
+  // วันที่ยกเลิก = วันบังคับใช้ของฉบับใหม่ · ไม่มีก็ใช้วันนี้
+  async function markRepealed(old) {
+    const label = `${old.code} — ${(old.name || '').slice(0, 45)}`
+    if (!(await confirmDialog(
+      `ตั้ง "${label}" เป็นยกเลิก?\n\nเหตุผล: ถูกยกเลิกโดย ${(newLaw.name || 'กฎหมายฉบับใหม่').slice(0, 60)}`,
+      { danger: true }))) return
+    setBusyId(old.id)
+    try {
+      await repealLaw(old.id, {
+        repeal_date: beToISO(newLaw.effective_date) || new Date().toISOString().slice(0, 10),
+        repeal_reason: `ถูกยกเลิกโดย ${newLaw.name || '(กฎหมายฉบับใหม่)'}`,
+        replaced_by_code: null,   // ฉบับใหม่ยังไม่เข้าทะเบียน ยังไม่มีรหัส
+        repealed_by_authority: newLaw.name || null,
+      })
+      toast(`ตั้ง ${old.code} เป็นยกเลิกแล้ว`, 'success')
+      onReloadLaws && onReloadLaws()
+    } catch (e) { toast('ตั้งเป็นยกเลิกไม่สำเร็จ: ' + e.message) }
+    setBusyId(null)
+  }
 
   return (
     <div style={{ marginTop: 12, padding: '10px 13px', borderRadius: 9, background: 'var(--warn-bg)', border: '1px solid var(--warn)' }}>
@@ -162,14 +186,21 @@ function RepealsPanel({ repeals = [], laws = [] }) {
       {rows.map((r, i) => (
         <div key={i} style={{ padding: '5px 0', borderTop: i ? '1px solid var(--line)' : 'none' }}>
           <div style={{ fontSize: 12.5 }}>{r.law_name}{r.clause ? ` · ${r.clause}` : ''}</div>
-          <div style={{ fontSize: 11.5, marginTop: 2 }}>
-            {r.match ? (
+          <div style={{ fontSize: 11.5, marginTop: 2, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {r.match ? (<>
               <span style={{ color: 'var(--ok)' }}>
                 พบในทะเบียน: <b>{r.match.law.code}</b> — {(r.match.law.name || '').slice(0, 50)}
                 {r.match.type !== 'exact' && ` (ชื่อคล้าย ${Math.round(r.match.sim * 100)}% — ตรวจก่อน)`}
-                {r.match.law.status === 'repealed' && ' · ตั้งเป็นยกเลิกแล้ว ✓'}
               </span>
-            ) : (
+              {r.match.law.status === 'repealed'
+                ? <span style={{ color: 'var(--ok)', fontWeight: 600 }}>· ตั้งเป็นยกเลิกแล้ว ✓</span>
+                : <button className="btn btn-ghost" style={{ padding: '2px 9px', fontSize: 11, marginLeft: 'auto' }}
+                    disabled={busyId === r.match.law.id || !can('edit')}
+                    title={can('edit') ? 'ตั้งกฎหมายฉบับเดิมเป็นยกเลิก โดยไม่ต้องไปเปิดหน้าทะเบียน' : NO_PERM}
+                    onClick={() => markRepealed(r.match.law)}>
+                    {busyId === r.match.law.id ? 'กำลังบันทึก…' : 'ตั้งเป็นยกเลิกเลย'}
+                  </button>}
+            </>) : (
               <span style={{ color: 'var(--ink-faint)' }}>ไม่พบในทะเบียน — อาจยังไม่เคยบันทึก หรือชื่อต่างจากที่เก็บไว้</span>
             )}
           </div>
@@ -222,7 +253,9 @@ function ReqRow({ r, i, onChange, onRemove, suggest }) {
 }
 
 /* ── โซนบน: สรุปด้วย AI ── */
-function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry }) {
+// laws = ทะเบียนทั้งหมด รวมฉบับที่ยกเลิกแล้ว — RepealsPanel ต้องเห็นฉบับที่ยกเลิกไปแล้วด้วย
+// ไม่งั้นกดปุ่ม "ตั้งเป็นยกเลิกเลย" เสร็จแล้วแถวจะกลายเป็น "ไม่พบในทะเบียน" แทนที่จะขึ้น ✓
+function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, onReloadLaws }) {
   const { can } = useAuth()
   const [src, setSrc] = useState('')
   const [srcUrl, setSrcUrl] = useState('')
@@ -351,7 +384,7 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry }) 
             value={law.gazette_ref || ''} onChange={e => setLawField('gazette_ref', e.target.value)} />
 
           {/* ตัวบทสั่งยกเลิกฉบับเดิม → จับคู่กับทะเบียนให้เห็นว่าคือรหัสไหน */}
-          <RepealsPanel repeals={repeals} laws={laws} />
+          <RepealsPanel repeals={repeals} laws={laws} newLaw={law} onReloadLaws={onReloadLaws} />
 
           <div className="sec-t" style={{ marginTop: 14, display: 'flex' }}>ข้อปฏิบัติ ({reqs.length})
             <button className="btn btn-ghost" style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 12 }} onClick={() => setReqs(p => [...p, { section_ref: '', req_text: '', responsible: '', frequency: '', documents: '' }])}><I n="plus" />เพิ่มข้อ</button>
@@ -527,11 +560,11 @@ function LibraryZone({ laws, cats, catMap, onOpenLaw, onReloadLaws, onAddToRegis
   )
 }
 
-export default function LawSummary({ laws = [], cats = [], catMap = {}, discovered = [], suggest = {},
+export default function LawSummary({ laws = [], allLaws = [], cats = [], catMap = {}, discovered = [], suggest = {},
   onReloadDiscovered, onReloadLaws, onOpenLaw, onAddToRegistry }) {
   return (
     <div className="view">
-      <AiSummaryZone cats={cats} laws={laws} suggest={suggest} onQueued={onReloadDiscovered} onAddToRegistry={onAddToRegistry} />
+      <AiSummaryZone cats={cats} laws={allLaws.length ? allLaws : laws} suggest={suggest} onQueued={onReloadDiscovered} onAddToRegistry={onAddToRegistry} onReloadLaws={onReloadLaws} />
       <QueueBar discovered={discovered} onReload={onReloadDiscovered} onAddToRegistry={onAddToRegistry} />
       <LibraryZone laws={laws} cats={cats} catMap={catMap} onOpenLaw={onOpenLaw} onReloadLaws={onReloadLaws} onAddToRegistry={onAddToRegistry} />
     </div>
