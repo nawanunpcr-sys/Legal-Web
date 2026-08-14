@@ -21,8 +21,11 @@ async function analyzeSource({ source = '', sourceUrl = '', pdfBase64 = '', pdfN
   const d = await r.json()
   if (!r.ok) throw new Error(d.error || 'สรุปไม่สำเร็จ')
   // Skill 3 · related_count/unresolved_count ต้องส่งต่อด้วย ไม่งั้นบรรทัดสรุปเหนือตารางไม่มีข้อมูล
+  // related_laws = รายฉบับที่ตามไปดึง (ชื่อ/สถานะ/ลิงก์) — ต้องบอกได้ว่า "ฉบับไหน" ที่หาตัวบทไม่พบ
+  // ไม่งั้น จป. เห็นแค่ตัวเลข แล้วยังไม่รู้ว่าต้องไปเปิดกฎหมายฉบับไหนเอง
   return { law: d.law || {}, requirements: d.requirements || [],
-    related_count: d.related_count || 0, unresolved_count: d.unresolved_count || 0 }
+    related_count: d.related_count || 0, unresolved_count: d.unresolved_count || 0,
+    related_laws: d.related_laws || [] }
 }
 
 // อ่านไฟล์เป็น base64 (ตัดส่วน "data:...;base64," นำหน้าออก)
@@ -88,6 +91,55 @@ const reqRowsToLines = rows => rows
   .map(r => `${r.section_ref ? r.section_ref + ': ' : ''}${r.req_text || ''}`.trim())
   .filter(Boolean)
 
+/* ── Skill 3 · รายชื่อกฎหมายที่ถูกอ้างถึง ทีละฉบับ ──
+   เดิมหน้านี้บอกแค่ "อีก N ฉบับหาตัวบทไม่พบ" — จป. ยังไม่รู้ว่าต้องไปเปิดฉบับไหนเอง
+   ซึ่งคือปัญหาเดิมที่ระบบตั้งใจแก้ · ฉบับที่ไม่ resolved ขึ้นก่อนเสมอ (สิ่งที่ต้องลงมือทำอยู่บนสุด) */
+const REL_STATUS = {
+  resolved:  { label: n => `ดึงแล้ว ${n} ข้อ`, color: 'var(--ink-soft)' },
+  not_found: { label: () => 'หาตัวบทไม่พบ', color: 'var(--warn)' },
+  manual:    { label: () => 'เกินจำนวนที่ดึงได้ในรอบเดียว — ต้องตรวจเอง', color: 'var(--warn)' },
+}
+
+function RelatedLawsPanel({ items = [] }) {
+  if (!items.length) return null
+  // not_found/manual ขึ้นก่อน แล้วค่อย resolved
+  const sorted = [...items].sort((a, b) => (a.status === 'resolved' ? 1 : 0) - (b.status === 'resolved' ? 1 : 0))
+  const pending = sorted.filter(x => x.status !== 'resolved').length
+
+  return (
+    <details open={pending > 0} style={{ margin: '0 0 10px', fontSize: 12 }}>
+      <summary style={{ cursor: 'pointer', color: 'var(--brand)' }}>
+        กฎหมายที่อ้างถึง ({items.length} ฉบับ)
+        {pending > 0 && <span style={{ color: 'var(--warn)' }}> · ต้องตรวจเอง {pending} ฉบับ</span>}
+      </summary>
+      <div style={{ marginTop: 6, borderTop: '1px solid var(--line)' }}>
+        {sorted.map((x, i) => {
+          const st = REL_STATUS[x.status] || REL_STATUS.not_found
+          return (
+            <div key={i} style={{ padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: x.status === 'resolved' ? 400 : 600 }}>
+                  {x.law_name || '—'}{x.clause && x.clause !== 'ทั้งฉบับ' ? ` · ${x.clause}` : ''}
+                </span>
+                <span style={{ fontSize: 11.5, color: st.color, whiteSpace: 'nowrap' }}>{st.label(x.req_count || 0)}</span>
+                {x.source_url && (
+                  <a href={x.source_url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: 'var(--brand)', marginLeft: 'auto' }}>เปิดตัวบท ↗</a>
+                )}
+              </div>
+              {x.note && <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, lineHeight: 1.5 }}>{x.note}</div>}
+            </div>
+          )
+        })}
+      </div>
+      {pending > 0 && (
+        <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.6 }}>
+          ฉบับที่ยังไม่ได้ดึง ต้องเปิดตัวบทตรวจเอง แล้วเพิ่มข้อปฏิบัติที่ขาดด้วยปุ่ม “เพิ่มข้อ” ด้านล่าง
+        </div>
+      )}
+    </details>
+  )
+}
+
 /* ── แถวข้อปฏิบัติแบบแก้ไขได้ ── */
 function ReqRow({ r, i, onChange, onRemove, suggest }) {
   const set = (k, v) => onChange(i, { ...r, [k]: v })
@@ -139,16 +191,17 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
   const [saving, setSaving] = useState(false)
   const [law, setLaw] = useState(null)          // {name,type,ministry,...,cat}
   const [reqs, setReqs] = useState([])          // reqRows
-  const [related, setRelated] = useState({ count: 0, unresolved: 0 })   // Skill 3
+  // Skill 3 · count = จำนวน "ข้อ" ที่ดึงมาได้ · unresolved = จำนวน "ฉบับ" ที่หาตัวบทไม่พบ · laws = รายฉบับ
+  const [related, setRelated] = useState({ count: 0, unresolved: 0, laws: [] })
 
   async function analyze() {
     if (!src.trim() || busy) return
-    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0 })
+    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] })
     try {
-      const { law: l, requirements, related_count, unresolved_count } = await analyzeSource({ source: src, sourceUrl: srcUrl.trim() })
+      const { law: l, requirements, related_count, unresolved_count, related_laws } = await analyzeSource({ source: src, sourceUrl: srcUrl.trim() })
       setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
       setReqs(toReqRows(requirements))
-      setRelated({ count: related_count, unresolved: unresolved_count })
+      setRelated({ count: related_count, unresolved: unresolved_count, laws: related_laws })
       toast('สรุปด้วย AI แล้ว — ตรวจ/แก้ไขได้', 'success')
     } catch (e) { toast('สรุปไม่สำเร็จ: ' + e.message) }
     setBusy(false)
@@ -157,13 +210,13 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
   async function analyzePdf(file) {
     if (!file || busy) return
     if (file.size > 4 * 1024 * 1024) { toast('ไฟล์ PDF ใหญ่เกิน 4MB — กรุณาแยกไฟล์ หรือ copy ตัวบทมาวางแทน'); return }
-    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0 })
+    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] })
     try {
       const pdfBase64 = await readFileBase64(file)
-      const { law: l, requirements, related_count, unresolved_count } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
+      const { law: l, requirements, related_count, unresolved_count, related_laws } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
       setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
       setReqs(toReqRows(requirements))
-      setRelated({ count: related_count, unresolved: unresolved_count })
+      setRelated({ count: related_count, unresolved: unresolved_count, laws: related_laws })
       toast('สรุปจากไฟล์ PDF แล้ว — ตรวจ/แก้ไขได้', 'success')
     } catch (e) { toast('สรุป PDF ไม่สำเร็จ: ' + e.message) }
     setBusy(false)
@@ -188,7 +241,7 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
         status: 'imported', searched_at: new Date().toISOString(),
       })
       toast('เก็บลงคิว "รอเข้าทะเบียน" แล้ว', 'success')
-      setLaw(null); setReqs([]); setSrc(''); setSrcUrl(''); setRelated({ count: 0, unresolved: 0 })
+      setLaw(null); setReqs([]); setSrc(''); setSrcUrl(''); setRelated({ count: 0, unresolved: 0, laws: [] })
       onQueued && onQueued()
     } catch (e) { toast('บันทึกลงคิวไม่สำเร็จ: ' + e.message) }
     setSaving(false)
@@ -258,13 +311,15 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
           </div>
           {/* Skill 3 · บอกว่ามีข้อที่ดึงมาจากกฎหมายที่ตัวบทอ้างถึงกี่ข้อ */}
           {related.count > 0 && (
-            <div style={{ fontSize: 12, color: 'var(--ink-faint)', margin: '2px 0 8px', lineHeight: 1.6 }}>
+            <div style={{ fontSize: 12, color: 'var(--ink-faint)', margin: '2px 0 6px', lineHeight: 1.6 }}>
               รวมข้อกำหนดจากกฎหมายที่อ้างถึง {related.count} ข้อ
               {related.unresolved > 0 && (
                 <span style={{ color: 'var(--warn)' }}> · อีก {related.unresolved} ฉบับหาตัวบทไม่พบ ควรตรวจสอบเพิ่มเติม</span>
               )}
             </div>
           )}
+          {/* รายฉบับ — ต้องบอกให้ได้ว่า "ฉบับไหน" ที่ต้องไปเปิดตัวบทเอง ไม่ใช่แค่จำนวน */}
+          <RelatedLawsPanel items={related.laws} />
           {reqs.map((r, i) => <ReqRow key={i} r={r} i={i} onChange={setReq} onRemove={rmReq} suggest={suggest} />)}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>

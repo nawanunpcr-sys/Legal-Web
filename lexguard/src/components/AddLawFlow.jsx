@@ -26,6 +26,10 @@ function mapLawType(t) {
   return s ? 'อื่นๆ' : ''
 }
 
+// Skill 3 · ชื่อกฎหมายเต็มยาวเกินกว่าจะใส่ใน badge — ตัดให้สั้น เก็บชื่อเต็มไว้ใน title
+// (สไตล์เดียวกับ ReqRow ใน LawSummary.jsx เพื่อให้ผู้ใช้เห็นต่อเนื่องจากหน้าสรุปถึงหน้ายืนยัน)
+const shortLaw = n => { const s = String(n || '').trim(); return s.length > 30 ? s.slice(0, 30) + '…' : s }
+
 // summary jsonb → [{text}] (รองรับ array ของ string หรือ object)
 function summaryToReqs(summary) {
   if (!summary) return []
@@ -67,10 +71,16 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const [effective, setEffective] = useState(il.effective_date || '')
   const [docList, setDocList] = useState(il.documents || '')
   // P18 · แต่ละข้อปฏิบัติเก็บโครงสร้าง + ผลประเมิน inline (choice: null|'met'|'unmet'|'waiting')
+  // Skill 3 · ที่มา (from_*) ต้องพกต่อจากหน้าสรุปกฎหมายจนถึงตอนบันทึกลง lg_requirements
+  //   ไม่งั้นผู้ตรวจ ISO เปิด F-259 แล้วเจอข้อที่ไม่มีในตัวบทของกฎหมายฉบับนั้น โดยหาที่มาไม่ได้
   const [reqRows, setReqRows] = useState(() => (initialData?.requirements || []).map(q => ({
     text: `${q.section_ref ? q.section_ref + ': ' : ''}${q.req_text || ''}`.trim(),
     choice: null, responsible: q.responsible || '', waitDate: '',
     frequency: q.frequency || '', documents: q.documents || '',
+    from_related_law: q.from_related_law || null,
+    from_law_url: q.from_law_url || '',
+    from_law_confidence: q.from_law_confidence || '',
+    from_law_note: q.from_law_note || '',
   })).filter(r => r.text))
   const [saving, setSaving] = useState(false)
   const [newLaw, setNewLaw] = useState(null)
@@ -91,7 +101,8 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   function changeName(v) { setName(v); setDup(null); setDupConfirmed(false) }
 
   // ── P18 · จัดการรายการข้อปฏิบัติ + ผลประเมิน inline ──────────────────────────
-  const emptyRow = () => ({ text: '', choice: null, responsible: '', waitDate: '', frequency: '', documents: '' })
+  const emptyRow = () => ({ text: '', choice: null, responsible: '', waitDate: '', frequency: '', documents: '',
+    from_related_law: null, from_law_url: '', from_law_confidence: '', from_law_note: '' })
   const textToRows = texts => texts.map(t => ({ ...emptyRow(), text: t }))
   const setRow = (i, patch) => setReqRows(rs => rs.map((r, j) => j === i ? { ...r, ...patch } : r))
   const addRow = () => setReqRows(rs => [...rs, emptyRow()])
@@ -158,6 +169,10 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
         text: r.text.trim(), choice: r.choice,
         responsible: r.responsible.trim(), waitDate: r.waitDate || '',
         frequency: r.frequency || '', documents: r.documents || '',
+        // Skill 3 · ที่มาของข้อ — ส่งต่อให้ createLawFull เขียนลง lg_requirements (mig 036)
+        from_related_law: r.from_related_law || null,
+        from_law_url: r.from_law_url || '',
+        from_law_confidence: r.from_law_confidence || '',
       }))
       const { law } = await onCreate({
         lawFields: { code: previewCode, cat, name: name.trim(), hierarchy_level: level, law_type: lawType || null, ministry,
@@ -314,6 +329,28 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
                     <textarea className="form-input" rows={2} style={{margin:0,flex:1}} placeholder="เช่น จัดให้มี จป.วิชาชีพ…" value={r.text} onChange={e=>setRow(i,{text:e.target.value})}/>
                     <button type="button" className="btn btn-ghost" style={{padding:'4px 8px',fontSize:11}} title="ลบข้อนี้" onClick={()=>delRow(i)}>✕</button>
                   </div>
+                  {/* Skill 3 · ข้อที่ดึงมาจากกฎหมายที่ถูกอ้างถึง — เปิดตัวบทตรวจเองได้ + เตือนข้อที่ยังไม่ยืนยัน */}
+                  {r.from_related_law && (
+                    <div style={{marginLeft:26,marginTop:6,display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                      {r.from_law_url ? (
+                        <a href={r.from_law_url} target="_blank" rel="noreferrer" title={`เปิดตัวบท: ${r.from_related_law}`} style={{
+                          display:'inline-block',fontSize:11,lineHeight:1.5,padding:'1px 7px',borderRadius:999,
+                          background:'var(--line)',color:'var(--ink-soft)',textDecoration:'none',whiteSpace:'nowrap',
+                        }}>จาก {shortLaw(r.from_related_law)} ↗</a>
+                      ) : (
+                        <span title={r.from_related_law} style={{
+                          display:'inline-block',fontSize:11,lineHeight:1.5,padding:'1px 7px',borderRadius:999,
+                          background:'var(--line)',color:'var(--ink-faint)',whiteSpace:'nowrap',
+                        }}>จาก {shortLaw(r.from_related_law)}</span>
+                      )}
+                      {r.from_law_confidence && r.from_law_confidence !== 'high' && (
+                        <span title={r.from_law_note || 'ยังยืนยันตัวบทได้ไม่ครบ ควรเปิดกฎหมายต้นทางตรวจเอง'} style={{
+                          display:'inline-block',fontSize:11,lineHeight:1.5,padding:'1px 7px',borderRadius:999,
+                          background:'var(--warn-bg)',color:'var(--warn)',whiteSpace:'nowrap',cursor:'help',
+                        }}>⚠ ควรตรวจตัวบทเอง</span>
+                      )}
+                    </div>
+                  )}
                   {r.text.trim() && (
                     <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:8,paddingLeft:26}}>
                       <button type="button" className={'req-choice met'+(r.choice==='met'?' on':'')} title="ประเมินแล้ว: สอดคล้อง" onClick={()=>setRow(i,{choice:'met'})}>สอดคล้อง</button>

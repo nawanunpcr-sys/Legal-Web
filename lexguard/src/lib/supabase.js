@@ -349,6 +349,11 @@ export async function createLawFull({ code, cat, name, hierarchy_level, law_type
       evaluated_at: evaluated ? now : null,
       evaluated_by: evaluated ? by : null,
       note,
+      // Skill 3 (mig 034/036) · ที่มาของข้อที่ดึงมาจากกฎหมายที่ถูกอ้างถึง — null = ข้อของฉบับหลักเอง
+      // ต้องเขียนลงฐานด้วย ไม่งั้นผู้ตรวจ ISO เปิด F-259 แล้วหาที่มาของข้อนั้นไม่ได้
+      from_related_law: r.from_related_law || null,
+      from_law_url: r.from_law_url || null,
+      from_law_confidence: r.from_law_confidence || null,
     }
   })
   const reqStatusList = clean.map(r => ({ status: (r.choice === 'met') ? 'met' : 'unmet' }))
@@ -651,6 +656,9 @@ export async function addStagedLaw(rows) {
     text: (r.section_ref ? r.section_ref + ': ' : '') + (r.req_text || ''),
     status: 'unmet', responsible: r.responsible || '', frequency: r.frequency || '',
     documents: r.documents || '', note: [r.applicability, r.method, r.other_terms].filter(Boolean).join(' · '),
+    // Skill 3 · lg_import_staging เก็บ from_related_law มาตั้งแต่ 034 (api/law-analyze.js เขียนค่าลงไปแล้ว)
+    // แต่ตอนย้ายเข้า lg_requirements เคยตกหล่น — ที่มาจึงหายตอนอนุมัติเข้าทะเบียน
+    from_related_law: r.from_related_law || null,
   }))
   const { error: e2 } = await supabase.from('lg_requirements').insert(reqRows)
   if (e2) throw e2

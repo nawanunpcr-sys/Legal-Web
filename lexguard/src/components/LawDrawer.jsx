@@ -9,6 +9,9 @@ import { buildLawReport } from './PdfExport.jsx'
 
 const REVIEW_RESULTS = ['ไม่มีการเปลี่ยนแปลง', 'มีการแก้ไข', 'ถูกยกเลิก']
 
+// Skill 3 · ชื่อกฎหมายเต็มยาวเกินกว่าจะใส่ใน badge — ตัดให้สั้น เก็บชื่อเต็มไว้ใน title
+const shortLaw = n => { const s = String(n || '').trim(); return s.length > 30 ? s.slice(0, 30) + '…' : s }
+
 function ReviewModal({ law, onSave, onClose }){
   const [date, setDate] = useState(new Date().toISOString().slice(0,10))
   const [reviewer, setReviewer] = useState('')
@@ -322,6 +325,29 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
                       </div>
                     ) : (<>
                     <div className="rt" style={{whiteSpace:'pre-wrap'}}>{rtext}</div>
+                    {/* Skill 3 · ข้อนี้ไม่ได้อยู่ในตัวบทของกฎหมายฉบับนี้ แต่ดึงมาจากกฎหมายที่ถูกอ้างถึง
+                        ผู้ตรวจ ISO 45001 ต้องตามที่มาได้ทันทีจากหน้านี้ */}
+                    {r.from_related_law && (
+                      <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',margin:'5px 0 0'}}>
+                        {r.from_law_url ? (
+                          <a href={r.from_law_url} target="_blank" rel="noreferrer" title={`เปิดตัวบท: ${r.from_related_law}`} style={{
+                            display:'inline-block',fontSize:11,lineHeight:1.5,padding:'1px 7px',borderRadius:999,
+                            background:'var(--line)',color:'var(--ink-soft)',textDecoration:'none',whiteSpace:'nowrap',
+                          }}>จาก {shortLaw(r.from_related_law)} ↗</a>
+                        ) : (
+                          <span title={r.from_related_law} style={{
+                            display:'inline-block',fontSize:11,lineHeight:1.5,padding:'1px 7px',borderRadius:999,
+                            background:'var(--line)',color:'var(--ink-faint)',whiteSpace:'nowrap',
+                          }}>จาก {shortLaw(r.from_related_law)}</span>
+                        )}
+                        {r.from_law_confidence && r.from_law_confidence !== 'high' && (
+                          <span title="ยังยืนยันตัวบทได้ไม่ครบ ควรเปิดกฎหมายต้นทางตรวจเอง" style={{
+                            display:'inline-block',fontSize:11,lineHeight:1.5,padding:'1px 7px',borderRadius:999,
+                            background:'var(--warn-bg)',color:'var(--warn)',whiteSpace:'nowrap',cursor:'help',
+                          }}>⚠ ควรตรวจตัวบทเอง</span>
+                        )}
+                      </div>
+                    )}
                     <div className="rmeta">
                       {rresp && <span className="b">{rresp}</span>}
                       {rfreq && <span className="b">{rfreq}</span>}
