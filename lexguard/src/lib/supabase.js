@@ -323,7 +323,7 @@ export async function createLaw({ code, cat, name, hierarchy_level, ministry, an
 }
 
 // Create a law together with its requirement sub-items (manual entry)
-export async function createLawFull({ code, cat, name, hierarchy_level, law_type, ministry, announce_date, effective_date, doc_list, responsible, review_date, source_url }, reqs = []) {
+export async function createLawFull({ code, cat, name, hierarchy_level, law_type, ministry, announce_date, effective_date, doc_list, responsible, review_date, source_url, gazette_ref }, reqs = []) {
   const clean = (reqs || []).filter(r => (r.text || '').trim())
   const now = new Date().toISOString()
   const by = currentUserName()
@@ -368,6 +368,7 @@ export async function createLawFull({ code, cat, name, hierarchy_level, law_type
     responsible: responsible || null,
     review_date: review_date || null,
     source_url: source_url || null,
+    gazette_ref: gazette_ref || null,   // mig 037 · เล่ม/ตอน/หน้า ราชกิจจาฯ
     status: computeLawStatus(reqStatusList),   // มี unmet/รอ (เก็บเป็น unmet) ≥1 → 'bad'
     created_at: now, updated_at: now,
   }).select().single()
@@ -645,6 +646,7 @@ export async function addStagedLaw(rows) {
       effective_date: first.effective_date || null,
       doc_list: first.doc_list || null,
       source_url: first.source_url || null,   // P8: ลิงก์ตัวบทจริงติดไปกับกฎหมายตอนเข้าทะเบียน
+      gazette_ref: first.gazette_ref || null,  // mig 037
       status: 'bad', review_date: null,
     }).select('id').single()
     if (error) throw error

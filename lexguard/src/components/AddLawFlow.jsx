@@ -70,6 +70,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const [announce, setAnnounce] = useState(il.announce_date || '')
   const [effective, setEffective] = useState(il.effective_date || '')
   const [docList, setDocList] = useState(il.documents || '')
+  const [gazetteRef, setGazetteRef] = useState(il.gazette_ref || '')   // mig 037 · เล่ม/ตอน/หน้า ราชกิจจาฯ
   // P18 · แต่ละข้อปฏิบัติเก็บโครงสร้าง + ผลประเมิน inline (choice: null|'met'|'unmet'|'waiting')
   // Skill 3 · ที่มา (from_*) ต้องพกต่อจากหน้าสรุปกฎหมายจนถึงตอนบันทึกลง lg_requirements
   //   ไม่งั้นผู้ตรวจ ISO เปิด F-259 แล้วเจอข้อที่ไม่มีในตัวบทของกฎหมายฉบับนั้น โดยหาที่มาไม่ได้
@@ -95,7 +96,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const [lawType, setLawType] = useState(mapLawType(il.type))
   const srcValid = /^https?:\/\//i.test(sourceUrl.trim())
   // P20 · ย่อฟอร์ม: ข้อมูลเพิ่มเติม (ลำดับชั้น/กระทรวง/วันที่/เอกสาร) พับไว้ — กางอัตโนมัติถ้า prefill มีข้อมูล
-  const [advOpen, setAdvOpen] = useState(() => !!(il.ministry || il.announce_date || il.effective_date || il.documents))
+  const [advOpen, setAdvOpen] = useState(() => !!(il.ministry || il.announce_date || il.effective_date || il.documents || il.gazette_ref))
 
   // ชื่อเปลี่ยน → ล้างสถานะการเตือนซ้ำ เพื่อเช็คใหม่
   function changeName(v) { setName(v); setDup(null); setDupConfirmed(false) }
@@ -176,7 +177,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
       }))
       const { law } = await onCreate({
         lawFields: { code: previewCode, cat, name: name.trim(), hierarchy_level: level, law_type: lawType || null, ministry,
-          announce_date: announce, effective_date: effective, doc_list: docList,
+          announce_date: announce, effective_date: effective, doc_list: docList, gazette_ref: gazetteRef.trim() || null,
           responsible: owner.trim() || null,   // P20b · ผู้รับผิดชอบระดับกฎหมาย (เดิมไม่เคยเขียน)
           source_url: srcValid ? sourceUrl.trim() : null },
         reqs, ownerName: owner.trim(), discovered: disc, verifiedFromAI: isPrefill,
@@ -308,6 +309,9 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
                 </div>
                 <label className="form-label">เอกสารที่เกี่ยวข้อง</label>
                 <input className="form-input" type="text" value={docList} onChange={e=>setDocList(e.target.value)}/>
+                <label className="form-label">อ้างอิงราชกิจจานุเบกษา <span style={{color:'var(--ink-faint)',fontWeight:400}}>(เล่ม/ตอน/หน้า)</span></label>
+                <input className="form-input" type="text" placeholder="เช่น เล่ม 143 ตอนที่ 17 ก หน้า 4-7"
+                  value={gazetteRef} onChange={e=>setGazetteRef(e.target.value)}/>
               </div>)}
 
               {/* P18 · ข้อปฏิบัติ + ประเมินรายข้อในบรรทัดเดียว */}

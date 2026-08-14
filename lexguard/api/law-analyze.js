@@ -60,6 +60,13 @@ function buildSystem(cats){
    (เช่น "เมื่อมีประกาศกำหนดเขตพื้นที่") — กรณีนั้นให้อธิบายเงื่อนไขไว้ในฟิลด์ documents แทน
    รูปแบบวันที่ต้องเป็น "วว/ดด/ปปปป" ปี พ.ศ. เท่านั้น (เช่น 06/08/2564) — ห้ามใช้รูปแบบ ISO เช่น 2564-08-06 หรือปี ค.ศ. เด็ดขาด เพราะฐานข้อมูลเก็บเป็น วว/ดด/ปปปป พ.ศ.
 3) รวบรวม "เอกสาร/แบบฟอร์ม/หลักฐาน" ทั้งหมดที่กฎหมายกำหนดให้จัดทำ/ยื่น/เก็บ (เช่น แบบ จป., รายงาน, ใบรับรอง) ลงในฟิลด์ documents ของกฎหมาย
+3.1) ระบุเลขอ้างอิงราชกิจจานุเบกษาลงฟิลด์ gazette_ref — อยู่บนหัวกระดาษทุกหน้าของราชกิจจาฯ
+   รูปแบบ "เล่ม <เล่ม> ตอนที่ <ตอน> <ประเภท> หน้า <หน้าแรก>-<หน้าสุดท้าย>"
+   เช่น "เล่ม 143 ตอนที่ 17 ก หน้า 4-7" · แปลงเลขไทยเป็นเลขอารบิก
+   เอกสารที่ไม่ใช่หน้าราชกิจจาฯ (เช่น ฉบับรวมของกฤษฎีกา) มักไม่มีข้อมูลนี้ → เว้นว่าง ห้ามเดา
+3.2) ถ้าตัวบทมีบท "ให้ยกเลิก…" ให้ใส่ชื่อกฎหมายที่ถูกยกเลิกทุกฉบับลง repeals
+   เอาเฉพาะที่ตัวบทเขียนว่ายกเลิกจริง ห้ามอนุมานเองว่าฉบับใหม่คงไปแทนฉบับเก่า
+   ฉบับที่แค่ "แก้ไขเพิ่มเติม" ไม่ใช่การยกเลิก ห้ามใส่ · ไม่มีบทยกเลิกให้ส่ง array ว่าง
 4) แตกเป็น "ข้อกำหนด" รายมาตรา/ข้อ ให้ครบทุกข้อที่สร้างหน้าที่ต้องปฏิบัติ — อย่ารวบ อย่าตกหล่น แต่ละข้อสรุปครบ: ใคร(ผู้รับผิดชอบ) ทำอะไร ที่ไหน อย่างไร เอกสาร/หลักฐาน ความถี่ และเงื่อนไข/กำหนดเวลา ระบุเลขมาตรา/ข้อเสมอ
    มาตราที่ต้องข้าม เพราะไม่สร้างหน้าที่ให้ใครต้องทำอะไร:
    - มาตราที่บอกชื่อเรียกกฎหมาย ("พระราชกฤษฎีกานี้เรียกว่า…")
@@ -114,7 +121,8 @@ function buildSystem(cats){
 - ค่าปรับ/โทษ ให้เขียนเป็นเลขอารบิกพร้อมหน่วยเต็มไว้ในฟิลด์ other_terms ของข้อนั้น
   ห้ามเขียนว่า "มีโทษตามที่กฎหมายกำหนด"
 ตอบกลับเป็น JSON เท่านั้น ไม่มีคำอธิบายอื่น ไม่มี markdown:
-{"law":{"name":"","type":"","ministry":"","announce_date":"วว/ดด/ปปปป","effective_date":"วว/ดด/ปปปป","documents":"","cat":"LA","code_suggestion":""},
+{"law":{"name":"","type":"","ministry":"","announce_date":"วว/ดด/ปปปป","effective_date":"วว/ดด/ปปปป","documents":"","cat":"LA","code_suggestion":"","gazette_ref":"เล่ม 143 ตอนที่ 17 ก หน้า 4-7 หรือค่าว่าง"},
+ "repeals":[{"law_name":"ชื่อกฎหมายที่ตัวบทสั่งให้ยกเลิก","clause":"มาตราที่สั่งยกเลิก"}],
  "requirements":[{"section_ref":"มาตรา X","req_text":"","responsible":"","applicability":"","method":"","documents":"","frequency":"","other_terms":""}],
  "related_laws":[{"law_name":"","clause":"มาตรา 9 หรือ null ถ้าอ้างทั้งฉบับ","appears_in":"จุดในตัวบทที่อ้างถึง","why_needed":"ทำไมต้องรู้เนื้อหานี้ถึงจะปฏิบัติตามได้","needs_lookup":true}]}
 ถ้าเอกสารที่ได้รับไม่ใช่ตัวบทกฎหมายไทยเลย (เช่น เป็นข่าว บทความ แบบฟอร์มเปล่า หรือเอกสารที่อ่านไม่ออก) ให้ตอบเป็น JSON นี้แทน ห้ามตอบเป็นข้อความธรรมดา:
@@ -279,7 +287,8 @@ export default async function handler(req,res){
       applicability: r.applicability||'', method: r.method||'', documents: r.documents||'',
       // กรณีวางตัวบทเป็นข้อความ (ไม่มี URL ที่ fetch) ให้ใช้ "ลิงก์ตัวบทจริง" ที่ผู้ใช้กรอกมา
       frequency: r.frequency||'', other_terms: r.other_terms||'', source_url: srcUrl || (sourceUrl||'').trim(), status:'proposed',
-      from_related_law: r.from_related_law||null
+      from_related_law: r.from_related_law||null,
+      gazette_ref: law.gazette_ref||null   // mig 037 · เลขอ้างอิงราชกิจจาฯ ติดไปกับกฎหมายตอนอนุมัติ
     }))
     if(stage && rows.length){
       const sr = await fetch(`${SUPA_URL}/rest/v1/lg_import_staging`,{method:'POST',
@@ -287,7 +296,13 @@ export default async function handler(req,res){
         body:JSON.stringify(rows)})
       if(!sr.ok) return res.status(502).json({error:'บันทึกลง staging ไม่สำเร็จ: '+(await sr.text()).slice(0,200)})
     }
-    return res.status(200).json({law,count:reqs.length,batch,requirements:reqs,
+    // repeals · ส่งชื่อกฎหมายที่ถูกยกเลิกกลับไปให้หน้าเว็บจับคู่กับทะเบียนเอง
+    // (หน้าสรุปมีรายการกฎหมายทั้งทะเบียนอยู่แล้ว จับคู่ฝั่ง client ได้ ไม่ต้องยิง DB ซ้ำ)
+    const repeals = Array.isArray(parsed.repeals)
+      ? parsed.repeals.filter(x => x && String(x.law_name||'').trim())
+          .map(x => ({ law_name: String(x.law_name).trim(), clause: String(x.clause||'').trim() }))
+      : []
+    return res.status(200).json({law,count:reqs.length,batch,requirements:reqs,repeals,
       related_laws:merged.related_laws, related_count:merged.related_count, unresolved_count:merged.unresolved_count})
   }catch(e){ return res.status(500).json({error:String(e&&e.message||e)}) }
 }

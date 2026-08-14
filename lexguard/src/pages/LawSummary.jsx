@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react'
 import { saveDiscoveredLaw, deleteDiscoveredLaw, saveLawAiSummary } from '../lib/supabase.js'
 import { STATUS } from '../lib/supabase.js'
 import { I } from '../components/icons.jsx'
-import { Tag, thDate } from '../lib/ui.jsx'
+import { Tag, thDate, findLawDuplicate } from '../lib/ui.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
@@ -25,7 +25,7 @@ async function analyzeSource({ source = '', sourceUrl = '', pdfBase64 = '', pdfN
   // ไม่งั้น จป. เห็นแค่ตัวเลข แล้วยังไม่รู้ว่าต้องไปเปิดกฎหมายฉบับไหนเอง
   return { law: d.law || {}, requirements: d.requirements || [],
     related_count: d.related_count || 0, unresolved_count: d.unresolved_count || 0,
-    related_laws: d.related_laws || [] }
+    related_laws: d.related_laws || [], repeals: d.repeals || [] }
 }
 
 // อ่านไฟล์เป็น base64 (ตัดส่วน "data:...;base64," นำหน้าออก)
@@ -81,6 +81,7 @@ const buildInitialData = (law, reqRows, discoveredId = null) => ({
     name: law.name || '', type: law.type || '', ministry: law.ministry || '',
     announce_date: law.announce_date || '', effective_date: law.effective_date || '',
     documents: law.documents || '', cat: law.cat || '', code_suggestion: law.code_suggestion || '',
+    gazette_ref: law.gazette_ref || '',   // mig 037 · เล่ม/ตอน/หน้า ราชกิจจาฯ
   },
   requirements: reqRows,
   discoveredId,
@@ -140,6 +141,44 @@ function RelatedLawsPanel({ items = [] }) {
   )
 }
 
+/* ── กฎหมายฉบับนี้ยกเลิกฉบับเดิม — จับคู่กับทะเบียนให้เลย ──
+   ตัวบทเขียนแค่ "ให้ยกเลิก <ชื่อกฎหมาย>" ผู้ใช้ต้องไปไล่หาเองว่าคือรหัสไหนในทะเบียน
+   หน้านี้มีรายการกฎหมายทั้งทะเบียนอยู่แล้ว จับคู่ด้วยตัวเทียบชื่อชุดเดียวกับที่ใช้กันเพิ่มซ้ำ */
+function RepealsPanel({ repeals = [], laws = [] }) {
+  const rows = useMemo(() => repeals.map(r => {
+    const hit = findLawDuplicate(laws, r.law_name)
+    return { ...r, match: hit && (hit.type === 'exact' || hit.sim >= 0.75) ? hit : null }
+  }), [repeals, laws])
+  if (!rows.length) return null
+
+  return (
+    <div style={{ marginTop: 12, padding: '10px 13px', borderRadius: 9, background: 'var(--warn-bg)', border: '1px solid var(--warn)' }}>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--warn)' }}>
+        ⚠ กฎหมายฉบับนี้ยกเลิกกฎหมายเดิม {rows.length} ฉบับ
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', margin: '3px 0 7px', lineHeight: 1.6 }}>
+        เพิ่มฉบับใหม่เข้าทะเบียนแล้ว อย่าลืมไปตั้งฉบับเดิมเป็น “ยกเลิก” ด้วย ไม่งั้นทะเบียนจะมี 2 ฉบับซ้อนกัน
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} style={{ padding: '5px 0', borderTop: i ? '1px solid var(--line)' : 'none' }}>
+          <div style={{ fontSize: 12.5 }}>{r.law_name}{r.clause ? ` · ${r.clause}` : ''}</div>
+          <div style={{ fontSize: 11.5, marginTop: 2 }}>
+            {r.match ? (
+              <span style={{ color: 'var(--ok)' }}>
+                พบในทะเบียน: <b>{r.match.law.code}</b> — {(r.match.law.name || '').slice(0, 50)}
+                {r.match.type !== 'exact' && ` (ชื่อคล้าย ${Math.round(r.match.sim * 100)}% — ตรวจก่อน)`}
+                {r.match.law.status === 'repealed' && ' · ตั้งเป็นยกเลิกแล้ว ✓'}
+              </span>
+            ) : (
+              <span style={{ color: 'var(--ink-faint)' }}>ไม่พบในทะเบียน — อาจยังไม่เคยบันทึก หรือชื่อต่างจากที่เก็บไว้</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /* ── แถวข้อปฏิบัติแบบแก้ไขได้ ── */
 function ReqRow({ r, i, onChange, onRemove, suggest }) {
   const set = (k, v) => onChange(i, { ...r, [k]: v })
@@ -183,7 +222,7 @@ function ReqRow({ r, i, onChange, onRemove, suggest }) {
 }
 
 /* ── โซนบน: สรุปด้วย AI ── */
-function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
+function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry }) {
   const { can } = useAuth()
   const [src, setSrc] = useState('')
   const [srcUrl, setSrcUrl] = useState('')
@@ -193,15 +232,16 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
   const [reqs, setReqs] = useState([])          // reqRows
   // Skill 3 · count = จำนวน "ข้อ" ที่ดึงมาได้ · unresolved = จำนวน "ฉบับ" ที่หาตัวบทไม่พบ · laws = รายฉบับ
   const [related, setRelated] = useState({ count: 0, unresolved: 0, laws: [] })
+  const [repeals, setRepeals] = useState([])   // กฎหมายที่ตัวบทสั่งให้ยกเลิก
 
   async function analyze() {
     if (!src.trim() || busy) return
-    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] })
+    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([])
     try {
-      const { law: l, requirements, related_count, unresolved_count, related_laws } = await analyzeSource({ source: src, sourceUrl: srcUrl.trim() })
+      const { law: l, requirements, related_count, unresolved_count, related_laws, repeals: rp } = await analyzeSource({ source: src, sourceUrl: srcUrl.trim() })
       setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
       setReqs(toReqRows(requirements))
-      setRelated({ count: related_count, unresolved: unresolved_count, laws: related_laws })
+      setRelated({ count: related_count, unresolved: unresolved_count, laws: related_laws }); setRepeals(rp || [])
       toast('สรุปด้วย AI แล้ว — ตรวจ/แก้ไขได้', 'success')
     } catch (e) { toast('สรุปไม่สำเร็จ: ' + e.message) }
     setBusy(false)
@@ -210,13 +250,13 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
   async function analyzePdf(file) {
     if (!file || busy) return
     if (file.size > 4 * 1024 * 1024) { toast('ไฟล์ PDF ใหญ่เกิน 4MB — กรุณาแยกไฟล์ หรือ copy ตัวบทมาวางแทน'); return }
-    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] })
+    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([])
     try {
       const pdfBase64 = await readFileBase64(file)
-      const { law: l, requirements, related_count, unresolved_count, related_laws } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
+      const { law: l, requirements, related_count, unresolved_count, related_laws, repeals: rp } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
       setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
       setReqs(toReqRows(requirements))
-      setRelated({ count: related_count, unresolved: unresolved_count, laws: related_laws })
+      setRelated({ count: related_count, unresolved: unresolved_count, laws: related_laws }); setRepeals(rp || [])
       toast('สรุปจากไฟล์ PDF แล้ว — ตรวจ/แก้ไขได้', 'success')
     } catch (e) { toast('สรุป PDF ไม่สำเร็จ: ' + e.message) }
     setBusy(false)
@@ -241,7 +281,7 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
         status: 'imported', searched_at: new Date().toISOString(),
       })
       toast('เก็บลงคิว "รอเข้าทะเบียน" แล้ว', 'success')
-      setLaw(null); setReqs([]); setSrc(''); setSrcUrl(''); setRelated({ count: 0, unresolved: 0, laws: [] })
+      setLaw(null); setReqs([]); setSrc(''); setSrcUrl(''); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([])
       onQueued && onQueued()
     } catch (e) { toast('บันทึกลงคิวไม่สำเร็จ: ' + e.message) }
     setSaving(false)
@@ -305,6 +345,13 @@ function AiSummaryZone({ cats, suggest, onQueued, onAddToRegistry }) {
           </div>
           <label className="form-label" style={{ marginTop: 8 }}>เอกสาร/แบบฟอร์มที่เกี่ยวข้อง</label>
           <input className="form-input" style={{ marginTop: 0 }} value={law.documents || ''} onChange={e => setLawField('documents', e.target.value)} />
+          {/* mig 037 · เล่ม/ตอน/หน้า ราชกิจจาฯ — ตัวชี้ต้นฉบับที่แม่นที่สุด ใช้ยืนยันตอนตรวจ ISO */}
+          <label className="form-label" style={{ marginTop: 8 }}>อ้างอิงราชกิจจานุเบกษา <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}>(เล่ม/ตอน/หน้า)</span></label>
+          <input className="form-input" style={{ marginTop: 0 }} placeholder="เช่น เล่ม 143 ตอนที่ 17 ก หน้า 4-7"
+            value={law.gazette_ref || ''} onChange={e => setLawField('gazette_ref', e.target.value)} />
+
+          {/* ตัวบทสั่งยกเลิกฉบับเดิม → จับคู่กับทะเบียนให้เห็นว่าคือรหัสไหน */}
+          <RepealsPanel repeals={repeals} laws={laws} />
 
           <div className="sec-t" style={{ marginTop: 14, display: 'flex' }}>ข้อปฏิบัติ ({reqs.length})
             <button className="btn btn-ghost" style={{ marginLeft: 'auto', padding: '3px 10px', fontSize: 12 }} onClick={() => setReqs(p => [...p, { section_ref: '', req_text: '', responsible: '', frequency: '', documents: '' }])}><I n="plus" />เพิ่มข้อ</button>
@@ -484,7 +531,7 @@ export default function LawSummary({ laws = [], cats = [], catMap = {}, discover
   onReloadDiscovered, onReloadLaws, onOpenLaw, onAddToRegistry }) {
   return (
     <div className="view">
-      <AiSummaryZone cats={cats} suggest={suggest} onQueued={onReloadDiscovered} onAddToRegistry={onAddToRegistry} />
+      <AiSummaryZone cats={cats} laws={laws} suggest={suggest} onQueued={onReloadDiscovered} onAddToRegistry={onAddToRegistry} />
       <QueueBar discovered={discovered} onReload={onReloadDiscovered} onAddToRegistry={onAddToRegistry} />
       <LibraryZone laws={laws} cats={cats} catMap={catMap} onOpenLaw={onOpenLaw} onReloadLaws={onReloadLaws} onAddToRegistry={onAddToRegistry} />
     </div>
