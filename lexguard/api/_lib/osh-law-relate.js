@@ -33,9 +33,13 @@ const TRUSTED_DOMAINS = [
   'dbd.go.th',               // พัฒนาธุรกิจการค้า
 ]
 const CACHE_DAYS = 180
-const MAX_PER_WAVE = 6       // จำนวนที่ยิงขนานกันต่อชั้น — กัน timeout และ rate limit
-const MAX_TOTAL_LOOKUPS = 12 // เพดานรวมทุกชั้นต่อการสรุป 1 ครั้ง
-const MAX_DEPTH = 2          // แม่ → ลูก → หลาน · กฎหมายไทยมักลึกแค่นี้ (กฎกระทรวง → พ.ร.บ. → ประกาศอธิบดี)
+const MAX_PER_WAVE = 12      // จำนวนที่ยิงขนานกันต่อชั้น — เท่ากับเพดานรวม เพราะมีชั้นเดียวแล้ว
+                             // (maxDuration ของ api/law-analyze.js = 300 วินาที รองรับได้)
+const MAX_TOTAL_LOOKUPS = 12 // เพดานรวมต่อการสรุป 1 ครั้ง
+// ดึงเฉพาะกฎหมายที่ "ตัวบทที่ผู้ใช้วางให้สรุป" อ้างถึงโดยตรงเท่านั้น ไม่ตามต่อไปชั้นลึกกว่านั้น
+// เดิมตามลึก 2 ชั้น (แม่ → ลูก → หลาน) ทำให้ลากกฎหมายที่ฉบับหลักไม่ได้อ้างถึงเข้ามาเต็มไปหมด
+// ส่วนใหญ่ค้นตัวบทไม่เจอ กลายเป็นรายการ "หาตัวบทไม่พบ" ที่ผู้ใช้ไม่ได้ขอตั้งแต่แรก
+const MAX_DEPTH = 1
 const MAX_REQ_PER_LAW = 15   // กัน พ.ร.บ. ใหญ่ดึงมา 70 มาตราจนตารางใช้งานไม่ได้
 
 const SUPA_HEADERS = { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'content-type': 'application/json' }
@@ -125,6 +129,67 @@ function hostAllowed(u){
   }catch{ return false }
 }
 
+// ── ดึงไฟล์ตัวบทจริงมาอ่าน แทนการเชื่อ snippet จาก web_search ────────────────
+// ทดสอบจริง 2026-08-14: ราชกิจจาฯ ยอมให้ดึงเฉพาะไฟล์ .pdf ตรงๆ เท่านั้น
+//   https://ratchakitcha.soc.go.th/documents/104277.pdf → 200 (ด้วย UA เดิมของเรา)
+//   https://ratchakitcha.soc.go.th/documents/104277     → 403  (หน้า HTML)
+//   https://ratchakitcha.soc.go.th/                     → 403  (หน้าแรกก็โดน)
+//   https://www.ratchakitcha.soc.go.th/DATA/PDF/…       → 403  (path เว็บเวอร์ชันเก่า เลิกใช้แล้ว)
+// web_search อ่านได้แค่หัวข้อกับ snippet แตะเนื้อใน PDF ไม่ได้ → ไม่มี source_excerpt
+// → โดนด่านตรวจ (ข) ตัดทิ้งทั้งก้อน → ขึ้น "หาตัวบทไม่พบ" ทั้งที่ไฟล์ตัวบทเปิดได้
+const PDF_MAX_BYTES = 8_000_000   // กันไฟล์ใหญ่เกินจนคำขอไป Anthropic ล้ม
+const PDF_FETCH_TIMEOUT = 45_000
+
+async function fetchPdfBase64(url){
+  if(!hostAllowed(url)) return null                      // กัน SSRF — ต้องอยู่ในโดเมนที่เชื่อถือได้
+  if(!/\.pdf($|\?|#)/i.test(url)) return null            // เอาเฉพาะไฟล์ .pdf ตรงๆ (หน้า HTML โดนบล็อกอยู่ดี)
+  try{
+    const r = await fetch(url, {
+      headers: { 'user-agent': 'Mozilla/5.0 LexRegistry' },
+      signal: AbortSignal.timeout(PDF_FETCH_TIMEOUT),
+    })
+    if(!r.ok) return null
+    if(!(r.headers.get('content-type') || '').toLowerCase().includes('pdf')) return null
+    const buf = await r.arrayBuffer()
+    if(!buf.byteLength || buf.byteLength > PDF_MAX_BYTES) return null
+    return Buffer.from(buf).toString('base64')
+  }catch{ return null }   // ดึงไม่ได้ไม่ใช่เหตุให้ล้ม — ถอยไปใช้ผลจาก web_search ตามเดิม
+}
+
+// อ่านตัวบทจากไฟล์ PDF จริง · ใช้ SYSTEM ตัวเดียวกัน สคีมา JSON เดิมทุกฟิลด์
+async function readLawFromPdf(ref, url, b64){
+  try{
+    const ask = [
+      `กฎหมายที่ต้องอ่าน: ${ref.lawName}`,
+      ref.clause ? `ส่วนที่ถูกอ้างถึง: ${ref.clause}` : 'ถูกอ้างถึงทั้งฉบับ',
+      ref.parent_law ? `ถูกอ้างถึงจาก: ${ref.parent_law}` : '',
+      ref.why_needed ? `เหตุผลที่ต้องรู้เนื้อหานี้: ${ref.why_needed}` : '',
+      '',
+      `ไฟล์แนบคือตัวบทจริงจาก ${url}`,
+      'อ่านจากไฟล์นี้เท่านั้น ห้ามเติมจากความจำ · source_excerpt ต้องคัดมาจากข้อความในไฟล์จริง',
+      'ถ้าไฟล์นี้ไม่ใช่กฎหมายฉบับที่ระบุข้างต้น ให้ตอบ status เป็น not_found',
+      'สรุปเฉพาะข้อที่บริษัทต้องปฏิบัติ ตามรูปแบบ JSON ที่กำหนด',
+    ].filter(Boolean).join('\n')
+
+    const ar = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01', 'anthropic-beta': 'pdfs-2024-09-25' },
+      body: JSON.stringify({
+        model: MODEL, max_tokens: 8000, system: SYSTEM,
+        messages: [{ role: 'user', content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
+          { type: 'text', text: ask },
+        ] }],
+      })
+    })
+    if(!ar.ok) return null
+    const data = await ar.json()
+    const txt = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim()
+    return parseLoose(txt)
+  }catch{ return null }
+}
+
 // โมเดลบางครั้งห่อด้วย fence หรือมีข้อความนำ — ลอกทีละชั้นจนกว่าจะ parse ได้
 function parseLoose(txt){
   let s = String(txt || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim()
@@ -199,6 +264,22 @@ export async function fetchRelatedLaw(ref){
     return { ...base, status: 'not_found', note: 'ค้นตัวบทไม่สำเร็จ: ' + String(e && e.message || e).slice(0, 200) }
   }
 
+  // 2.5) ได้ลิงก์ไฟล์ตัวบท (.pdf) มา → ดึงไฟล์จริงมาให้โมเดลอ่าน แล้วใช้ผลนั้นแทน
+  //   web_search เห็นแค่ snippet จึงมักไม่มี source_excerpt ทำให้ถูกด่าน (ข) ตัดทิ้งจนเหลือศูนย์
+  //   อ่านจากไฟล์จริงจะได้ excerpt ที่คัดจากตัวบทจริง ๆ · ดึงไม่ได้ก็ใช้ผล web_search ตามเดิม
+  let fromFile = false
+  const pdfUrl = String(out.source_url || '')          // URL ที่เราดึงไฟล์มาได้จริง — ใช้อันนี้เสมอ
+  const pdfB64 = await fetchPdfBase64(pdfUrl)          //   ห้ามใช้ค่าที่โมเดลคายกลับมาในรอบที่ 2
+  if(pdfB64){
+    const better = await readLawFromPdf(
+      { lawName, clause, parent_law: ref?.parent_law, why_needed: ref?.why_needed },
+      pdfUrl, pdfB64)
+    if(better && better.status === 'resolved' && Array.isArray(better.requirements) && better.requirements.length){
+      out = { ...better, source_url: pdfUrl }
+      fromFile = true
+    }
+  }
+
   // 3) ตรวจก่อนเชื่อ — ด่านนี้สำคัญที่สุด
   let status = out.status === 'resolved' ? 'resolved' : 'not_found'
   let note = out.note || ''
@@ -222,6 +303,8 @@ export async function fetchRelatedLaw(ref){
     // (ง) ไม่เหลือข้อเลย → ถือว่าหาไม่เจอ
     if(!reqs.length){ status = 'not_found'; note = (note ? note + ' · ' : '') + 'ไม่เหลือข้อที่ใช้ได้' }
   }
+  // บอกผู้ตรวจว่าข้อชุดนี้อ่านจากไฟล์ตัวบทจริง ไม่ใช่จาก snippet ของผลค้นหา
+  if(fromFile && status === 'resolved') note = (note ? note + ' · ' : '') + 'อ่านจากไฟล์ตัวบทจริง'
 
   // กฎหมายที่ฉบับนี้อ้างถึงต่อ — ใช้สร้าง frontier ของชั้นถัดไป (เก็บไว้เมื่อ resolved เท่านั้น)
   const childRefs = status === 'resolved' && Array.isArray(out.related_laws)
@@ -259,10 +342,10 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName){
   const main = Array.isArray(mainReqs) ? mainReqs : []
   const all = Array.isArray(relatedLaws) ? relatedLaws : []
 
-  // 1-2) ไล่ทีละชั้น: แม่ → ลูก → หลาน
-  //   กันลูกโซ่ไม่รู้จบด้วย 3 อย่าง — ความลึก MAX_DEPTH · เพดานรวม MAX_TOTAL_LOOKUPS ·
-  //   และ Set ของ ref_key ที่แตะแล้วทุกชั้น (กันวนกลับ A→B→A และกันดึง พ.ร.บ.แม่ซ้ำ
-  //   เมื่อถูกอ้างจากหลายฉบับ)
+  // 1-2) ดึงชั้นเดียว: เฉพาะกฎหมายที่ตัวบทซึ่งผู้ใช้วางให้สรุป "อ้างถึงโดยตรง" (MAX_DEPTH = 1)
+  //   กฎหมายที่ฉบับลูกอ้างต่อไปอีก จะไม่ถูกตามไปดึง — ถ้าผู้ใช้ต้องการ ให้เอาฉบับนั้นมาวางสรุปแยก
+  //   ยังกันซ้ำด้วย Set ของ ref_key (กันฉบับเดียวถูกอ้างจากหลายจุดในตัวบทเดียวกัน)
+  //   และเพดานรวม MAX_TOTAL_LOOKUPS
   const touched = new Set()
   const results = []
   const deferred = []
@@ -303,6 +386,8 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName){
     results.push(...wave)
 
     // สร้าง frontier ของชั้นถัดไปจากกฎหมายที่ฉบับลูกอ้างถึงต่อ
+    // MAX_DEPTH = 1 → เงื่อนไขนี้เป็นเท็จเสมอ frontier ว่าง ลูปจบหลังชั้นแรก (ตั้งใจ)
+    // คงโครงไว้เพื่อให้ปรับกลับเป็นหลายชั้นได้ด้วยการแก้ค่าเดียว
     frontier = depth < MAX_DEPTH
       ? wave.filter(res => res.status === 'resolved')
           .flatMap(res => (res.related_laws || [])
