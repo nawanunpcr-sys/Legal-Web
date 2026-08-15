@@ -302,10 +302,11 @@ function rateLimited(ip){
   return hits.length > RATE_LIMIT
 }
 
-// vercel.json ตั้ง maxDuration = 800 วิ · กันไว้ 100 วิให้ขั้นตอนหลังบ้านทำงานและส่งผลกลับ
-// เกินกว่านี้ = 504 ซึ่งเสียทั้งผลสรุปและเงินที่จ่ายไปแล้วทั้งหมด แย่กว่าได้ผลไม่ครบ
-// ตัวเลขนี้ต้องขยับตาม maxDuration ใน vercel.json เสมอ — ถ้าลดที่นั่นต้องลดที่นี่ด้วย
-const FN_BUDGET_MS = 700_000
+// vercel.json ตั้ง maxDuration = 300 วิ ซึ่งเป็น "เพดานสูงสุดของแพลนนี้"
+// ทดลองตั้ง 800 แล้ว deploy ไม่ผ่าน: "must be between 1 and 300 seconds ... upgrade your plan"
+// กันไว้ 45 วิให้ขั้นตอนหลังบ้านทำงานและส่งผลกลับ · เกินกว่านี้ = 504 เสียทั้งผลและเงินที่จ่ายไปแล้ว
+// ตัวเลขนี้ต้องขยับตาม maxDuration ใน vercel.json เสมอ
+const FN_BUDGET_MS = 255_000
 
 export default async function handler(req,res){
   const startedAt = Date.now()
