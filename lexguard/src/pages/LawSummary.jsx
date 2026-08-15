@@ -461,8 +461,11 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
               {/* บอกที่มาเสมอ — วันบังคับใช้คือตัวตั้งของการเตือนทั้งระบบ ผิดวันเดียวเตือนผิดหมด */}
               {effInfo?.note && (
                 <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.5,
-                  color: effInfo.mismatch ? 'var(--warn)' : 'var(--ink-faint)' }}>
+                  color: (effInfo.mismatch || effInfo.source === 'default' || effInfo.source === 'ai')
+                    ? 'var(--warn)' : 'var(--ink-faint)' }}>
                   {effInfo.source === 'calc' && '✓ ระบบคำนวณจากตัวบท: '}
+                  {effInfo.source === 'rule' && '✓ อ่านจากตัวบท: '}
+                  {effInfo.source === 'default' && '⚠ ค่าตั้งต้น ไม่ได้มาจากตัวบท: '}
                   {effInfo.source === 'ai' && '⚠ ยังไม่ได้ตรวจ: '}
                   {effInfo.note}
                   {effInfo.mismatch && <><br/>⚠ AI คำนวณมาเป็น {effInfo.mismatch} ซึ่งไม่ตรงกับที่ระบบคำนวณ — ระบบใช้ค่าของตัวเองแล้ว</>}
