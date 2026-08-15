@@ -302,9 +302,10 @@ function rateLimited(ip){
   return hits.length > RATE_LIMIT
 }
 
-// Vercel ตัดฟังก์ชันที่ 300 วิ (vercel.json) · กันเวลาไว้ 45 วิให้ขั้นตอนหลังบ้านทำงานและส่งผลกลับ
-// เกินกว่านี้ = 504 ซึ่งเสียทั้งผลสรุปและเงินที่จ่ายไปแล้วทั้งหมด
-const FN_BUDGET_MS = 255_000
+// vercel.json ตั้ง maxDuration = 800 วิ · กันไว้ 100 วิให้ขั้นตอนหลังบ้านทำงานและส่งผลกลับ
+// เกินกว่านี้ = 504 ซึ่งเสียทั้งผลสรุปและเงินที่จ่ายไปแล้วทั้งหมด แย่กว่าได้ผลไม่ครบ
+// ตัวเลขนี้ต้องขยับตาม maxDuration ใน vercel.json เสมอ — ถ้าลดที่นั่นต้องลดที่นี่ด้วย
+const FN_BUDGET_MS = 700_000
 
 export default async function handler(req,res){
   const startedAt = Date.now()
