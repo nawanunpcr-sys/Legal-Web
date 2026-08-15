@@ -82,6 +82,10 @@ function buildSystem(cats){
    ใช้ได้เฉพาะ ${codes} เท่านั้น — ห้ามคิดรหัสหมวดใหม่ ถ้าไม่เข้าหมวดใดเลยให้ใช้ ${fallbackCat}
 5) ระบุกฎหมายที่ถูกอ้างถึงในตัวบท ซึ่งจำเป็นต้องรู้เนื้อหาด้วยจึงจะปฏิบัติตามได้ครบ ได้แก่ กฎหมายแม่ที่ฉบับนี้ออกตามความใน / มาตราของกฎหมายฉบับอื่นที่ถูกอ้าง / ประกาศหรือหลักเกณฑ์ที่ตัวบทบอกให้ไปดูต่อ
    ใส่เฉพาะที่ตัวบทอ้างถึงจริง ห้ามใส่กฎหมายที่แค่เกี่ยวข้องกว้างๆ ในหัวข้อเดียวกัน
+   appears_in ต้องคัดข้อความจากตัวบทที่ได้รับมา "คำต่อคำ" ตรงจุดที่เอ่ยถึงฉบับนั้น อย่างน้อย 15 ตัวอักษร
+   ห้ามเรียบเรียงใหม่ ห้ามใส่แค่เลขมาตรา ห้ามเขียนอธิบายเอง — ระบบจะเอาข้อความนี้ไปเทียบกับตัวบทจริง
+   ถ้าคัดข้อความมายืนยันไม่ได้ แปลว่าตัวบทไม่ได้อ้างถึงฉบับนั้นจริง ห้ามใส่ลง related_laws
+   ต้องใส่ needs_lookup ทุกฉบับ — ไม่ใส่ ระบบจะถือว่าไม่ต้องดึง
    ตั้ง needs_lookup ให้ถูก เพราะระบบจะตามไปดึงตัวบทจริงมาเฉพาะตัวที่เป็น true:
    - true  = ไม่รู้เนื้อหาฉบับนั้นแล้วปฏิบัติไม่ครบ เช่น ประกาศ/กฎกระทรวงที่ตัวบทบอกให้ไปดูหลักเกณฑ์ต่อ
              หรือมาตราของกฎหมายอื่นที่กำหนดคุณสมบัติ ตัวเลข หรือขั้นตอนที่ต้องทำตาม
@@ -124,7 +128,7 @@ function buildSystem(cats){
 {"law":{"name":"","type":"","ministry":"","announce_date":"วว/ดด/ปปปป","effective_date":"วว/ดด/ปปปป","documents":"","cat":"LA","code_suggestion":"","gazette_ref":"เล่ม 143 ตอนที่ 17 ก หน้า 4-7 หรือค่าว่าง"},
  "repeals":[{"law_name":"ชื่อกฎหมายที่ตัวบทสั่งให้ยกเลิก","clause":"มาตราที่สั่งยกเลิก"}],
  "requirements":[{"section_ref":"มาตรา X","req_text":"","responsible":"","applicability":"","method":"","documents":"","frequency":"","other_terms":""}],
- "related_laws":[{"law_name":"","clause":"มาตรา 9 หรือ null ถ้าอ้างทั้งฉบับ","appears_in":"จุดในตัวบทที่อ้างถึง","why_needed":"ทำไมต้องรู้เนื้อหานี้ถึงจะปฏิบัติตามได้","needs_lookup":true}]}
+ "related_laws":[{"law_name":"","clause":"มาตรา 9 หรือ null ถ้าอ้างทั้งฉบับ","appears_in":"ข้อความจากตัวบทจริงคำต่อคำ ตรงจุดที่เอ่ยถึงฉบับนี้","why_needed":"ทำไมต้องรู้เนื้อหานี้ถึงจะปฏิบัติตามได้","needs_lookup":true}]}
 ถ้าเอกสารที่ได้รับไม่ใช่ตัวบทกฎหมายไทยเลย (เช่น เป็นข่าว บทความ แบบฟอร์มเปล่า หรือเอกสารที่อ่านไม่ออก) ให้ตอบเป็น JSON นี้แทน ห้ามตอบเป็นข้อความธรรมดา:
 {"status":"not_a_law","reason":"อธิบายสั้นๆ ว่าเอกสารนี้คืออะไร และทำไมจึงสรุปเป็นทะเบียนกฎหมายไม่ได้"}`
 }
@@ -147,6 +151,79 @@ function friendlyApiError(raw){
 function strip(html){
   return html.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ')
              .replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim()
+}
+
+// ── ด่านตรวจ "ตัวบทอ้างถึงฉบับนั้นจริงหรือเปล่า" ก่อนปล่อยให้ Skill 3 ไปดึง ─────────
+// เดิมเชื่อรายการ related_laws ที่โมเดลส่งมาตรงๆ · โมเดลใส่กฎหมายที่แค่ "เกี่ยวข้องในหัวข้อเดียวกัน"
+// ปนมาได้ แล้วระบบก็ไล่ดึงจนเสียเงินฟรีและได้รายการ "หาตัวบทไม่พบ" ที่ผู้ใช้ไม่ได้ต้องการ
+// ภาษาไทยไม่เว้นวรรคระหว่างคำ ตัดช่องว่างทิ้งทั้งหมดก่อนเทียบจึงแม่นกว่าเทียบทั้งสตริง
+function normText(s){
+  return String(s || '')
+    .replace(/[\u200b\u00ad\ufeff]/g,'')   // zero-width space / soft hyphen / BOM ที่ PDF-HTML ชอบแทรก
+    .replace(/[\s\u00a0]+/g,'')             // ช่องว่างทุกชนิดรวม non-breaking space
+}
+const MIN_QUOTE = 12          // ข้อความยืนยันสั้นกว่านี้ไม่พอชี้ว่าอ้างถึงจริง
+const MIN_NAME_MATCH = 15     // ชื่อกฎหมายสั้นกว่านี้ไปโผล่ในตัวบทโดยบังเอิญได้
+
+// ── แตกข้อความจาก PDF ฝั่ง server เพื่อให้ด่านตรวจการอ้างถึงมีตัวบทไว้เทียบ ──
+// ราชกิจจาฯ ฝังฟอนต์แบบ subset ที่ตาราง ToUnicode ไม่ครบ บางฉบับจึงแตกออกมาเป็นขยะ
+// ทดสอบจริง 2026-08-15 (4 ฉบับจาก ratchakitcha.soc.go.th): ใช้ได้ 2 · เพี้ยน 2
+// เอาข้อความเพี้ยนไปเทียบ = ตัดการอ้างถึงที่ถูกต้องทิ้ง ซึ่งแย่กว่าไม่ตรวจเลย
+// จึงต้องวัดคุณภาพก่อนใช้ทุกครั้ง · ไม่ผ่าน = ถอยไปโหมดตรวจอ่อน (ดูแค่ว่ามีข้อความยืนยันมั้ย)
+const PDF_MARKERS = ['ราชกิจจานุเบกษา','พระราช','อาศัยอำนาจ','มาตรา','ประกาศ','รัฐมนตรี','ให้ไว้ ณ วันที่']
+const PDF_MIN_THAI = 0.6      // ตัวบทไทยจริงต้องมีอักขระไทยหนาแน่น ต่ำกว่านี้แปลว่าถอดรหัสไม่ออก
+const PDF_MIN_MARKERS = 2     // ตัวบทกฎหมายไทยต้องมีคำพวกนี้ ไม่เจอ = เชื่อผลที่แตกได้ไม่ได้
+
+function pdfTextUsable(t){
+  if(!t || t.length < 300) return false
+  const thai = (t.match(/[฀-๿]/g) || []).length
+  if(thai / t.length < PDF_MIN_THAI) return false
+  return PDF_MARKERS.filter(m => t.includes(m)).length >= PDF_MIN_MARKERS
+}
+
+// คืนข้อความที่ใช้เทียบได้จริงเท่านั้น · แตกไม่ได้/คุณภาพไม่ผ่าน คืนค่าว่าง (ไม่ throw)
+async function pdfToText(bytes){
+  if(!bytes || !bytes.length) return ''
+  let parser
+  try{
+    // โหลดตอนใช้จริงเท่านั้น — pdf-parse ลาก pdfjs มาด้วยราว 57MB ถ้า import ที่หัวไฟล์
+    // แล้วโหลดไม่ขึ้นบน serverless จะทำให้ทั้ง endpoint ตาย ไม่ใช่แค่ฟีเจอร์ตรวจ PDF เสีย
+    // ทางข้อความ/ลิงก์เว็บไม่ต้องใช้ตัวนี้เลย จึงไม่ควรจ่ายค่า cold start ไปด้วย
+    const { PDFParse } = await import('pdf-parse')
+    parser = new PDFParse({ data: bytes, verbosity: 0 })
+    const t = String((await parser.getText())?.text || '')
+    return pdfTextUsable(t) ? t : ''
+  }catch{ return '' }
+  finally{ try{ await parser?.destroy?.() }catch{} }
+}
+
+// คืน { kept, rejected } — kept เท่านั้นที่จะถูกส่งไป Skill 3
+// sourceText ว่าง (กรณีแนบ PDF — ตัวบทอยู่ที่ Claude ไม่ได้อยู่ที่เรา) จะตรวจได้แค่ว่ามีข้อความยืนยันมั้ย
+function verifyRelatedRefs(refs, sourceText){
+  const hay = normText(sourceText)
+  const canMatch = hay.length > 200      // สั้นกว่านี้แปลว่าไม่ใช่ตัวบท (เช่นเป็น URL เปล่า)
+  const kept = [], rejected = []
+  for(const r of (Array.isArray(refs) ? refs : [])){
+    const name = String(r?.law_name || '').trim()
+    if(!name) continue
+    const quote = normText(r.appears_in)
+    if(quote.length < MIN_QUOTE){
+      rejected.push({ ...r, reject_reason: 'ไม่ได้คัดข้อความจากตัวบทมายืนยันว่าอ้างถึงจริง' })
+      continue
+    }
+    if(canMatch){
+      // ผ่านได้ 2 ทาง: ข้อความที่คัดมาอยู่ในตัวบทจริง หรือชื่อกฎหมายโผล่ในตัวบทตรงๆ
+      // (ทางหลังกันกรณีโมเดลคัดข้อความมาเพี้ยนเล็กน้อย แต่การอ้างถึงมีจริง)
+      const nameKey = normText(name.replace(/พ\.?ศ\.?\s*\d{4}\s*$/,''))
+      const ok = hay.includes(quote) || (nameKey.length >= MIN_NAME_MATCH && hay.includes(nameKey))
+      if(!ok){
+        rejected.push({ ...r, reject_reason: 'ยืนยันกับตัวบทไม่ได้ — ไม่พบทั้งข้อความที่อ้างว่าคัดมาและชื่อกฎหมายนี้ในตัวบท' })
+        continue
+      }
+    }
+    kept.push(r)
+  }
+  return { kept, rejected }
 }
 
 // ── โดเมนที่อนุญาตให้ fetch ได้ (กัน SSRF) — เฉพาะเว็บราชการ/แหล่งกฎหมาย รวม subdomain ──
@@ -214,7 +291,7 @@ export default async function handler(req,res){
     if(!hasPdf && !source.trim()) return res.status(400).json({error:'กรุณาใส่ URL, วางตัวบทกฎหมาย หรือแนบไฟล์ PDF'})
     // กัน request body เกินลิมิตของ Vercel (~4.5MB) — base64 ~6M ≈ ไฟล์ ~4.5MB
     if(hasPdf && pdfBase64.length > 6_000_000) return res.status(413).json({error:'ไฟล์ PDF ใหญ่เกินไป — กรุณาแยกไฟล์ หรือ copy ตัวบทมาวางแทน'})
-    let text = source, srcUrl = '', pdfUrl = ''
+    let text = source, srcUrl = '', pdfUrl = '', pdfBytes = null
     const isUrl = !hasPdf && /^https?:\/\//i.test(source.trim())
     if(isUrl && kind!=='text'){
       srcUrl = source.trim()
@@ -223,6 +300,11 @@ export default async function handler(req,res){
       const ct = r.headers.get('content-type')||''
       if(ct.includes('pdf') || /\.pdf($|\?|#)/i.test(srcUrl)){
         pdfUrl = srcUrl   // ลิงก์เป็น PDF → ให้ Claude ดึงและอ่านเอง (url document source)
+        // เก็บไฟล์ที่โหลดมาแล้วไว้แตกข้อความให้ด่านตรวจ — ไม่ต้องโหลดซ้ำรอบสอง
+        try{
+          const buf = await r.arrayBuffer()
+          if(buf.byteLength && buf.byteLength <= 8_000_000) pdfBytes = new Uint8Array(buf)
+        }catch{ /* อ่าน body ไม่ได้ = ตรวจแบบอ่อนแทน ไม่ใช่เหตุให้ล้ม */ }
       } else {
         text = strip(await r.text()).slice(0,60000)
         if(text.length<200) return res.status(422).json({error:'ดึงเนื้อหาจากหน้าได้น้อยเกินไป ลองวางตัวบทเป็นข้อความ หรือแนบไฟล์ PDF'})
@@ -243,7 +325,11 @@ export default async function handler(req,res){
     const ar = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:apiHeaders,
-      body:JSON.stringify({model:MODEL,max_tokens:16000,system:buildSystem(await fetchCats()),
+      // cache_control · system prompt ~4,600 token เหมือนกันทุกครั้ง — cache ไว้ให้อ่านซ้ำ
+      // ราคาส่วนที่ cache เหลือ ~10% และ prefill เร็วขึ้น · เนื้อหาที่ส่งเหมือนเดิมทุกตัวอักษร
+      // (ขั้นต่ำที่ cache ได้ของ Sonnet คือ 1,024 token — system เราเกินอยู่แล้ว)
+      body:JSON.stringify({model:MODEL,max_tokens:16000,
+        system:[{type:'text',text:buildSystem(await fetchCats()),cache_control:{type:'ephemeral'}}],
         messages:[{role:'user',content:userContent}]})
     })
     if(!ar.ok) return res.status(502).json({error: friendlyApiError(await ar.text())})
@@ -267,9 +353,18 @@ export default async function handler(req,res){
     // Skill 3 · ดึงข้อกำหนดจากกฎหมายที่ตัวบทอ้างถึง มารวมเป็นชุดเดียวกับของฉบับหลัก
     // (กฎกระทรวงมักไม่เขียนซ้ำสิ่งที่อยู่ใน พ.ร.บ.แม่ — อ่านฉบับเดียวจึงตกข้อกำหนด)
     let merged = { requirements: parsed.requirements||[], related_laws:[], related_count:0, unresolved_count:0 }
-    if(Array.isArray(parsed.related_laws) && parsed.related_laws.length){
+    // ตรวจก่อนดึง — ปล่อยเฉพาะฉบับที่ยืนยันได้ว่าตัวบทอ้างถึงจริง (กันดึงมั่วจนเสียเงินฟรี)
+    // ฉบับที่ตกด่านไม่ได้หายไปเงียบๆ — ส่งกลับไปแสดงในตาราง "กฎหมายที่อ้างถึง" พร้อมเหตุผล
+    // ทาง PDF ไม่มีตัวบทเป็นข้อความอยู่แล้ว ต้องแตกเอง · แตกไม่ได้ = ตรวจแบบอ่อน
+    // ห่อ Uint8Array อีกชั้นเพื่อให้ได้ byteOffset 0 เสมอ — Buffer เล็กๆ ใช้ pool ร่วมกัน
+    // ซึ่ง pdfjs อ่านผิดตำแหน่งได้ (ไฟล์ PDF จริงมักใหญ่พอจนไม่โดน แต่กันไว้ไม่มีต้นทุน)
+    const verifyText = hasPdf ? await pdfToText(new Uint8Array(Buffer.from(pdfBase64,'base64')))
+      : pdfBytes ? await pdfToText(pdfBytes)
+      : text
+    const { kept: verifiedRefs, rejected: rejectedRefs } = verifyRelatedRefs(parsed.related_laws, verifyText)
+    if(verifiedRefs.length){
       try{
-        merged = await relateAndMerge(parsed.related_laws, parsed.requirements||[], law.name||'')
+        merged = await relateAndMerge(verifiedRefs, parsed.requirements||[], law.name||'')
       }catch(e){
         console.error('osh-law-relate failed:', e)
         // ล้มเหลวต้องไม่ทำให้การสรุปทั้งหมดพัง — ใช้ผลของฉบับหลักต่อไปตามเดิม
@@ -302,7 +397,14 @@ export default async function handler(req,res){
       ? parsed.repeals.filter(x => x && String(x.law_name||'').trim())
           .map(x => ({ law_name: String(x.law_name).trim(), clause: String(x.clause||'').trim() }))
       : []
+    // ฉบับที่ถูกด่านตัดก่อนดึง ต่อท้ายรายการเดียวกัน เพื่อให้ จป. เห็นว่า AI อ้างถึงอะไรบ้างแล้วทำไมไม่ดึง
+    const rejectedRows = rejectedRefs.map(r => ({
+      law_name: String(r.law_name||'').trim(), clause: String(r.clause||'').trim() || 'ทั้งฉบับ',
+      status:'rejected', depth:0, via:'', source_url:'', resolved_text:'', confidence:'',
+      note: r.reject_reason || 'ยืนยันการอ้างถึงไม่ได้', from_cache:false, req_count:0 }))
     return res.status(200).json({law,count:reqs.length,batch,requirements:reqs,repeals,
-      related_laws:merged.related_laws, related_count:merged.related_count, unresolved_count:merged.unresolved_count})
+      related_laws:[...merged.related_laws, ...rejectedRows],
+      related_count:merged.related_count, unresolved_count:merged.unresolved_count,
+      rejected_count:rejectedRows.length})
   }catch(e){ return res.status(500).json({error:String(e&&e.message||e)}) }
 }

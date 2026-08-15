@@ -1012,8 +1012,10 @@ export const WF_STATUS = {
 // ---- AI-discovered laws (source for Workflow A · Process 1) ----
 export async function fetchDiscoveredLaws() {
   if (!hasSupabase) return []
+  // ดึงทุกสถานะรวม deleted — หน้า "ประวัติการสรุปด้วย AI" ต้องเห็นรายการที่ลบทิ้งไปแล้วด้วย
+  // (ลบเป็น soft delete อยู่แล้ว) · คิว "รอเข้าทะเบียน" กรอง deleted/registered ออกเองที่ฝั่ง UI
   const { data } = await supabase.from('lg_ai_discovered_laws')
-    .select('*').neq('status', 'deleted').order('created_at', { ascending: false })
+    .select('*').order('created_at', { ascending: false })
   return data || []
 }
 // lg_ai_discovered_laws เก็บวันที่เป็นชนิด date จริง (ต่างจาก lg_laws ที่เป็น text "วว/ดด/ปปปป" พ.ศ.)

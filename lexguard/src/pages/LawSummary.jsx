@@ -1,12 +1,12 @@
 // P12 · หน้า "สรุปกฎหมาย" — แทน Discovery + Analysis.
 // โซนบน: วาง URL/ตัวบท → AI สรุป (ผ่าน /api/law-analyze, stage:false) → แก้ไข → เก็บลงคิว
 //         lg_ai_discovered_laws (ai_payload) → กด "เพิ่มเข้าทะเบียน" prefill AddLawFlow (Workflow A).
-// โซนล่าง: คลังสรุปกฎหมายจากทะเบียน + AI สรุปย้อนหลังรายฉบับ (lg_laws.ai_summary, ไม่ทับของยืนยันแล้ว).
+// โซนล่าง: ประวัติการสรุปด้วย AI (lg_ai_discovered_laws ทุกสถานะ + lg_laws.ai_summary_at)
+//         + รายการกฎหมายในทะเบียนที่ยังไม่มีสรุป ให้สั่งสรุปย้อนหลังได้.
 import { useMemo, useState } from 'react'
 import { saveDiscoveredLaw, deleteDiscoveredLaw, saveLawAiSummary, repealLaw } from '../lib/supabase.js'
-import { STATUS } from '../lib/supabase.js'
 import { I } from '../components/icons.jsx'
-import { Tag, thDate, findLawDuplicate, beToISO } from '../lib/ui.jsx'
+import { thDate, findLawDuplicate, beToISO } from '../lib/ui.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
@@ -25,6 +25,7 @@ async function analyzeSource({ source = '', sourceUrl = '', pdfBase64 = '', pdfN
   // ไม่งั้น จป. เห็นแค่ตัวเลข แล้วยังไม่รู้ว่าต้องไปเปิดกฎหมายฉบับไหนเอง
   return { law: d.law || {}, requirements: d.requirements || [],
     related_count: d.related_count || 0, unresolved_count: d.unresolved_count || 0,
+    rejected_count: d.rejected_count || 0,   // ฉบับที่ยืนยันการอ้างถึงไม่ได้ จึงไม่ตามไปดึง
     related_laws: d.related_laws || [], repeals: d.repeals || [] }
 }
 
@@ -99,13 +100,18 @@ const REL_STATUS = {
   resolved:  { label: n => `ดึงแล้ว ${n} ข้อ`, color: 'var(--ink-soft)' },
   not_found: { label: () => 'หาตัวบทไม่พบ', color: 'var(--warn)' },
   manual:    { label: () => 'เกินจำนวนที่ดึงได้ในรอบเดียว — ต้องตรวจเอง', color: 'var(--warn)' },
+  // AI อ้างถึงฉบับนี้ แต่ยืนยันกับตัวบทไม่ได้ จึงไม่ดึง · ไม่ใช่งานค้างของ จป.
+  // แต่ต้องเห็น เผื่อเป็นการอ้างถึงจริงที่ระบบตรวจไม่เจอ (เช่น แนบ PDF ที่เราอ่านข้อความไม่ได้)
+  rejected:  { label: () => 'ไม่ได้ดึง — ยืนยันการอ้างถึงไม่ได้', color: 'var(--ink-faint)' },
 }
 
 function RelatedLawsPanel({ items = [] }) {
   if (!items.length) return null
-  // not_found/manual ขึ้นก่อน แล้วค่อย resolved
-  const sorted = [...items].sort((a, b) => (a.status === 'resolved' ? 1 : 0) - (b.status === 'resolved' ? 1 : 0))
-  const pending = sorted.filter(x => x.status !== 'resolved').length
+  // เรียงตามสิ่งที่ต้องลงมือทำ: not_found/manual (ต้องตรวจเอง) → resolved → rejected (ไม่ได้ดึง ไม่ใช่งานค้าง)
+  const rank = x => x.status === 'rejected' ? 2 : x.status === 'resolved' ? 1 : 0
+  const sorted = [...items].sort((a, b) => rank(a) - rank(b))
+  // rejected ไม่นับเป็นงานค้าง — ระบบตัดสินแล้วว่าตัวบทไม่ได้อ้างถึง ไม่ใช่ของที่ จป. ต้องไปเปิดเอง
+  const pending = sorted.filter(x => x.status !== 'resolved' && x.status !== 'rejected').length
 
   return (
     <details open={pending > 0} style={{ margin: '0 0 10px', fontSize: 12 }}>
@@ -266,15 +272,21 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
   // Skill 3 · count = จำนวน "ข้อ" ที่ดึงมาได้ · unresolved = จำนวน "ฉบับ" ที่หาตัวบทไม่พบ · laws = รายฉบับ
   const [related, setRelated] = useState({ count: 0, unresolved: 0, laws: [] })
   const [repeals, setRepeals] = useState([])   // กฎหมายที่ตัวบทสั่งให้ยกเลิก
+  // id ของแถวประวัติที่บันทึกทันทีหลังสรุปเสร็จ · กด "เก็บลงคิว" จะอัปเดตแถวเดิม ไม่สร้างซ้ำ
+  const [histId, setHistId] = useState(null)
+  const [histMeta, setHistMeta] = useState(null)   // ผล Skill 3 ของรอบนี้ ใช้ซ้ำตอนเก็บลงคิว
 
   async function analyze() {
     if (!src.trim() || busy) return
-    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([])
+    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null)
     try {
-      const { law: l, requirements, related_count, unresolved_count, related_laws, repeals: rp } = await analyzeSource({ source: src, sourceUrl: srcUrl.trim() })
+      const { law: l, requirements, related_count, unresolved_count, rejected_count, related_laws, repeals: rp } = await analyzeSource({ source: src, sourceUrl: srcUrl.trim() })
       setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
       setReqs(toReqRows(requirements))
       setRelated({ count: related_count, unresolved: unresolved_count, laws: related_laws }); setRepeals(rp || [])
+      const rows = toReqRows(requirements)
+      await logRun(l, rows, { related_count, unresolved_count, rejected_count },
+        /^https?:\/\//i.test(src.trim()) ? 'link' : 'text')
       toast('สรุปด้วย AI แล้ว — ตรวจ/แก้ไขได้', 'success')
     } catch (e) { toast('สรุปไม่สำเร็จ: ' + e.message) }
     setBusy(false)
@@ -283,16 +295,40 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
   async function analyzePdf(file) {
     if (!file || busy) return
     if (file.size > 4 * 1024 * 1024) { toast('ไฟล์ PDF ใหญ่เกิน 4MB — กรุณาแยกไฟล์ หรือ copy ตัวบทมาวางแทน'); return }
-    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([])
+    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null)
     try {
       const pdfBase64 = await readFileBase64(file)
-      const { law: l, requirements, related_count, unresolved_count, related_laws, repeals: rp } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
+      const { law: l, requirements, related_count, unresolved_count, rejected_count, related_laws, repeals: rp } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
       setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
       setReqs(toReqRows(requirements))
       setRelated({ count: related_count, unresolved: unresolved_count, laws: related_laws }); setRepeals(rp || [])
+      await logRun(l, toReqRows(requirements), { related_count, unresolved_count, rejected_count }, 'pdf')
       toast('สรุปจากไฟล์ PDF แล้ว — ตรวจ/แก้ไขได้', 'success')
     } catch (e) { toast('สรุป PDF ไม่สำเร็จ: ' + e.message) }
     setBusy(false)
+  }
+
+  // บันทึกทุกครั้งที่สรุปเสร็จ ไม่ต้องรอผู้ใช้กดเก็บ — ไม่งั้นรายการที่กด "เพิ่มเข้าทะเบียน"
+  // ตรงๆ หรือปิดหน้าไป จะไม่เหลือร่องรอยในประวัติเลย · สถานะ draft ไม่เข้าคิวรอเข้าทะเบียน
+  // บันทึกไม่สำเร็จต้องไม่ทำให้ผลสรุปที่อยู่บนจอหาย — แค่เตือนแล้วปล่อยผ่าน
+  async function logRun(l, reqRows, r, input) {
+    try {
+      const realUrl = srcUrl.trim() || (/^https?:\/\//i.test(src.trim()) ? src.trim() : null)
+      const meta = { input, related_count: r.related_count || 0,
+        unresolved_count: r.unresolved_count || 0, rejected_count: r.rejected_count || 0 }
+      setHistMeta(meta)
+      const id = await saveDiscoveredLaw({
+        law_name: l.name || '(ไม่ทราบชื่อ)', source: 'ai', source_url: realUrl,
+        ministry: l.ministry || null, announced_date: l.announce_date || null,
+        effective_date: l.effective_date || null,
+        related_docs: l.documents ? [l.documents] : [],
+        summary: reqRowsToLines(reqRows),
+        ai_payload: { ...buildInitialData({ ...l }, reqRows), meta },
+        status: 'draft', searched_at: new Date().toISOString(),
+      })
+      setHistId(id)
+      onQueued && onQueued()
+    } catch (e) { toast('บันทึกประวัติไม่สำเร็จ: ' + e.message) }
   }
 
   const setReq = (i, v) => setReqs(p => p.map((x, j) => j === i ? v : x))
@@ -305,16 +341,17 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
     try {
       const realUrl = srcUrl.trim() || (/^https?:\/\//i.test(src.trim()) ? src.trim() : null)
       await saveDiscoveredLaw({
+        id: histId,   // อัปเดตแถวประวัติที่สร้างไว้ตอนสรุปเสร็จ ไม่สร้างซ้ำ
         law_name: law.name, source: 'ai', source_url: realUrl,
         ministry: law.ministry || null, announced_date: law.announce_date || null,
         effective_date: law.effective_date || null,
         related_docs: law.documents ? [law.documents] : [],
         summary: reqRowsToLines(reqs),
-        ai_payload: buildInitialData({ ...law }, reqs),
+        ai_payload: { ...buildInitialData({ ...law }, reqs), meta: histMeta || undefined },
         status: 'imported', searched_at: new Date().toISOString(),
       })
       toast('เก็บลงคิว "รอเข้าทะเบียน" แล้ว', 'success')
-      setLaw(null); setReqs([]); setSrc(''); setSrcUrl(''); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([])
+      setLaw(null); setReqs([]); setSrc(''); setSrcUrl(''); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null)
       onQueued && onQueued()
     } catch (e) { toast('บันทึกลงคิวไม่สำเร็จ: ' + e.message) }
     setSaving(false)
@@ -420,7 +457,9 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
 function QueueBar({ discovered, onReload, onAddToRegistry }) {
   const { can } = useAuth()
   const [open, setOpen] = useState(true)
-  const items = discovered.filter(d => d.status !== 'deleted' && d.status !== 'registered')
+  // เอาเฉพาะ imported = ผู้ใช้กด "เก็บลงคิว" เองแล้ว
+  // draft (บันทึกอัตโนมัติตอนสรุปเสร็จ) อยู่ในประวัติอย่างเดียว ไม่มางอกในคิว
+  const items = discovered.filter(d => d.status === 'imported')
   if (!items.length) return null
 
   function initFromRow(d) {
@@ -469,104 +508,198 @@ function QueueBar({ discovered, onReload, onAddToRegistry }) {
   )
 }
 
-/* ── การ์ดในคลังสรุป ── */
-function LibraryCard({ law, catMap, onOpenLaw, onBackfill, backfilling, onAddToRegistry }) {
-  const { can } = useAuth()
-  const reqs = law.reqs || []
-  const ai = law.ai_summary && law.ai_summary.requirements ? law.ai_summary.requirements : null
-  const hasReqs = reqs.length > 0
-  const points = hasReqs ? reqs.slice(0, 3).map(r => r.text)
-    : (ai ? ai.slice(0, 3).map(r => `${r.section_ref ? r.section_ref + ': ' : ''}${r.req_text || ''}`) : [])
+/* ── โซนล่าง · ประวัติการสรุปด้วย AI ────────────────────────────────────────
+   เดิมโซนนี้ชื่อ "คลังสรุปกฎหมาย" แต่ดึง lg_laws มาแสดง = เอาข้อปฏิบัติในทะเบียน
+   มาเขียนซ้ำหน้า Registry · สิ่งที่ขาดคือ "ทำอะไรไปแล้วบ้าง" ซึ่งเป็นคนละเรื่อง
+   ข้อมูลมีอยู่แล้วใน lg_ai_discovered_laws (ลบเป็น soft delete ไม่มีอะไรหาย)
+   แค่ไม่เคยถูกเอามาแสดง — พอเข้าทะเบียนแล้วแถวหายจากคิวไปเลย */
+const HIST_STATUS = {
+  draft:      { label: 'สรุปแล้ว ยังไม่ได้ทำต่อ', cls: 'p-warn' },
+  imported:   { label: 'รอเข้าทะเบียน',           cls: 'p-warn' },
+  registered: { label: 'เข้าทะเบียนแล้ว',          cls: 'p-ok'   },
+  deleted:    { label: 'ลบทิ้งแล้ว',               cls: ''       },
+  backfill:   { label: 'สรุปย้อนหลังให้ทะเบียน',    cls: 'p-ok'   },
+}
 
+// แหล่งตัวบทที่ใช้สรุป — เก็บไว้ใน ai_payload.meta ตอนสรุป (jsonb เดิม ไม่ต้องแก้ตาราง)
+const INPUT_LABEL = { pdf: 'ไฟล์ PDF', link: 'ลิงก์', text: 'วางข้อความ' }
+
+function fmtWhen(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (isNaN(d)) return '—'
+  return d.toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+function HistoryRow({ item, onAddToRegistry, onOpenLaw }) {
+  const { can } = useAuth()
+  const st = HIST_STATUS[item.status] || HIST_STATUS.draft
+  const m = item.meta || {}
   return (
-    <div className="panel" style={{ padding: '12px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-        <Tag c={law.cat} color={catMap[law.cat]?.color} />
-        <span className="law-code">{law.code}</span>
-        <span style={{ flex: 1, fontSize: 13 }}>{(law.name || '').slice(0, 80)}</span>
-        <span className={'pill ' + (STATUS[law.status]?.cls || 'p-ok')} style={{ fontSize: 11 }}>{STATUS[law.status]?.label || law.status}</span>
+    <div style={{ padding: '10px 0', borderBottom: '1px solid var(--line)' }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', whiteSpace: 'nowrap', minWidth: 96 }}>{fmtWhen(item.at)}</span>
+        <span style={{ flex: 1, fontSize: 13, minWidth: 200 }}>{(item.law_name || '—').slice(0, 90)}</span>
+        <span className={'pill ' + st.cls} style={{ fontSize: 11 }}>{st.label}</span>
       </div>
-      {!hasReqs && !ai && <span className="pill p-warn" style={{ fontSize: 11 }}>ยังไม่มีสรุป</span>}
-      {!hasReqs && ai && <span className="pill" style={{ fontSize: 11, background: 'var(--warn)', color: '#fff' }}>สรุปโดย AI · ยังไม่ทวนสอบ</span>}
-      {points.length > 0 && (
-        <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.55 }}>
-          {points.map((p, i) => <li key={i}>{(p || '').slice(0, 110)}{(p || '').length > 110 ? '…' : ''}</li>)}
-        </ul>
-      )}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap', fontSize: 12, color: 'var(--ink-faint)' }}>
-        {law.effective_date && <span>บังคับใช้: {law.effective_date}</span>}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 3, fontSize: 11.5, color: 'var(--ink-faint)' }}>
+        <span>{item.req_count} ข้อปฏิบัติ</span>
+        {m.input && <span>· จาก{INPUT_LABEL[m.input] || m.input}</span>}
+        {/* ผล Skill 3 — บอกว่าตามไปดึงกฎหมายที่อ้างถึงได้แค่ไหน และตัดของที่ยืนยันไม่ได้ไปกี่ฉบับ */}
+        {m.related_count > 0 && <span>· รวมข้อจากกฎหมายที่อ้างถึง {m.related_count} ข้อ</span>}
+        {m.unresolved_count > 0 && <span style={{ color: 'var(--warn)' }}>· หาตัวบทไม่พบ {m.unresolved_count} ฉบับ</span>}
+        {m.rejected_count > 0 && <span>· ตัดการอ้างถึงที่ยืนยันไม่ได้ {m.rejected_count} ฉบับ</span>}
+        {item.source_url && <a href={item.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--brand)' }}>เปิดตัวบท ↗</a>}
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {!hasReqs && !ai && (
-            <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 11.5 }} disabled={backfilling || !can('edit')} onClick={() => onBackfill(law)}>
-              {backfilling ? 'กำลังสรุป…' : <><I n="spark" />ให้ AI สรุปย้อนหลัง</>}
-            </button>
+          {item.registered_law && onOpenLaw && (
+            <button className="btn btn-ghost" style={{ padding: '3px 9px', fontSize: 11 }}
+              onClick={() => onOpenLaw(item.registered_law)}>เปิดในทะเบียน</button>
           )}
-          {!hasReqs && ai && (
-            <button className="btn btn-primary" style={{ padding: '4px 10px', fontSize: 11.5 }} disabled={!can('edit')}
-              onClick={() => onAddToRegistry(buildInitialData(law.ai_summary.law || { name: law.name, cat: law.cat }, toReqRows(ai)))}>เพิ่มเข้าทะเบียน/ทวนสอบ</button>
+          {item.prefill && item.status !== 'registered' && (
+            <button className="btn btn-ghost" style={{ padding: '3px 9px', fontSize: 11 }} disabled={!can('edit')}
+              onClick={() => onAddToRegistry(item.prefill())}>เปิดผลสรุป</button>
           )}
-          <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 11.5 }} onClick={() => onOpenLaw(law)}>อ่านสรุปเต็ม</button>
         </span>
       </div>
     </div>
   )
 }
 
-/* ── โซนล่าง: คลังสรุปกฎหมาย ── */
-function LibraryZone({ laws, cats, catMap, onOpenLaw, onReloadLaws, onAddToRegistry }) {
+// รวม 2 แหล่งเป็นไทม์ไลน์เดียว: การสรุปจากหน้านี้ (lg_ai_discovered_laws)
+// + การสรุปย้อนหลังให้กฎหมายในทะเบียน (lg_laws.ai_summary_at)
+// แยกออกมาเป็นฟังก์ชันบริสุทธิ์เพื่อให้ทดสอบการรวม/เรียงได้โดยไม่ต้อง render
+export function buildHistoryItems(discovered = [], laws = []) {
+  const fromDiscovered = discovered.map(d => ({
+    key: 'd' + d.id, at: d.created_at || d.searched_at, law_name: d.law_name,
+    status: d.status || 'draft', source_url: d.source_url,
+    req_count: Array.isArray(d.summary) ? d.summary.length : 0,
+    // ต้องส่ง object กฎหมายจริงให้ลิ้นชัก ไม่ใช่แค่ id · หาไม่เจอ (เช่นถูกลบจากทะเบียน) = ไม่มีปุ่มเปิด
+    registered_law: d.registered_law_id ? laws.find(l => l.id === d.registered_law_id) || null : null,
+    meta: d.ai_payload?.meta,
+    prefill: () => d.ai_payload?.law
+      ? { ...d.ai_payload, discoveredId: d.id }
+      : buildInitialData({ name: d.law_name, ministry: d.ministry }, [], d.id),
+  }))
+  const fromBackfill = laws.filter(l => l.ai_summary_at).map(l => ({
+    key: 'l' + l.id, at: l.ai_summary_at, law_name: l.name, status: 'backfill',
+    source_url: l.source_url, registered_law: l,
+    req_count: l.ai_summary?.requirements?.length || 0, meta: l.ai_summary?.meta,
+    prefill: () => buildInitialData(l.ai_summary?.law || { name: l.name, cat: l.cat },
+      toReqRows(l.ai_summary?.requirements || [])),
+  }))
+  // ใหม่สุดอยู่บน · รายการที่ไม่มีเวลา (ข้อมูลเก่าก่อนมีคอลัมน์) ตกไปท้ายสุด ไม่หายไปไหน
+  return [...fromDiscovered, ...fromBackfill]
+    .sort((a, b) => (a.at ? new Date(a.at).getTime() : -Infinity) < (b.at ? new Date(b.at).getTime() : -Infinity) ? 1 : -1)
+}
+
+function HistoryZone({ discovered = [], laws = [], onAddToRegistry, onOpenLaw }) {
   const [q, setQ] = useState('')
-  const [cat, setCat] = useState('all')
-  const [backfillId, setBackfillId] = useState(null)
+  const [st, setSt] = useState('all')
+
+  const items = useMemo(() => buildHistoryItems(discovered, laws), [discovered, laws])
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
-    return laws.filter(l => {
-      if (cat !== 'all' && l.cat !== cat) return false
-      if (!s) return true
-      return l.code.toLowerCase().includes(s) || (l.name || '').toLowerCase().includes(s)
-        || (l.reqs || []).some(r => (r.text || '').toLowerCase().includes(s))
+    return items.filter(x => {
+      if (st !== 'all' && x.status !== st) return false
+      return !s || (x.law_name || '').toLowerCase().includes(s)
     })
-  }, [laws, q, cat])
-  const usedCats = useMemo(() => [...new Set(laws.map(l => l.cat).filter(Boolean))].sort(), [laws])
+  }, [items, q, st])
 
-  async function backfill(law) {
-    setBackfillId(law.id)
-    try {
-      const source = law.source_url || law.name
-      const { law: l, requirements } = await analyzeSource({ source, sourceUrl: law.source_url || '' })
-      await saveLawAiSummary(law.id, { law: l, requirements })
-      toast('AI สรุปย้อนหลังแล้ว — ยังไม่ทวนสอบ', 'success')
-      onReloadLaws && onReloadLaws()
-    } catch (e) { toast('สรุปย้อนหลังไม่สำเร็จ: ' + e.message) }
-    setBackfillId(null)
-  }
+  const counts = useMemo(() => {
+    const c = {}
+    for (const x of items) c[x.status] = (c[x.status] || 0) + 1
+    return c
+  }, [items])
 
   return (
     <div style={{ marginTop: 22 }}>
-      <div className="sec-t" style={{ margin: '0 0 10px' }}>คลังสรุปกฎหมาย ({laws.length})</div>
-      <div className="filterbar" style={{ alignItems: 'center' }}>
-        <input className="form-input" style={{ maxWidth: 260, margin: 0 }} placeholder="ค้นหารหัส/ชื่อ/เนื้อหาข้อปฏิบัติ…" value={q} onChange={e => setQ(e.target.value)} />
-        <span className={'chip' + (cat === 'all' ? ' active' : '')} onClick={() => setCat('all')}>ทุกหมวด</span>
-        {usedCats.map(c => <span key={c} className={'chip' + (cat === c ? ' active' : '')} onClick={() => setCat(c)}>{c}</span>)}
+      <div className="sec-t" style={{ margin: '0 0 4px' }}>ประวัติการสรุปด้วย AI ({items.length})</div>
+      <div style={{ fontSize: 12, color: 'var(--ink-faint)', margin: '0 0 10px' }}>
+        ทุกครั้งที่สั่งสรุป จะถูกบันทึกไว้ที่นี่ รวมรายการที่ลบทิ้งไปแล้ว
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
-        {filtered.length === 0 && <div className="panel"><div style={{ textAlign: 'center', color: 'var(--ink-faint)', padding: 30, fontSize: 13 }}>ไม่พบกฎหมายที่ตรงกับเงื่อนไข</div></div>}
-        {filtered.map(l => (
-          <LibraryCard key={l.id} law={l} catMap={catMap} onOpenLaw={onOpenLaw}
-            onBackfill={backfill} backfilling={backfillId === l.id} onAddToRegistry={onAddToRegistry} />
+      <div className="filterbar" style={{ alignItems: 'center' }}>
+        <input className="form-input" style={{ maxWidth: 260, margin: 0 }} placeholder="ค้นหาชื่อกฎหมาย…"
+          value={q} onChange={e => setQ(e.target.value)} />
+        <span className={'chip' + (st === 'all' ? ' active' : '')} onClick={() => setSt('all')}>ทั้งหมด</span>
+        {Object.keys(HIST_STATUS).filter(k => counts[k]).map(k => (
+          <span key={k} className={'chip' + (st === k ? ' active' : '')} onClick={() => setSt(k)}>
+            {HIST_STATUS[k].label} {counts[k]}
+          </span>
         ))}
+      </div>
+      <div className="panel" style={{ padding: '4px 16px 10px', marginTop: 4 }}>
+        {filtered.length === 0
+          ? <div style={{ textAlign: 'center', color: 'var(--ink-faint)', padding: 26, fontSize: 13 }}>
+              {items.length ? 'ไม่พบรายการที่ตรงกับเงื่อนไข' : 'ยังไม่เคยสั่งสรุปด้วย AI'}
+            </div>
+          : filtered.map(x => <HistoryRow key={x.key} item={x} onAddToRegistry={onAddToRegistry} onOpenLaw={onOpenLaw} />)}
       </div>
     </div>
   )
 }
 
-export default function LawSummary({ laws = [], allLaws = [], cats = [], catMap = {}, discovered = [], suggest = {},
+/* ── กฎหมายในทะเบียนที่ยังไม่มีสรุป AI — ปุ่มสั่งสรุปย้อนหลัง ──
+   แยกออกจากประวัติ เพราะนี่คือ "งานที่ทำได้" ไม่ใช่ "สิ่งที่ทำไปแล้ว" */
+function BackfillZone({ laws = [], onReloadLaws }) {
+  const { can } = useAuth()
+  const [busyId, setBusyId] = useState(null)
+  const pending = useMemo(
+    () => laws.filter(l => !(l.reqs || []).length && !l.ai_summary), [laws])
+  if (!pending.length) return null
+
+  async function backfill(law) {
+    // ไม่มีลิงก์ตัวบท = AI ไม่มีอะไรให้อ่าน ต้องสรุปจากความจำ ซึ่งขัดกฎ "ห้ามแต่งเติม"
+    if (!law.source_url) {
+      toast('กฎหมายฉบับนี้ยังไม่มีลิงก์ตัวบท — เปิดในทะเบียนแล้วใส่ลิงก์ก่อน หรือใช้ช่องด้านบนแนบไฟล์ PDF')
+      return
+    }
+    setBusyId(law.id)
+    try {
+      const r = await analyzeSource({ source: law.source_url, sourceUrl: law.source_url })
+      await saveLawAiSummary(law.id, {
+        law: r.law, requirements: r.requirements,
+        meta: { input: 'link', related_count: r.related_count, unresolved_count: r.unresolved_count,
+          rejected_count: r.rejected_count },
+      })
+      toast('AI สรุปย้อนหลังแล้ว — ยังไม่ทวนสอบ', 'success')
+      onReloadLaws && onReloadLaws()
+    } catch (e) { toast('สรุปย้อนหลังไม่สำเร็จ: ' + e.message) }
+    setBusyId(null)
+  }
+
+  return (
+    <details style={{ marginTop: 18, fontSize: 12.5 }}>
+      <summary style={{ cursor: 'pointer', color: 'var(--brand)' }}>
+        กฎหมายในทะเบียนที่ยังไม่มีสรุป ({pending.length})
+      </summary>
+      <div className="panel" style={{ padding: '4px 16px 10px', marginTop: 6 }}>
+        {pending.map(l => (
+          <div key={l.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
+            <span className="law-code">{l.code}</span>
+            <span style={{ flex: 1, fontSize: 12.5 }}>{(l.name || '').slice(0, 70)}</span>
+            {!l.source_url && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>ยังไม่มีลิงก์ตัวบท</span>}
+            <button className="btn btn-ghost" style={{ padding: '3px 9px', fontSize: 11 }}
+              disabled={busyId === l.id || !can('edit')} onClick={() => backfill(l)}>
+              {busyId === l.id ? 'กำลังสรุป…' : 'ให้ AI สรุป'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
+export default function LawSummary({ laws = [], allLaws = [], cats = [], discovered = [], suggest = {},
   onReloadDiscovered, onReloadLaws, onOpenLaw, onAddToRegistry }) {
   return (
     <div className="view">
       <AiSummaryZone cats={cats} laws={allLaws.length ? allLaws : laws} suggest={suggest} onQueued={onReloadDiscovered} onAddToRegistry={onAddToRegistry} onReloadLaws={onReloadLaws} />
       <QueueBar discovered={discovered} onReload={onReloadDiscovered} onAddToRegistry={onAddToRegistry} />
-      <LibraryZone laws={laws} cats={cats} catMap={catMap} onOpenLaw={onOpenLaw} onReloadLaws={onReloadLaws} onAddToRegistry={onAddToRegistry} />
+      {/* ประวัติอ่านจาก allLaws เพื่อให้เห็นการสรุปของกฎหมายที่ถูกยกเลิกไปแล้วด้วย
+          ส่วนปุ่มสั่งสรุปย้อนหลังใช้ laws (เฉพาะที่ยังใช้บังคับ) — ไม่ต้องไปสรุปฉบับที่ยกเลิกแล้ว */}
+      <HistoryZone discovered={discovered} laws={allLaws.length ? allLaws : laws} onAddToRegistry={onAddToRegistry} onOpenLaw={onOpenLaw} />
+      <BackfillZone laws={laws} onReloadLaws={onReloadLaws} />
     </div>
   )
 }

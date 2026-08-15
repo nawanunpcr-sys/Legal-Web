@@ -94,6 +94,13 @@ const SYSTEM = `คุณคือผู้ช่วยด้านกฎหม�
 ตอบเป็น JSON เท่านั้น ห้ามมี markdown fence:
 {"status":"resolved"|"not_found","law_full_name":"","source_url":"","resolved_text":"สรุปสาระของส่วนที่ถูกอ้างถึง ไม่เกิน 500 ตัวอักษร","confidence":"high"|"medium"|"low","note":"ข้อสังเกต เช่น พบเฉพาะฉบับก่อนแก้ไข","requirements":[{"section_ref":"มาตรา 9","req_text":"ข้อความที่ต้องทำ อ่านจบในตัว","action_required":"","frequency":"","evidence":"","penalty":"ระบุตัวเลขจริง หรือค่าว่าง","source_excerpt":"ข้อความจากตัวบทจริง ไม่เกิน 300 ตัวอักษร"}],"related_laws":[{"law_name":"","clause":"มาตรา X หรือ null ถ้าอ้างทั้งฉบับ","why_needed":"ทำไมต้องรู้เนื้อหานี้ถึงจะปฏิบัติตามได้","needs_lookup":true}]}`
 
+// cache_control · SYSTEM ~2,100 token ถูกส่งซ้ำทุกครั้งที่ตามไปดึงกฎหมายอ้างอิง
+// cache ไว้แล้วอ่านซ้ำได้ในราคา ~10% · เนื้อหาที่ส่งเหมือนเดิมทุกตัวอักษร ไม่กระทบผลลัพธ์
+// หมายเหตุ: ชั้นเดียวยิงขนานกัน 12 ตัว ตัวที่ยิงพร้อมกันยังอ่าน cache ของกันและกันไม่ได้
+// (cache อ่านได้ต่อเมื่อ response แรกเริ่มไหลแล้ว) — ได้ผลเต็มกับการเรียกรอบถัดๆ ไป
+const SYS_CACHED = [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }]
+
+
 // ── ฟังก์ชัน 1 · ทำ key ให้ชนกันได้จริง ──────────────────────────────────────
 // "พ.ร.บ. ความปลอดภัยฯ พ.ศ.๒๕๕๔" กับ "พระราชบัญญัติความปลอดภัย พ.ศ. 2554"
 // ต้องได้ key เดียวกัน ไม่งั้น cache ไม่มีวันชน และ lg_law_refs จะบวมด้วยแถวซ้ำที่สะกดต่างกัน
@@ -176,7 +183,7 @@ async function readLawFromPdf(ref, url, b64){
       headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01', 'anthropic-beta': 'pdfs-2024-09-25' },
       body: JSON.stringify({
-        model: MODEL, max_tokens: 8000, system: SYSTEM,
+        model: MODEL, max_tokens: 8000, system: SYS_CACHED,
         messages: [{ role: 'user', content: [
           { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
           { type: 'text', text: ask },
@@ -249,7 +256,7 @@ export async function fetchRelatedLaw(ref){
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: MODEL, max_tokens: 8000, system: SYSTEM,
+        model: MODEL, max_tokens: 8000, system: SYS_CACHED,
         messages: [{ role: 'user', content: ask }],
         tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5, allowed_domains: TRUSTED_DOMAINS }]
       })
@@ -350,7 +357,9 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName){
   const results = []
   const deferred = []
   let budget = MAX_TOTAL_LOOKUPS
-  let frontier = all.filter(r => r && r.needs_lookup !== false)
+  // ต้องเป็น true ชัดๆ เท่านั้นถึงดึง — เดิมใช้ !== false ทำให้ฉบับที่โมเดล "ลืมใส่ฟิลด์"
+  // ถูกดึงทุกครั้ง ทั้งที่ prompt สั่งให้ตั้ง false ไว้ก่อนเมื่อไม่แน่ใจ (ไม่ระบุ = ไม่ดึง)
+  let frontier = all.filter(r => r && r.needs_lookup === true)
 
   // กันฉบับหลักถูกดึงกลับมาเป็นกฎหมายอ้างอิงของตัวเอง — พ.ร.บ.แม่มักอ้างกลับมาที่กฎกระทรวงลูก
   // เทียบที่ "ชื่อ" อย่างเดียว (ตัดส่วน clause ทิ้ง) เพื่อกันทุกกรณีไม่ว่าจะอ้างทั้งฉบับหรือรายข้อ
@@ -391,7 +400,7 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName){
     frontier = depth < MAX_DEPTH
       ? wave.filter(res => res.status === 'resolved')
           .flatMap(res => (res.related_laws || [])
-            .filter(c => c && c.needs_lookup !== false && String(c.law_name || '').trim())
+            .filter(c => c && c.needs_lookup === true && String(c.law_name || '').trim())
             .map(c => ({ ...c, via: res.law_full_name || res.law_name })))
       : []
   }
