@@ -26,6 +26,12 @@ async function analyzeSource({ source = '', sourceUrl = '', pdfBase64 = '', pdfN
   return { law: d.law || {}, requirements: d.requirements || [],
     related_count: d.related_count || 0, unresolved_count: d.unresolved_count || 0,
     rejected_count: d.rejected_count || 0,   // ฉบับที่ยืนยันการอ้างถึงไม่ได้ จึงไม่ตามไปดึง
+    inlined_count: d.inlined_count || 0,         // ข้อที่เขียนใหม่ให้อ่านจบในตัวแล้ว
+    manual_ref_count: d.manual_ref_count || 0,   // ข้อที่ยังอ้างเลขมาตรา ต้องเปิดตัวบทเอง
+    unverified_number_count: d.unverified_number_count || 0,  // ข้อที่มีตัวเลขหาที่มาไม่เจอ
+    // วันบังคับใช้: calc = โค้ดคำนวณจากกฎในตัวบท · ai = ถอยไปใช้ค่าที่ AI เขียน (ยังไม่ได้ตรวจ)
+    effective_source: d.effective_source || 'none', effective_note: d.effective_note || '',
+    effective_ai_mismatch: d.effective_ai_mismatch || null,
     related_laws: d.related_laws || [], repeals: d.repeals || [] }
 }
 
@@ -71,6 +77,10 @@ const toReqRows = (reqs = []) => reqs.map(q => ({
   from_law_url: q.from_law_url || '',             // ลิงก์ไฟล์ตัวบทของกฎหมายต้นทาง
   from_law_confidence: q.from_law_confidence || '',
   from_law_note: q.from_law_note || '',
+  needs_manual_ref: !!q.needs_manual_ref,   // ยังอ้างเลขมาตราของกฎหมายที่ดึงตัวบทไม่ได้
+  ref_inlined: !!q.ref_inlined,             // เขียนใหม่ให้อ่านจบในตัวแล้วในขั้นตอนขัดเกลา
+  source_excerpt: q.source_excerpt || '',   // ข้อความจากตัวบทที่รองรับข้อนี้
+  unverified_numbers: q.unverified_numbers || null,  // ตัวเลขที่หาที่มาในตัวบทไม่เจอ
 }))
 
 // ชื่อกฎหมายเต็มยาวเกินกว่าจะใส่ใน badge — ตัดให้สั้น เก็บชื่อเต็มไว้ใน title
@@ -103,15 +113,19 @@ const REL_STATUS = {
   // AI อ้างถึงฉบับนี้ แต่ยืนยันกับตัวบทไม่ได้ จึงไม่ดึง · ไม่ใช่งานค้างของ จป.
   // แต่ต้องเห็น เผื่อเป็นการอ้างถึงจริงที่ระบบตรวจไม่เจอ (เช่น แนบ PDF ที่เราอ่านข้อความไม่ได้)
   rejected:  { label: () => 'ไม่ได้ดึง — ยืนยันการอ้างถึงไม่ได้', color: 'var(--ink-faint)' },
+  // อ่านตัวบทได้และสรุปสาระมาแล้ว แม้ไม่มีข้อที่บริษัทต้องทำ — สาระถูกเอาไปเขียน
+  // แทนคำว่า "ตามมาตรา X" ในข้อของฉบับหลักแล้ว ไม่ใช่งานค้างของ จป.
+  explained: { label: () => 'อ่านแล้ว — สรุปสาระใส่ในข้อที่อ้างถึงแล้ว', color: 'var(--ink-soft)' },
 }
 
 function RelatedLawsPanel({ items = [] }) {
   if (!items.length) return null
   // เรียงตามสิ่งที่ต้องลงมือทำ: not_found/manual (ต้องตรวจเอง) → resolved → rejected (ไม่ได้ดึง ไม่ใช่งานค้าง)
-  const rank = x => x.status === 'rejected' ? 2 : x.status === 'resolved' ? 1 : 0
+  const DONE = new Set(['resolved', 'explained'])   // ระบบจัดการให้แล้ว ไม่ใช่งานค้าง
+  const rank = x => x.status === 'rejected' ? 2 : DONE.has(x.status) ? 1 : 0
   const sorted = [...items].sort((a, b) => rank(a) - rank(b))
   // rejected ไม่นับเป็นงานค้าง — ระบบตัดสินแล้วว่าตัวบทไม่ได้อ้างถึง ไม่ใช่ของที่ จป. ต้องไปเปิดเอง
-  const pending = sorted.filter(x => x.status !== 'resolved' && x.status !== 'rejected').length
+  const pending = sorted.filter(x => !DONE.has(x.status) && x.status !== 'rejected').length
 
   return (
     <details open={pending > 0} style={{ margin: '0 0 10px', fontSize: 12 }}>
@@ -125,10 +139,14 @@ function RelatedLawsPanel({ items = [] }) {
           return (
             <div key={i} style={{ padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: x.status === 'resolved' ? 400 : 600 }}>
+                <span style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: DONE.has(x.status) ? 400 : 600 }}>
                   {x.law_name || '—'}{x.clause && x.clause !== 'ทั้งฉบับ' ? ` · ${x.clause}` : ''}
                 </span>
                 <span style={{ fontSize: 11.5, color: st.color, whiteSpace: 'nowrap' }}>{st.label(x.req_count || 0)}</span>
+                {x.depth > 1 && x.via && (
+                  <span title={`ตัวบทฉบับนี้ถูกตามต่อ เพราะ "${x.via}" บอกว่าเงื่อนไขจริงอยู่ที่นี่`}
+                    style={{ fontSize: 11, color: 'var(--ink-faint)', cursor: 'help' }}>↳ ตามต่อจาก {shortLaw(x.via)}</span>
+                )}
                 {x.source_url && (
                   <a href={x.source_url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: 'var(--brand)', marginLeft: 'auto' }}>เปิดตัวบท ↗</a>
                 )}
@@ -227,6 +245,27 @@ function ReqRow({ r, i, onChange, onRemove, suggest }) {
         <textarea className="form-input" rows={1} style={{ marginTop: 0 }} value={r.req_text} onChange={e => set('req_text', e.target.value)} placeholder="เนื้อหาข้อปฏิบัติ…" />
         <button className="btn btn-ghost" style={{ padding: '7px 9px' }} onClick={() => onRemove(i)}><I n="x" /></button>
       </div>
+      {/* ตัวเลขที่ไม่พบในตัวบท — อันตรายสุดในบรรดาป้ายทั้งหมด เพราะอัตรา/วงเงิน/วันที่ผิด
+          ทำให้ทะเบียนใช้ตรวจ ISO ไม่ได้ · เคยเจอจริง: ร้อยละ 50 กลายเป็น 100, 2571 เป็น 2570 */}
+      {r.unverified_numbers?.length > 0 && (
+        <div style={{ marginLeft: 30, marginTop: 4 }}>
+          <span title={`ตัวเลข ${r.unverified_numbers.join(', ')} ไม่พบในข้อความที่คัดมาจากตัวบท — เปิดตัวบทตรวจก่อนอนุมัติ${r.source_excerpt ? '\n\nข้อความจากตัวบท: ' + r.source_excerpt : ''}`}
+            style={{ display: 'inline-block', fontSize: 11, lineHeight: 1.5, padding: '1px 7px', borderRadius: 999,
+              background: 'var(--warn)', color: '#fff', cursor: 'help', fontWeight: 600 }}>
+            ⚠ ตรวจตัวเลข {r.unverified_numbers.join(', ')} — ไม่พบในตัวบท
+          </span>
+        </div>
+      )}
+      {/* ข้อที่ยังอ้างเลขมาตราของกฎหมายที่ดึงตัวบทไม่ได้ — อ่านข้อนี้จบแล้วยังไม่รู้ว่าต้องทำอะไร */}
+      {r.needs_manual_ref && (
+        <div style={{ marginLeft: 30, marginTop: 4 }}>
+          <span title="ข้อนี้อ้างถึงมาตราของกฎหมายฉบับอื่นที่ระบบดึงตัวบทมาไม่ได้ — ต้องเปิดฉบับนั้นอ่านเอง แล้วเขียนสาระลงในข้อนี้แทนเลขมาตรา"
+            style={{ display: 'inline-block', fontSize: 11, lineHeight: 1.5, padding: '1px 7px', borderRadius: 999,
+              background: 'var(--warn-bg)', color: 'var(--warn)', cursor: 'help' }}>
+            ⚠ ยังอ้างเลขมาตรา — ต้องเปิดตัวบทเติมเอง
+          </span>
+        </div>
+      )}
       {/* Skill 3 · ข้อที่ดึงมาจากกฎหมายที่ถูกอ้างถึง — เปิดตัวบทตรวจเองได้ + เตือนข้อที่ยังไม่ยืนยัน */}
       {r.from_related_law && (
         <div style={{ marginLeft: 30, marginTop: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -272,18 +311,21 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
   // Skill 3 · count = จำนวน "ข้อ" ที่ดึงมาได้ · unresolved = จำนวน "ฉบับ" ที่หาตัวบทไม่พบ · laws = รายฉบับ
   const [related, setRelated] = useState({ count: 0, unresolved: 0, laws: [] })
   const [repeals, setRepeals] = useState([])   // กฎหมายที่ตัวบทสั่งให้ยกเลิก
+  const [effInfo, setEffInfo] = useState(null) // ที่มาของวันบังคับใช้ + กรณี AI บวกวันไม่ตรง
   // id ของแถวประวัติที่บันทึกทันทีหลังสรุปเสร็จ · กด "เก็บลงคิว" จะอัปเดตแถวเดิม ไม่สร้างซ้ำ
   const [histId, setHistId] = useState(null)
   const [histMeta, setHistMeta] = useState(null)   // ผล Skill 3 ของรอบนี้ ใช้ซ้ำตอนเก็บลงคิว
 
   async function analyze() {
     if (!src.trim() || busy) return
-    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null)
+    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null); setEffInfo(null)
     try {
-      const { law: l, requirements, related_count, unresolved_count, rejected_count, related_laws, repeals: rp } = await analyzeSource({ source: src, sourceUrl: srcUrl.trim() })
+      const { law: l, requirements, related_count, unresolved_count, rejected_count, related_laws, repeals: rp,
+        effective_source, effective_note, effective_ai_mismatch } = await analyzeSource({ source: src, sourceUrl: srcUrl.trim() })
       setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
       setReqs(toReqRows(requirements))
       setRelated({ count: related_count, unresolved: unresolved_count, laws: related_laws }); setRepeals(rp || [])
+      setEffInfo({ source: effective_source, note: effective_note, mismatch: effective_ai_mismatch })
       const rows = toReqRows(requirements)
       await logRun(l, rows, { related_count, unresolved_count, rejected_count },
         /^https?:\/\//i.test(src.trim()) ? 'link' : 'text')
@@ -295,13 +337,15 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
   async function analyzePdf(file) {
     if (!file || busy) return
     if (file.size > 4 * 1024 * 1024) { toast('ไฟล์ PDF ใหญ่เกิน 4MB — กรุณาแยกไฟล์ หรือ copy ตัวบทมาวางแทน'); return }
-    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null)
+    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null); setEffInfo(null)
     try {
       const pdfBase64 = await readFileBase64(file)
-      const { law: l, requirements, related_count, unresolved_count, rejected_count, related_laws, repeals: rp } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
+      const { law: l, requirements, related_count, unresolved_count, rejected_count, related_laws, repeals: rp,
+        effective_source, effective_note, effective_ai_mismatch } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
       setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
       setReqs(toReqRows(requirements))
       setRelated({ count: related_count, unresolved: unresolved_count, laws: related_laws }); setRepeals(rp || [])
+      setEffInfo({ source: effective_source, note: effective_note, mismatch: effective_ai_mismatch })
       await logRun(l, toReqRows(requirements), { related_count, unresolved_count, rejected_count }, 'pdf')
       toast('สรุปจากไฟล์ PDF แล้ว — ตรวจ/แก้ไขได้', 'success')
     } catch (e) { toast('สรุป PDF ไม่สำเร็จ: ' + e.message) }
@@ -351,7 +395,7 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
         status: 'imported', searched_at: new Date().toISOString(),
       })
       toast('เก็บลงคิว "รอเข้าทะเบียน" แล้ว', 'success')
-      setLaw(null); setReqs([]); setSrc(''); setSrcUrl(''); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null)
+      setLaw(null); setReqs([]); setSrc(''); setSrcUrl(''); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null); setEffInfo(null)
       onQueued && onQueued()
     } catch (e) { toast('บันทึกลงคิวไม่สำเร็จ: ' + e.message) }
     setSaving(false)
@@ -411,7 +455,20 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10, marginTop: 8 }}>
             <div><label className="form-label">กระทรวง</label><input className="form-input" style={{ marginTop: 0 }} value={law.ministry || ''} onChange={e => setLawField('ministry', e.target.value)} /></div>
             <div><label className="form-label">วันที่ประกาศ</label><input className="form-input" style={{ marginTop: 0 }} value={law.announce_date || ''} onChange={e => setLawField('announce_date', e.target.value)} /></div>
-            <div><label className="form-label">วันบังคับใช้</label><input className="form-input" style={{ marginTop: 0 }} value={law.effective_date || ''} onChange={e => setLawField('effective_date', e.target.value)} /></div>
+            <div>
+              <label className="form-label">วันบังคับใช้</label>
+              <input className="form-input" style={{ marginTop: 0 }} value={law.effective_date || ''} onChange={e => setLawField('effective_date', e.target.value)} />
+              {/* บอกที่มาเสมอ — วันบังคับใช้คือตัวตั้งของการเตือนทั้งระบบ ผิดวันเดียวเตือนผิดหมด */}
+              {effInfo?.note && (
+                <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.5,
+                  color: effInfo.mismatch ? 'var(--warn)' : 'var(--ink-faint)' }}>
+                  {effInfo.source === 'calc' && '✓ ระบบคำนวณจากตัวบท: '}
+                  {effInfo.source === 'ai' && '⚠ ยังไม่ได้ตรวจ: '}
+                  {effInfo.note}
+                  {effInfo.mismatch && <><br/>⚠ AI คำนวณมาเป็น {effInfo.mismatch} ซึ่งไม่ตรงกับที่ระบบคำนวณ — ระบบใช้ค่าของตัวเองแล้ว</>}
+                </div>
+              )}
+            </div>
           </div>
           <label className="form-label" style={{ marginTop: 8 }}>เอกสาร/แบบฟอร์มที่เกี่ยวข้อง</label>
           <input className="form-input" style={{ marginTop: 0 }} value={law.documents || ''} onChange={e => setLawField('documents', e.target.value)} />
