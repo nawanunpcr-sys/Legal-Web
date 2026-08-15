@@ -302,7 +302,12 @@ function rateLimited(ip){
   return hits.length > RATE_LIMIT
 }
 
+// Vercel ตัดฟังก์ชันที่ 300 วิ (vercel.json) · กันเวลาไว้ 45 วิให้ขั้นตอนหลังบ้านทำงานและส่งผลกลับ
+// เกินกว่านี้ = 504 ซึ่งเสียทั้งผลสรุปและเงินที่จ่ายไปแล้วทั้งหมด
+const FN_BUDGET_MS = 255_000
+
 export default async function handler(req,res){
+  const startedAt = Date.now()
   if(req.method!=='POST') return res.status(405).json({error:'POST only'})
   if(!sameOrigin(req)) return res.status(403).json({error:'คำขอไม่ได้มาจากโดเมนของแอป'})
   if(rateLimited(clientIp(req))) return res.status(429).json({error:'เรียกใช้งานถี่เกินไป กรุณารอสักครู่แล้วลองใหม่'})
@@ -396,7 +401,8 @@ export default async function handler(req,res){
     const { kept: verifiedRefs, rejected: rejectedRefs } = verifyRelatedRefs(parsed.related_laws, verifyText)
     if(verifiedRefs.length){
       try{
-        merged = await relateAndMerge(verifiedRefs, parsed.requirements||[], law.name||'')
+        merged = await relateAndMerge(verifiedRefs, parsed.requirements||[], law.name||'',
+          startedAt + FN_BUDGET_MS)
       }catch(e){
         console.error('osh-law-relate failed:', e)
         // ล้มเหลวต้องไม่ทำให้การสรุปทั้งหมดพัง — ใช้ผลของฉบับหลักต่อไปตามเดิม
@@ -404,7 +410,9 @@ export default async function handler(req,res){
       }
     }
     if(!verifiedRefs.length){
-      const inlined = await inlineSectionRefs(merged.requirements, [])
+      const inlined = Date.now() - startedAt < FN_BUDGET_MS - 45_000
+        ? await inlineSectionRefs(merged.requirements, [])
+        : { reqs: merged.requirements, changed: 0, unresolved: [] }
       merged = { ...merged, requirements: inlined.reqs,
         inlined_count: inlined.changed, manual_ref_count: inlined.unresolved.length }
     }
@@ -450,6 +458,8 @@ export default async function handler(req,res){
       related_count:merged.related_count, unresolved_count:merged.unresolved_count,
       rejected_count:rejectedRows.length,
       inlined_count:merged.inlined_count||0, manual_ref_count:merged.manual_ref_count||0,
-      unverified_number_count:numCheck.flagged})
+      unverified_number_count:numCheck.flagged,
+      skipped_for_time:merged.skipped_for_time||0,
+      elapsed_ms:Date.now()-startedAt})
   }catch(e){ return res.status(500).json({error:String(e&&e.message||e)}) }
 }

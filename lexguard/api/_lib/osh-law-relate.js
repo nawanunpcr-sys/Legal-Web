@@ -502,7 +502,10 @@ export async function inlineSectionRefs(mainReqs, resolved = []){
 // ข้อของฉบับหลักมาก่อนเสมอ ตามด้วยข้อจากกฎหมายที่ถูกอ้าง · req_no ไล่ใหม่ต่อเนื่องทั้งชุด
 function fingerprint(t){ return String(t || '').replace(/\s+/g, '').slice(0, 60) }
 
-export async function relateAndMerge(relatedLaws, mainReqs, parentName){
+// deadlineAt = เวลา (ms) ที่ต้องคืนผลให้ได้ · Vercel ตัดฟังก์ชันที่ 300 วิ
+// หมดเวลาแล้วต้องคืนของที่ได้มาแล้ว ไม่ใช่ทำต่อจนโดนตัดทั้งคำขอ (504 = เสียทั้งหมด เสียเงินฟรีด้วย)
+export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadlineAt = Infinity){
+  const timeLeft = () => deadlineAt - Date.now()
   const main = Array.isArray(mainReqs) ? mainReqs : []
   const all = Array.isArray(relatedLaws) ? relatedLaws : []
 
@@ -522,7 +525,11 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName){
   // เทียบที่ "ชื่อ" อย่างเดียว (ตัดส่วน clause ทิ้ง) เพื่อกันทุกกรณีไม่ว่าจะอ้างทั้งฉบับหรือรายข้อ
   const selfName = normalizeRefKey(parentName || '', '').split('|')[0]
 
+  let skippedForTime = 0
   for(let depth = 1; depth <= MAX_DEPTH && frontier.length && budget > 0; depth++){
+    // ชั้น 1 ต้องมีเวลาอย่างน้อย 70 วิ · ชั้น 2 (ตามต่อการมอบอำนาจ) ต้องการ 90 วิ เพราะยอมข้ามได้
+    const need = depth === 1 ? 70_000 : 90_000
+    if(timeLeft() < need){ skippedForTime += frontier.length; break }
     // ตัดตัวที่เคยแตะแล้วออกก่อนนับโควตา
     const fresh = []
     for(const r of frontier){
@@ -589,7 +596,10 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName){
   ]
   // 5.1) ตอนนี้ตัวบทที่ถูกอ้างถึงอยู่ในมือแล้ว — ย้อนกลับไปเติมสาระลงในข้อที่ยังอ้างเลขมาตรา
   //      ต้องทำหลังรวม เพราะข้อของกฎหมายอ้างอิงก็อ้างข้ามมาตรากันเองได้
-  const inlined = await inlineSectionRefs(requirements, results)
+  // เรียบเรียงใหม่ใช้เวลาอีก 1 call — ข้ามได้ถ้าเวลาเหลือน้อย ข้อจะยังอ้างเลขมาตราแต่ไม่หาย
+  const inlined = timeLeft() > 45_000
+    ? await inlineSectionRefs(requirements, results)
+    : { reqs: requirements, changed: 0, unresolved: [] }
   requirements = inlined.reqs.map((r, i) => ({ ...r, req_no: i + 1 }))
 
   // 6) deferred เข้า related_laws ด้วย เพื่อให้เห็นว่ายังมีที่ยังไม่ได้ดึง
@@ -603,6 +613,11 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName){
     ...deferred.map(r => ({ law_name: r.law_name || '', clause: r.clause || 'ทั้งฉบับ',
       status: 'manual', depth: 0, via: r.via || '',
       source_url: '', resolved_text: '', confidence: '', note: 'เกินจำนวนที่ดึงได้ในรอบเดียว',
+      from_cache: false, req_count: 0 })),
+    ...frontier.map(r => ({ law_name: r.law_name || '', clause: r.clause || 'ทั้งฉบับ',
+      status: 'manual', depth: 0, via: r.via || '',
+      source_url: '', resolved_text: '', confidence: '',
+      note: 'ยังไม่ได้ดึง — เวลาในรอบนี้ไม่พอ ลองสรุปซ้ำอีกครั้งจะดึงต่อจาก cache ได้เร็วขึ้น',
       from_cache: false, req_count: 0 }))
   ]
 
@@ -613,6 +628,7 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName){
     // นับเฉพาะฉบับที่ จป. ต้องไปเปิดเอง — explained ระบบอ่านและสรุปสาระมาให้แล้ว
     unresolved_count: results.filter(r => r.status !== 'resolved' && r.status !== 'explained').length,
     inlined_count: inlined.changed,                    // ข้อที่เขียนใหม่ให้อ่านจบในตัวแล้ว
+    skipped_for_time: skippedForTime,                  // ฉบับที่ยังไม่ได้ดึงเพราะเวลาไม่พอ
     manual_ref_count: inlined.unresolved.length        // ข้อที่ยังอ้างเลขมาตรา ต้องเปิดตัวบทเอง
   }
 }
