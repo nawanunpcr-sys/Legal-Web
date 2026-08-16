@@ -251,7 +251,7 @@ export async function fetchRelatedLaw(ref){
         const hit = Array.isArray(rows) ? rows[0] : null
         // explained ก็ต้องอ่านจาก cache — ระบบเคยอ่านตัวบทฉบับนั้นและได้คำอธิบายไว้แล้ว
         // ไม่งั้นบทให้อำนาจที่ถูกอ้างบ่อยๆ จะถูกไปดึงใหม่ทุกครั้ง จ่ายค่า AI ซ้ำโดยไม่ได้อะไรเพิ่ม
-        if(hit && (hit.resolve_status === 'resolved' || hit.resolve_status === 'explained')){
+        if(hit && ['resolved','explained','link_only'].includes(hit.resolve_status)){
           const age = (Date.now() - new Date(hit.resolved_at).getTime()) / 86400000
           if(age <= CACHE_DAYS){
             const cachedReqs = Array.isArray(hit.requirements) ? hit.requirements : []
@@ -335,21 +335,29 @@ export async function fetchRelatedLaw(ref){
   }
 
   // 3) ตรวจก่อนเชื่อ — ด่านนี้สำคัญที่สุด
-  let status = out.status === 'resolved' ? 'resolved' : 'not_found'
+  //
+  // หลักการ: ตัดสินจาก "หลักฐานที่มี" ไม่ใช่จาก "ป้ายที่โมเดลติดมาเอง"
+  // เดิมถ้าโมเดลตอบ status:'not_found' มา บล็อกตรวจทั้งหมดจะถูกข้าม สถานะค้างที่ not_found
+  // ทั้งที่มันคายคำอธิบายพร้อมข้อความยืนยันมาให้แล้ว → จ่ายเงินดึงมาแต่ไม่ได้ใช้
+  // (เจอจริง: พ.ร.บ.วัตถุอันตราย 2535 — not_found แต่มี explain เก็บไว้ในฐาน)
   let note = out.note || ''
-  let reqs = Array.isArray(out.requirements) ? out.requirements : []
-  // คำอธิบายสาระต้องมีข้อความจากตัวบทรองรับ ใช้เกณฑ์เดียวกับ requirements — ไม่มี = ถือว่าไม่มีคำอธิบาย
-  // นี่คือผลลัพธ์หลักของ Skill 3 · ต้องรอดทุกด่าน แม้มาตรานั้นไม่สร้างหน้าที่ให้บริษัท
-  let explain = (String(out.explain || '').trim() && String(out.explain_excerpt || '').trim())
-    ? String(out.explain).trim() : ''
+  const rawUrl = String(out.source_url || '').trim()
+  const trustedUrl = hostAllowed(rawUrl)
 
-  // (ก) source_url ต้องอยู่ในโดเมนที่เชื่อถือได้ ไม่ผ่าน = ทิ้ง requirements ทั้งก้อน
-  if(status === 'resolved' && !hostAllowed(out.source_url)){
-    status = 'not_found'; reqs = []; explain = ''
-    note = (note ? note + ' · ' : '') + 'แหล่งอ้างอิงไม่อยู่ในโดเมนที่เชื่อถือได้'
+  // requirements เชื่อได้เฉพาะตอนโมเดลบอกว่า resolved — ตอบ not_found แล้วแนบข้อมาด้วยถือว่าขัดแย้งกันเอง
+  let reqs = (out.status === 'resolved' && Array.isArray(out.requirements)) ? out.requirements : []
+
+  // (ก) แหล่งต้องอยู่ในโดเมนที่เชื่อถือได้ ไม่ผ่าน = ห้ามเอา "เนื้อหา" มาใช้
+  //     แต่ "ลิงก์" ยังให้ไว้ได้ เพราะผู้ใช้เปิดอ่านเองแล้วตัดสินใจเองต่างจากการที่ระบบเอามาสรุปให้
+  let explain = (trustedUrl && String(out.explain || '').trim() && String(out.explain_excerpt || '').trim())
+    ? String(out.explain).trim() : ''
+  if(!trustedUrl && rawUrl){
+    reqs = []
+    note = (note ? note + ' · ' : '') + 'แหล่งที่ค้นเจอไม่อยู่ในโดเมนที่เชื่อถือได้ — ให้ลิงก์ไว้เปิดตรวจเอง'
   }
+
   // (ข) ข้อที่ไม่มี source_excerpt = โมเดลแต่งจากความจำ ไม่มีตัวบทรองรับ → ตัดทิ้งทั้งข้อ
-  if(status === 'resolved'){
+  if(reqs.length){
     const before = reqs.length
     reqs = reqs.filter(r => r && String(r.source_excerpt || '').trim() && String(r.req_text || '').trim())
     if(reqs.length < before) note = (note ? note + ' · ' : '') + `ตัด ${before - reqs.length} ข้อที่ไม่มีข้อความจากตัวบทรองรับ`
@@ -358,17 +366,30 @@ export async function fetchRelatedLaw(ref){
       note = (note ? note + ' · ' : '') + `แสดง ${MAX_REQ_PER_LAW} ข้อแรกจาก ${reqs.length} ข้อ`
       reqs = reqs.slice(0, MAX_REQ_PER_LAW)
     }
-    // (ง) ไม่เหลือข้อเลย = อ่านตัวบทได้แต่ไม่มีหน้าที่ของบริษัท — คนละเรื่องกับ "ค้นไม่เจอ"
-    //     เดิมยัดเป็น not_found ทั้งคู่ ทำให้ จป. ถูกสั่งให้ไปเปิดกฎหมายที่ระบบอ่านให้แล้ว
-    // ไม่มีข้อกำหนดแต่มีคำอธิบายที่ยืนยันได้ = ได้ของที่ต้องการแล้ว (เอาไปเขียนแทนการอ้างอิง)
-    // ไม่ใช่ "หาไม่เจอ" — เดิมยัดเป็น not_found ทำให้เนื้อหาที่ดึงมาได้ถูกทิ้งทั้งที่คือเป้าหมายหลัก
-    if(!reqs.length){
-      status = explain ? 'explained' : 'not_found'
-      note = (note ? note + ' · ' : '') + (explain
-        ? 'อ่านตัวบทแล้ว — ได้คำอธิบายสาระ แต่ไม่มีข้อที่บริษัทต้องทำเอง'
-        : 'ไม่เหลือข้อที่ใช้ได้')
-    }
   }
+
+  // (ง) สรุปสถานะจากหลักฐานที่เหลือ — ทำนอกเงื่อนไข resolved เสมอ
+  //     ลำดับ: มีข้อกำหนด > มีคำอธิบายที่ยืนยันได้ > มีแค่ลิงก์ > ไม่มีอะไรเลย
+  let status
+  if(reqs.length && trustedUrl){
+    status = 'resolved'
+  } else if(explain){
+    status = 'explained'
+    note = (note ? note + ' · ' : '') + 'อ่านตัวบทแล้ว — ได้คำอธิบายสาระ แต่ไม่มีข้อที่บริษัทต้องทำเอง'
+  } else if(rawUrl){
+    // สรุปเป็นข้อความไม่ได้ (ตัวบทใหญ่เกิน อ่านไม่ออก หรือแหล่งไม่น่าเชื่อถือ)
+    // แต่ยังรู้ว่าตัวบทอยู่ที่ไหน — ให้ลิงก์ไว้ดีกว่าไม่ให้อะไรเลย
+    status = 'link_only'
+    reqs = []
+    note = (note ? note + ' · ' : '') + (trustedUrl
+      ? 'สรุปเนื้อหาไม่สำเร็จ แต่หาลิงก์ตัวบทได้ — เปิดอ่านเองได้'
+      : 'สรุปเนื้อหาไม่ได้และแหล่งยังไม่ยืนยัน — ตรวจลิงก์ก่อนใช้')
+  } else {
+    status = 'not_found'
+    reqs = []
+    note = (note ? note + ' · ' : '') + 'หาตัวบทไม่พบ และไม่มีลิงก์ให้เปิดเอง'
+  }
+
   // อ่านตัวบทได้จริงหรือเปล่า — แยกจาก status เพราะ explained ก็อ่านได้ แค่ไม่มีข้อกำหนดออกมา
   const readOk = (status === 'resolved' || status === 'explained') && !!(explain || String(out.resolved_text || '').trim())
   // บอกผู้ตรวจว่าข้อชุดนี้อ่านจากไฟล์ตัวบทจริง ไม่ใช่จาก snippet ของผลค้นหา
@@ -382,7 +403,7 @@ export async function fetchRelatedLaw(ref){
     ? out.related_laws.filter(c => c && String(c.law_name || '').trim()) : []
 
   const result = { ...base, status, read_ok: readOk, explain, is_delegation: out.is_delegation === true, from_cache: false,
-    law_full_name: out.law_full_name || lawName, source_url: out.source_url || '',
+    law_full_name: out.law_full_name || lawName, source_url: rawUrl,
     resolved_text: out.resolved_text || '', confidence: out.confidence || '', note,
     requirements: reqs, related_laws: childRefs }
 
@@ -644,6 +665,7 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
     related_laws,
     related_count: relatedReqs.length,                                   // จำนวน "ข้อ" ไม่ใช่จำนวนฉบับ
     // นับเฉพาะฉบับที่ จป. ต้องไปเปิดเอง — explained ระบบอ่านและสรุปสาระมาให้แล้ว
+    // link_only ยังนับเป็นงานค้าง เพราะ จป. ต้องเปิดลิงก์อ่านเอง · explained ระบบสรุปให้แล้ว
     unresolved_count: results.filter(r => r.status !== 'resolved' && r.status !== 'explained').length,
     inlined_count: inlined.changed,                    // ข้อที่เขียนใหม่ให้อ่านจบในตัวแล้ว
     skipped_for_time: skippedForTime,                  // ฉบับที่ยังไม่ได้ดึงเพราะเวลาไม่พอ
