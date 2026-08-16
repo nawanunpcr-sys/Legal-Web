@@ -29,10 +29,14 @@ const MAX_TOTAL_LOOKUPS = 12 // เพดานรวม ทุกชั้น�
 // ต่างกันตรงนี้: ตามเพราะ "จำเป็นต้องรู้จึงจะเขียนข้อให้จบได้" ไม่ใช่เพราะถูกอ้างถึง
 const MAX_DEPTH = 2
 const MAX_DEPTH2_LOOKUPS = 4   // กันชั้น 2 กินโควตาจนเบียดของชั้น 1 ที่สำคัญกว่า
-const MAX_ANCHOR_LOOKUPS = 6 // เพดานจำนวน "คำถาม" ต่อการสรุป 1 ครั้ง
-                             // คำถาม 1 ข้อใช้ได้ถึง 3 คำขอ (ค้น → อ่านไฟล์ → ถอดตาราง)
-                             // จึงแพงกว่าการดึงมาตราเจาะจง ต้องมีเพดานของตัวเอง
-                             // ได้สิทธิ์ใช้โควตารวมก่อน specific เพราะเป็นสิ่งที่ผู้ใช้ถามหาจริง
+// เพดานจำนวน "คำถาม" ต่อการสรุป 1 ครั้ง — ตั้งเท่าโควตารวม เพื่อให้ "ตามต่อได้ครบทุกจุด"
+// เดิมตั้งไว้ 6 เพราะกลัวเวลาไม่พอ แต่กฎกระทรวงฉบับเดียวมีจุดที่ต้องถามได้ถึง 8 จุด
+// เหลือ 2 จุดไม่ได้คำตอบ = ผู้ใช้ยังต้องไปเปิดเอง ซึ่งคือปัญหาที่ระบบตั้งใจแก้ตั้งแต่แรก
+// ที่ทำให้ตั้งสูงได้โดยไม่ชนเพดานเวลา:
+//   - คำถามทุกข้อยิงขนานกัน เวลารวม ≈ สายที่ยาวที่สุด ไม่ใช่ผลรวม
+//   - pending ไม่เสียคำขอเลย (ในเอกสารทดสอบคือ 7 จาก 16 จุด)
+//   - ข้ามรอบอ่านไฟล์เมื่อผลค้นผ่านด่านครบแล้ว (ดู firstRoundComplete ใน anchor-answer.js)
+const MAX_ANCHOR_LOOKUPS = MAX_TOTAL_LOOKUPS
 const MAX_REQ_PER_LAW = 15   // กัน พ.ร.บ. ใหญ่ดึงมา 70 มาตราจนตารางใช้งานไม่ได้
 
 const SUPA_HEADERS = { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'content-type': 'application/json' }
@@ -549,8 +553,11 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
   //   whole_law  อ้างกฎหมายทั้งชุด   → แปลงเป็นคำถามก่อนค้น (ห้ามดึงทั้งฉบับ)
   //   specific   อ้างมาตราเจาะจง     → ดึงมาตรานั้น (โฟลว์เดิม)
   const all = classifyRefs(relatedLaws)
+  // pending ไม่ต้องผ่านด่าน needs_lookup — มันไม่ใช่การ "ไปดึงอะไร" และไม่เสียเงินสักบาท
+  // ถ้ากรองทิ้งตาม needs_lookup ที่โมเดลตั้งมา จะเสียสถานะ "รอประกาศ" ไปฟรี ๆ
+  // ทั้งที่นั่นคือข้อมูลที่เปลี่ยนวิธีประเมินของ จป. (ประเมินไม่ได้ ≠ ไม่สอดคล้อง)
+  const pendingRefs = all.filter(r => r && r.ref_type === 'pending')
   const wanted = all.filter(r => r && r.needs_lookup === true)
-  const pendingRefs = wanted.filter(r => r.ref_type === 'pending')
   const anchorRefs = wanted.filter(r => r.ref_type === 'whole_law')
   const specificRefs = wanted.filter(r => r.ref_type === 'specific')
 

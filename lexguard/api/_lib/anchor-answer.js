@@ -228,7 +228,22 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
   //    web_search เห็นแค่ snippet จึงมักไม่มี excerpt ทำให้ตกด่านหลักฐานจนเหลือศูนย์
   let pdfB64 = ''
   let url = String(out.source_url || '').trim()
-  if(hostAllowed(url) && timeLeft() > 50_000){
+
+  // ข้ามรอบนี้เมื่อผลค้นผ่านด่านครบแล้ว — ประหยัด 1 คำขอต่อคำถาม โดยไม่ลดความแม่น
+  // เกณฑ์ต้องครบทุกข้อ ไม่งั้นถอยไปอ่านไฟล์จริงตามเดิม:
+  //   ตอบได้ · โดเมนเชื่อถือได้ · มีข้อความจากตัวบทรองรับ · ไม่ได้ชี้ต่อไปตาราง
+  // ข้อสุดท้ายสำคัญที่สุด — ชี้ไปตารางแปลว่ายังไม่ได้คำตอบ ต้องอ่านไฟล์ต่ออยู่ดี
+  const firstRoundComplete =
+    out.status === 'answered' &&
+    hostAllowed(url) &&
+    String(out.source_excerpt || '').trim().length >= 20 &&
+    String(out.answer_plain || '').trim() &&
+    !pointsToTable(out)
+
+  let skippedRead = false
+  if(firstRoundComplete){
+    skippedRead = true
+  } else if(hostAllowed(url) && timeLeft() > 50_000){
     pdfB64 = await fetchPdfBase64(url) || ''
     if(pdfB64){
       const better = await askClaude({
@@ -310,6 +325,7 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
     // ที่มาของคำตอบต้องติดไปด้วยเสมอ — จป. เอาไปอ้างกับผู้ตรวจ ISO ต้องรู้ว่าอ้างจากอะไรได้
     note: [
       fromTable ? 'คำตอบมาจากตารางท้ายกฎหมาย' : '',
+      skippedRead ? 'ใช้ผลจากการค้นโดยตรง (ผ่านด่านตรวจครบ)' : '',
       isSecondarySource(url)
         ? 'อ่านจากฉบับรวมขององค์กรวิชาชีพ ไม่ใช่ต้นฉบับราชกิจจาฯ — ฉบับรวมมักมีเชิงอรรถบอกว่าข้อไหนถูกแก้แล้ว แต่ควรตรวจกับต้นฉบับก่อนใช้อ้างอิง'
         : '',
