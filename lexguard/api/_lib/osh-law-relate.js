@@ -305,15 +305,32 @@ export async function fetchRelatedLaw(ref){
   //   web_search เห็นแค่ snippet จึงมักไม่มี source_excerpt ทำให้ถูกด่าน (ข) ตัดทิ้งจนเหลือศูนย์
   //   อ่านจากไฟล์จริงจะได้ excerpt ที่คัดจากตัวบทจริง ๆ · ดึงไม่ได้ก็ใช้ผล web_search ตามเดิม
   let fromFile = false
+  let skippedSecondRound = false
   const pdfUrl = String(out.source_url || '')          // URL ที่เราดึงไฟล์มาได้จริง — ใช้อันนี้เสมอ
-  const pdfB64 = await fetchPdfBase64(pdfUrl)          //   ห้ามใช้ค่าที่โมเดลคายกลับมาในรอบที่ 2
-  if(pdfB64){
-    const better = await readLawFromPdf(
-      { lawName, clause, parent_law: ref?.parent_law, why_needed: ref?.why_needed },
-      pdfUrl, pdfB64)
-    if(better && better.status === 'resolved' && Array.isArray(better.requirements) && better.requirements.length){
-      out = { ...better, source_url: pdfUrl }
-      fromFile = true
+  //   ห้ามใช้ค่าที่โมเดลคายกลับมาในรอบที่ 2
+
+  // รอบแรกผ่านด่านครบแล้วก็ไม่ต้องอ่านไฟล์ซ้ำ — เดิมอ่านซ้ำเสมอเมื่อ source_url เป็น .pdf
+  // ซึ่งกินเวลาอีก 1 call (ดาวน์โหลด + ให้โมเดลอ่าน PDF ทั้งฉบับ) โดยไม่ได้อะไรเพิ่ม
+  // เกณฑ์ต้องครบทั้ง 3 ข้อ ไม่งั้นถอยไปอ่านไฟล์จริงตามเดิมทุกกรณี (รวม explained / not_found)
+  const firstRoundComplete =
+    out.status === 'resolved' &&
+    hostAllowed(pdfUrl) &&
+    !!String(out.explain || '').trim() && !!String(out.explain_excerpt || '').trim() &&
+    (Array.isArray(out.requirements) ? out.requirements : []).some(
+      r => r && String(r.source_excerpt || '').trim() && String(r.req_text || '').trim())
+
+  if(firstRoundComplete){
+    skippedSecondRound = true
+  } else {
+    const pdfB64 = await fetchPdfBase64(pdfUrl)
+    if(pdfB64){
+      const better = await readLawFromPdf(
+        { lawName, clause, parent_law: ref?.parent_law, why_needed: ref?.why_needed },
+        pdfUrl, pdfB64)
+      if(better && better.status === 'resolved' && Array.isArray(better.requirements) && better.requirements.length){
+        out = { ...better, source_url: pdfUrl }
+        fromFile = true
+      }
     }
   }
 
@@ -356,6 +373,7 @@ export async function fetchRelatedLaw(ref){
   const readOk = (status === 'resolved' || status === 'explained') && !!(explain || String(out.resolved_text || '').trim())
   // บอกผู้ตรวจว่าข้อชุดนี้อ่านจากไฟล์ตัวบทจริง ไม่ใช่จาก snippet ของผลค้นหา
   if(fromFile && (status === 'resolved' || status === 'explained')) note = (note ? note + ' · ' : '') + 'อ่านจากไฟล์ตัวบทจริง'
+  if(skippedSecondRound) note = (note ? note + ' · ' : '') + 'ใช้ผลจากการค้นโดยตรง (ผ่านด่านตรวจครบ)'
 
   // กฎหมายที่ฉบับนี้อ้างถึงต่อ — ใช้สร้าง frontier ของชั้นถัดไป (เก็บไว้เมื่อ resolved เท่านั้น)
   // เก็บลูกของ explained ด้วย — บทให้อำนาจชี้ว่าเงื่อนไขจริงอยู่ในกฎกระทรวงฉบับไหน

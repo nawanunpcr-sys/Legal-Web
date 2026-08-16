@@ -11,12 +11,14 @@ import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
 
-// เรียก endpoint เดิม (คีย์อยู่ฝั่ง Vercel env) — stage:false = ไม่เขียน lg_import_staging
-// รองรับทั้งข้อความ/URL (source) และไฟล์ PDF (pdfBase64)
+// P16 · แยกเป็น 2 คำขอ เพราะทำต่อกันในคำขอเดียวชนเพดาน 300 วิของ Vercel จนต้องข้ามงานทิ้ง
+//   คำขอ 1 /api/law-analyze (relate:false) → ตารางฉบับหลัก ผู้ใช้เห็นได้เร็ว
+//   คำขอ 2 /api/law-relate  → ตามอ่านกฎหมายที่อ้างถึง แล้ว merge กลับเข้า state เดิม
+// แต่ละฝั่งได้เวลา 300 วิของตัวเอง จึงไม่ต้องข้ามขั้นตอนไหนอีก
 async function analyzeSource({ source = '', sourceUrl = '', pdfBase64 = '', pdfName = '' }) {
   const r = await fetch('/api/law-analyze', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ source, sourceUrl, pdfBase64, pdfName, stage: false }),
+    body: JSON.stringify({ source, sourceUrl, pdfBase64, pdfName, stage: false, relate: false }),
   })
   const d = await r.json()
   if (!r.ok) throw new Error(d.error || 'สรุปไม่สำเร็จ')
@@ -32,7 +34,25 @@ async function analyzeSource({ source = '', sourceUrl = '', pdfBase64 = '', pdfN
     // วันบังคับใช้: calc = โค้ดคำนวณจากกฎในตัวบท · ai = ถอยไปใช้ค่าที่ AI เขียน (ยังไม่ได้ตรวจ)
     effective_source: d.effective_source || 'none', effective_note: d.effective_note || '',
     effective_ai_mismatch: d.effective_ai_mismatch || null,
+    // รายการกฎหมายที่ผ่านด่าน "อ้างถึงจริง" แล้ว รอให้คำขอที่ 2 ตามไปอ่าน
+    pending_refs: d.pending_refs || [],
     related_laws: d.related_laws || [], repeals: d.repeals || [] }
+}
+
+// คำขอที่ 2 · ตามอ่านกฎหมายที่ตัวบทอ้างถึง แล้วคืนชุดข้อกำหนดที่รวมแล้ว
+// แยก endpoint เพื่อให้ Skill 3 ได้เวลา 300 วิของตัวเอง ไม่ต้องแบ่งกับการอ่านตัวบทหลัก
+async function relateSource({ refs, requirements, lawName }) {
+  const r = await fetch('/api/law-relate', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ refs, requirements, lawName }),
+  })
+  const d = await r.json()
+  if (!r.ok) throw new Error(d.error || 'ตามอ่านกฎหมายที่อ้างถึงไม่สำเร็จ')
+  return { requirements: d.requirements || [], related_laws: d.related_laws || [],
+    related_count: d.related_count || 0, unresolved_count: d.unresolved_count || 0,
+    inlined_count: d.inlined_count || 0, manual_ref_count: d.manual_ref_count || 0,
+    skipped_for_time: d.skipped_for_time || 0,
+    unverified_number_count: d.unverified_number_count || 0 }
 }
 
 // อ่านไฟล์เป็น base64 (ตัดส่วน "data:...;base64," นำหน้าออก)
@@ -315,41 +335,70 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
   // id ของแถวประวัติที่บันทึกทันทีหลังสรุปเสร็จ · กด "เก็บลงคิว" จะอัปเดตแถวเดิม ไม่สร้างซ้ำ
   const [histId, setHistId] = useState(null)
   const [histMeta, setHistMeta] = useState(null)   // ผล Skill 3 ของรอบนี้ ใช้ซ้ำตอนเก็บลงคิว
+  // P16 · โฟลว์ 2 คำขอ — phase บอกว่ากำลังทำด่านไหน เพื่อขึ้นข้อความให้ตรง
+  const [phase, setPhase] = useState(null)        // 'main' | 'relate' | null
+  const [pendingCount, setPendingCount] = useState(0)   // จำนวนกฎหมายที่รอตามอ่าน
+  // ตั้งไว้เมื่อคำขอที่ 2 ล้ม เพื่อให้กดลองเฉพาะด่านนั้นซ้ำได้ (cache ทำให้รอบสองเร็วมาก)
+  const [relateRetry, setRelateRetry] = useState(null)
 
   async function analyze() {
     if (!src.trim() || busy) return
-    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null); setEffInfo(null)
+    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null); setEffInfo(null); setRelateRetry(null); setPendingCount(0)
+    setPhase('main')
     try {
-      const { law: l, requirements, related_count, unresolved_count, rejected_count, related_laws, repeals: rp,
+      const { law: l, requirements, rejected_count, repeals: rp, pending_refs,
         effective_source, effective_note, effective_ai_mismatch } = await analyzeSource({ source: src, sourceUrl: srcUrl.trim() })
-      setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
-      setReqs(toReqRows(requirements))
-      setRelated({ count: related_count, unresolved: unresolved_count, laws: related_laws }); setRepeals(rp || [])
-      setEffInfo({ source: effective_source, note: effective_note, mismatch: effective_ai_mismatch })
       const rows = toReqRows(requirements)
-      await logRun(l, rows, { related_count, unresolved_count, rejected_count },
-        /^https?:\/\//i.test(src.trim()) ? 'link' : 'text')
-      toast('สรุปด้วย AI แล้ว — ตรวจ/แก้ไขได้', 'success')
-    } catch (e) { toast('สรุปไม่สำเร็จ: ' + e.message) }
+      setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
+      setReqs(rows); setRepeals(rp || [])
+      setEffInfo({ source: effective_source, note: effective_note, mismatch: effective_ai_mismatch })
+      toast('อ่านตัวบทแล้ว — ' + (pending_refs.length ? `กำลังตามอ่านกฎหมายที่อ้างถึง ${pending_refs.length} ฉบับ` : 'ตรวจ/แก้ไขได้'), 'success')
+      await runRelate({ refs: pending_refs, requirements, lawName: l.name || '' }, l, rows,
+        /^https?:\/\//i.test(src.trim()) ? 'link' : 'text', rejected_count)
+    } catch (e) { toast('สรุปไม่สำเร็จ: ' + e.message); setPhase(null) }
     setBusy(false)
   }
 
   async function analyzePdf(file) {
     if (!file || busy) return
     if (file.size > 4 * 1024 * 1024) { toast('ไฟล์ PDF ใหญ่เกิน 4MB — กรุณาแยกไฟล์ หรือ copy ตัวบทมาวางแทน'); return }
-    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null); setEffInfo(null)
+    setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null); setEffInfo(null); setRelateRetry(null); setPendingCount(0)
     try {
       const pdfBase64 = await readFileBase64(file)
-      const { law: l, requirements, related_count, unresolved_count, rejected_count, related_laws, repeals: rp,
+      setPhase('main')
+      const { law: l, requirements, rejected_count, repeals: rp, pending_refs,
         effective_source, effective_note, effective_ai_mismatch } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
+      const rows = toReqRows(requirements)
       setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
-      setReqs(toReqRows(requirements))
-      setRelated({ count: related_count, unresolved: unresolved_count, laws: related_laws }); setRepeals(rp || [])
+      setReqs(rows); setRepeals(rp || [])
       setEffInfo({ source: effective_source, note: effective_note, mismatch: effective_ai_mismatch })
-      await logRun(l, toReqRows(requirements), { related_count, unresolved_count, rejected_count }, 'pdf')
-      toast('สรุปจากไฟล์ PDF แล้ว — ตรวจ/แก้ไขได้', 'success')
-    } catch (e) { toast('สรุป PDF ไม่สำเร็จ: ' + e.message) }
+      toast('อ่านตัวบทแล้ว — ' + (pending_refs.length ? `กำลังตามอ่านกฎหมายที่อ้างถึง ${pending_refs.length} ฉบับ` : 'ตรวจ/แก้ไขได้'), 'success')
+      await runRelate({ refs: pending_refs, requirements, lawName: l.name || '' }, l, rows, 'pdf', rejected_count)
+    } catch (e) { toast('สรุป PDF ไม่สำเร็จ: ' + e.message); setPhase(null) }
     setBusy(false)
+  }
+
+  // ด่านที่ 2 · ตามอ่านกฎหมายที่อ้างถึง แล้ว merge กลับเข้า state เดิม
+  // ล้มเหลวต้องไม่ล้างผลของด่านแรก — ข้อของฉบับหลักอยู่บนจอแล้ว ผู้ใช้ทำงานต่อได้
+  async function runRelate(ctx, l, mainRows, input, rejected_count) {
+    setPhase('relate')
+    setPendingCount(ctx.refs.length)
+    try {
+      const rel = await relateSource(ctx)
+      const rows = toReqRows(rel.requirements)      // req_no ชุดใหม่จาก response
+      setReqs(rows)
+      setRelated({ count: rel.related_count, unresolved: rel.unresolved_count, laws: rel.related_laws })
+      setRelateRetry(null)
+      await logRun(l, rows, { related_count: rel.related_count,
+        unresolved_count: rel.unresolved_count, rejected_count }, input)
+      if (rel.skipped_for_time > 0) toast(`ตามอ่านได้บางส่วน — ยังเหลือ ${rel.skipped_for_time} ฉบับ กดปุ่มลองอีกครั้งจะเร็วขึ้น`)
+      else toast('สรุปครบแล้ว — ตรวจ/แก้ไขได้', 'success')
+    } catch (e) {
+      setRelateRetry(ctx)
+      toast('เติมกฎหมายที่อ้างถึงไม่สำเร็จ: ' + e.message + ' — ข้อของฉบับหลักยังอยู่ครบ')
+      await logRun(l, mainRows, { related_count: 0, unresolved_count: 0, rejected_count }, input)
+    }
+    setPhase(null)
   }
 
   // บันทึกทุกครั้งที่สรุปเสร็จ ไม่ต้องรอผู้ใช้กดเก็บ — ไม่งั้นรายการที่กด "เพิ่มเข้าทะเบียน"
@@ -395,7 +444,7 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
         status: 'imported', searched_at: new Date().toISOString(),
       })
       toast('เก็บลงคิว "รอเข้าทะเบียน" แล้ว', 'success')
-      setLaw(null); setReqs([]); setSrc(''); setSrcUrl(''); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null); setEffInfo(null)
+      setLaw(null); setReqs([]); setSrc(''); setSrcUrl(''); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null); setEffInfo(null); setRelateRetry(null); setPendingCount(0)
       onQueued && onQueued()
     } catch (e) { toast('บันทึกลงคิวไม่สำเร็จ: ' + e.message) }
     setSaving(false)
@@ -434,11 +483,33 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
         <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>รองรับ PDF ≤ 4MB (เหมาะกับลิงก์ราชกิจจาฯ ที่เป็นไฟล์ PDF)</span>
       </div>
 
-      {/* กฎหมายยาว (~6 หน้า) ใช้เวลาราว 2-3 นาที — บอกผู้ใช้ไม่ให้ปิดหน้าต่างระหว่างรอ */}
+      {/* P16 · แยกเป็น 2 ด่าน ข้อความจึงต้องบอกให้ตรงว่ากำลังทำอะไรอยู่
+          ด่านแรกจบแล้วตารางขึ้นเลย ผู้ใช้ตรวจไปพลางระหว่างด่านสองทำงานได้ */}
       {busy && (
         <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--warn-soft, rgba(255,176,32,.12))', fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.6 }}>
-          กำลังให้ AI อ่านและแตกข้อปฏิบัติ — กฎหมายสั้นราว 30 วินาที ส่วนกฎหมายยาว (5–10 หน้า) อาจใช้เวลา <b>2–3 นาที</b><br />
-          กรุณาอย่าปิดหน้าต่างหรือกดซ้ำระหว่างรอ
+          {phase === 'relate' ? (
+            <>
+              กำลังตามอ่านกฎหมายที่ตัวบทอ้างถึง{pendingCount ? ` (${pendingCount} ฉบับ)` : ''}…<br />
+              ตารางข้อปฏิบัติของฉบับหลักขึ้นแล้วด้านล่าง <b>ตรวจไปพลางได้เลย</b> ข้อจากกฎหมายที่อ้างถึงจะเติมเข้ามาเมื่อเสร็จ
+            </>
+          ) : (
+            <>
+              กำลังอ่านตัวบทและแตกข้อปฏิบัติ… — กฎหมายสั้นราว 30 วินาที ส่วนกฎหมายยาว (5–10 หน้า) อาจใช้เวลา <b>1–2 นาที</b><br />
+              กรุณาอย่าปิดหน้าต่างหรือกดซ้ำระหว่างรอ
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ด่านสองล้มไม่ทำให้ผลด่านแรกหาย — ให้ยิงซ้ำเฉพาะด่านสองได้ (cache ทำให้เร็วขึ้นมาก) */}
+      {!busy && relateRetry && (
+        <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--warn-bg)', fontSize: 12.5, color: 'var(--warn)', lineHeight: 1.6, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>ยังเติมข้อจากกฎหมายที่อ้างถึงไม่สำเร็จ ({relateRetry.refs.length} ฉบับ) — ข้อของฉบับหลักครบแล้ว</span>
+          <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 11.5, marginLeft: 'auto' }}
+            disabled={busy}
+            onClick={async () => { setBusy(true); await runRelate(relateRetry, law || {}, reqs, 'retry', 0); setBusy(false) }}>
+            ลองเติมกฎหมายที่อ้างถึงอีกครั้ง
+          </button>
         </div>
       )}
 

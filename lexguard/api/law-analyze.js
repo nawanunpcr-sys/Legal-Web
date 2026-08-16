@@ -5,6 +5,7 @@
 import { relateAndMerge, inlineSectionRefs } from './_lib/osh-law-relate.js'
 import { flagUnverifiedNumbers } from './_lib/verify-numbers.js'
 import { resolveEffectiveDate } from './_lib/effective-date.js'
+import { sameOrigin, clientIp, rateLimited } from './_lib/guard.js'
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL
 const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
@@ -174,6 +175,36 @@ function friendlyApiError(raw){
   return 'เรียก Claude API ไม่สำเร็จ: ' + t.slice(0, 500)
 }
 
+// อ่าน SSE ของ Anthropic แล้วประกอบเป็นข้อความเดียว
+// คืน { text, stopReason, error } · ไม่ throw เพื่อให้ผู้เรียกตัดสินใจเองว่าจะตอบอะไร
+async function readAnthropicStream(res){
+  let text = '', stopReason = '', error = ''
+  const reader = res.body?.getReader?.()
+  if(!reader) return { text, stopReason, error: 'อ่านสตรีมจาก Claude ไม่ได้' }
+  const dec = new TextDecoder()
+  let buf = ''
+  try{
+    for(;;){
+      const { done, value } = await reader.read()
+      if(done) break
+      buf += dec.decode(value, { stream: true })
+      const lines = buf.split('\n')
+      buf = lines.pop() ?? ''          // บรรทัดสุดท้ายอาจมาไม่ครบ เก็บไว้ต่อรอบหน้า
+      for(const line of lines){
+        if(!line.startsWith('data:')) continue
+        const payload = line.slice(5).trim()
+        if(!payload || payload === '[DONE]') continue
+        let ev
+        try{ ev = JSON.parse(payload) }catch{ continue }
+        if(ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') text += ev.delta.text
+        else if(ev.type === 'message_delta' && ev.delta?.stop_reason) stopReason = ev.delta.stop_reason
+        else if(ev.type === 'error') error = JSON.stringify(ev.error || ev)
+      }
+    }
+  }catch(e){ error = error || String(e && e.message || e) }
+  return { text, stopReason, error }
+}
+
 function strip(html){
   return html.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ')
              .replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim()
@@ -277,31 +308,6 @@ function isAllowedUrl(u){
   }catch{ return false }
 }
 
-// ── การป้องกันขั้นต่ำ 2 ชั้น ──
-// TODO: การป้องกันจริงต้องใช้ Supabase Auth JWT เมื่อเลิกโหมด demo
-//       (rate-limit ในหน่วยความจำใช้ไม่ได้ข้าม serverless instance — เป็นเพียงเบรกชั่วคราว)
-// (ก) ตรวจ Origin/Referer ว่ามาจากโดเมนของแอปเอง (อ่านจาก env ALLOWED_ORIGIN)
-function sameOrigin(req){
-  const origin = req.headers.origin || req.headers.referer || ''
-  if(!origin) return false
-  // (1) ตรงกับโดเมนที่ตั้งใน env ALLOWED_ORIGIN (รองรับหลายค่า คั่นด้วย comma)
-  const allowed = (process.env.ALLOWED_ORIGIN||'').split(',').map(s=>s.trim()).filter(Boolean)
-  if(allowed.some(a => origin.startsWith(a))) return true
-  // (2) same-origin จริง: โฮสต์ของ origin ตรงกับโฮสต์ที่เสิร์ฟคำขอ
-  //     → ใช้ได้ทุกโดเมน *.vercel.app ของแอปเองโดยไม่ต้องตั้ง env (กันเรียกข้ามโดเมนอยู่)
-  try{ return new URL(origin).host === req.headers.host }catch{ return false }
-}
-// (ข) จำกัดความถี่แบบง่ายในหน่วยความจำ: ไม่เกิน 10 ครั้ง/นาที/IP
-const RATE_LIMIT = 10, RATE_WINDOW = 60_000
-const rateMap = new Map()
-function clientIp(req){ return String(req.headers['x-forwarded-for']||'').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown' }
-function rateLimited(ip){
-  const now = Date.now()
-  const hits = (rateMap.get(ip)||[]).filter(t => now-t < RATE_WINDOW)
-  hits.push(now); rateMap.set(ip, hits)
-  return hits.length > RATE_LIMIT
-}
-
 // vercel.json ตั้ง maxDuration = 300 วิ ซึ่งเป็น "เพดานสูงสุดของแพลนนี้"
 // ทดลองตั้ง 800 แล้ว deploy ไม่ผ่าน: "must be between 1 and 300 seconds ... upgrade your plan"
 // กันไว้ 45 วิให้ขั้นตอนหลังบ้านทำงานและส่งผลกลับ · เกินกว่านี้ = 504 เสียทั้งผลและเงินที่จ่ายไปแล้ว
@@ -319,7 +325,9 @@ export default async function handler(req,res){
     // stage=false (P12): ข้ามการเขียน lg_import_staging แล้ว return JSON ให้ client ไปเก็บเอง
     // (default true = พฤติกรรมเดิม เพื่อความ backward-compatible)
     // pdfBase64 (P12): แนบไฟล์ PDF ให้ Claude อ่านเป็นเอกสารโดยตรง (base64, ไม่มีส่วน data: นำหน้า)
-    const { source='', kind='auto', sourceUrl='', stage=true, pdfBase64='', pdfName='' } = req.body||{}
+    // relate=false → คืนผลฉบับหลักอย่างเดียว ให้ผู้ใช้เห็นตารางเร็ว แล้วค่อยยิง /api/law-relate ต่อ
+    // default true เพื่อไม่ให้ของเดิมที่เรียก endpoint นี้อยู่พัง
+    const { source='', kind='auto', sourceUrl='', stage=true, pdfBase64='', pdfName='', relate=true } = req.body||{}
     const hasPdf = !!(pdfBase64 && pdfBase64.length)
     if(!hasPdf && !source.trim()) return res.status(400).json({error:'กรุณาใส่ URL, วางตัวบทกฎหมาย หรือแนบไฟล์ PDF'})
     // กัน request body เกินลิมิตของ Vercel (~4.5MB) — base64 ~6M ≈ ไฟล์ ~4.5MB
@@ -361,19 +369,23 @@ export default async function handler(req,res){
       // cache_control · system prompt ~4,600 token เหมือนกันทุกครั้ง — cache ไว้ให้อ่านซ้ำ
       // ราคาส่วนที่ cache เหลือ ~10% และ prefill เร็วขึ้น · เนื้อหาที่ส่งเหมือนเดิมทุกตัวอักษร
       // (ขั้นต่ำที่ cache ได้ของ Sonnet คือ 1,024 token — system เราเกินอยู่แล้ว)
-      body:JSON.stringify({model:MODEL,max_tokens:20000,
+      // stream:true — คำตอบ 20,000 token ใช้เวลานาน การรอ response ก้อนเดียวเสี่ยงถูกตัดกลางทาง
+      // สตรีมแล้วประกอบเองทำให้ connection มีข้อมูลไหลตลอด ไม่โดน idle timeout ของ proxy
+      body:JSON.stringify({model:MODEL,max_tokens:20000,stream:true,
         system:[{type:'text',text:buildSystem(await fetchCats()),cache_control:{type:'ephemeral'}}],
         messages:[{role:'user',content:userContent}]})
     })
     if(!ar.ok) return res.status(502).json({error: friendlyApiError(await ar.text())})
-    const data = await ar.json()
-    let txt = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim()
+    const streamed = await readAnthropicStream(ar)
+    if(streamed.error) return res.status(502).json({error: friendlyApiError(streamed.error)})
+    const stopReason = streamed.stopReason
+    let txt = streamed.text.trim()
     txt = txt.replace(/^```json\s*/i,'').replace(/```$/,'').trim()
     let parsed
     try{ parsed = JSON.parse(txt) }
     catch{
       // แยกสาเหตุ: ตอบไม่จบเพราะ token หมด (กฎหมายยาวเกิน) vs. รูปแบบผิดจริงๆ
-      if(data.stop_reason === 'max_tokens') return res.status(500).json({
+      if(stopReason === 'max_tokens') return res.status(500).json({
         error:'กฎหมายฉบับนี้มีข้อกำหนดมากเกินกว่าจะสรุปจบใน 1 ครั้ง — '
           +'วิธีแก้: แนบไฟล์ทีละส่วน (เช่น หมวด 1 ก่อน แล้วค่อยหมวด 2) หรือ copy ตัวบทมาวางทีละหมวด '
           +'แล้วรวมข้อปฏิบัติเข้าทะเบียนทีหลัง',
@@ -401,7 +413,7 @@ export default async function handler(req,res){
       : pdfBytes ? await pdfToText(pdfBytes)
       : text
     const { kept: verifiedRefs, rejected: rejectedRefs } = verifyRelatedRefs(parsed.related_laws, verifyText)
-    if(verifiedRefs.length){
+    if(relate !== false && verifiedRefs.length){
       try{
         merged = await relateAndMerge(verifiedRefs, parsed.requirements||[], law.name||'',
           startedAt + FN_BUDGET_MS)
@@ -411,7 +423,7 @@ export default async function handler(req,res){
         merged = { requirements: parsed.requirements||[], related_laws:[], related_count:0, unresolved_count:0 }
       }
     }
-    if(!verifiedRefs.length){
+    if(relate !== false && !verifiedRefs.length){
       const inlined = Date.now() - startedAt < FN_BUDGET_MS - 45_000
         ? await inlineSectionRefs(merged.requirements, [])
         : { reqs: merged.requirements, changed: 0, unresolved: [] }
@@ -462,6 +474,9 @@ export default async function handler(req,res){
       inlined_count:merged.inlined_count||0, manual_ref_count:merged.manual_ref_count||0,
       unverified_number_count:numCheck.flagged,
       skipped_for_time:merged.skipped_for_time||0,
+      // relate=false → ส่งรายการที่ผ่านด่าน verifyRelatedRefs แล้วกลับไป
+      // ให้ client ยิงต่อที่ /api/law-relate · endpoint นั้นเชื่อว่ากรองมาแล้ว
+      pending_refs: relate === false ? verifiedRefs : [],
       elapsed_ms:Date.now()-startedAt})
   }catch(e){ return res.status(500).json({error:String(e&&e.message||e)}) }
 }

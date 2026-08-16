@@ -5,6 +5,9 @@
   "functions": {
     "api/law-analyze.js": {
       "maxDuration": 300
+    },
+    "api/law-relate.js": {
+      "maxDuration": 300
     }
   },
   "rewrites": [
