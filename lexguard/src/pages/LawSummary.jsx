@@ -101,6 +101,7 @@ const toReqRows = (reqs = []) => reqs.map(q => ({
   ref_inlined: !!q.ref_inlined,             // เขียนใหม่ให้อ่านจบในตัวแล้วในขั้นตอนขัดเกลา
   source_excerpt: q.source_excerpt || '',   // ข้อความจากตัวบทที่รองรับข้อนี้
   unverified_numbers: q.unverified_numbers || null,  // ตัวเลขที่หาที่มาในตัวบทไม่เจอ
+  ref_answers: q.ref_answers || [],   // P17 · คำตอบจากกฎหมายที่ข้อนี้อ้างถึง
 }))
 
 // ชื่อกฎหมายเต็มยาวเกินกว่าจะใส่ใน badge — ตัดให้สั้น เก็บชื่อเต็มไว้ใน title
@@ -139,12 +140,99 @@ const REL_STATUS = {
   // สรุปเป็นข้อความไม่ได้ (ตัวบทใหญ่เกิน/อ่านไม่ออก/แหล่งยังไม่ยืนยัน) แต่รู้ว่าตัวบทอยู่ที่ไหน
   // ให้ลิงก์ไว้ดีกว่าไม่ให้อะไรเลย · ยังนับเป็นงานค้างเพราะ จป. ต้องเปิดอ่านเอง
   link_only: { label: () => 'สรุปไม่ได้ — เปิดลิงก์อ่านเอง', color: 'var(--warn)' },
+  // ── P17 · การอ้างถึงที่แปลงเป็น "คำถาม" แล้ว ──
+  answered:  { label: () => 'ตอบคำถามของข้อที่อ้างถึงแล้ว', color: 'var(--ok)' },
+  // ตัวบทยังไม่ออก ไม่ใช่การค้นพลาด · ไม่ใช่งานค้างของ จป. และประเมินความสอดคล้องยังไม่ได้
+  pending_issuance: { label: () => 'รอหน่วยงานออกประกาศ — ยังไม่มีตัวบท', color: 'var(--ink-soft)' },
+  // เปิดตัวบทแล้วแต่ไม่ตอบคำถาม — ต่างจาก not_found ตรงที่เรารู้ว่าเปิดไปเจออะไร
+  not_answered: { label: () => 'เปิดตัวบทแล้วแต่ยังไม่ได้คำตอบ', color: 'var(--warn)' },
+}
+
+/* ── P17 · คำตอบของกฎหมายที่ข้อนี้อ้างถึง — แสดง "ใต้ข้อ" ไม่ใช่แถวใหม่ท้ายตาราง ──
+   ของเดิม append เป็นแถวแยก ผู้ใช้จึงไม่รู้ว่าแถวไหนมาจากข้อไหน
+   ซึ่งเป็นเหตุผลหลักที่ผลลัพธ์เดิมดูมั่ว */
+const ANS_LOOK = {
+  answered:         { icon: '✅', bg: 'var(--ok-bg, rgba(16,150,90,.08))', bd: 'var(--ok)', fg: 'var(--ok)' },
+  pending_issuance: { icon: '⏳', bg: 'var(--line)', bd: 'var(--line)', fg: 'var(--ink-soft)' },
+  not_answered:     { icon: '⚠️', bg: 'var(--warn-bg)', bd: 'var(--warn)', fg: 'var(--warn)' },
+}
+
+function RefAnswerBox({ a }) {
+  const look = ANS_LOOK[a.status] || ANS_LOOK.not_answered
+  const rows = Array.isArray(a.answer_detail?.['เกณฑ์']) ? a.answer_detail['เกณฑ์'] : []
+  const warn = a.answer_detail?.['ข้อควรระวัง']
+  const evid = a.answer_detail?.['หลักฐานที่ต้องเก็บ']
+  return (
+    <div style={{ marginLeft: 30, marginTop: 5, padding: '7px 10px', borderRadius: 8,
+      background: look.bg, borderLeft: `3px solid ${look.bd}`, fontSize: 11.5, lineHeight: 1.65 }}>
+      <div style={{ color: look.fg, fontWeight: 600, marginBottom: 2 }}>
+        {look.icon} กฎหมายที่อ้างถึงระบุว่า
+        {a.from_table && <span style={{ fontWeight: 400 }}> · จากตารางท้ายกฎหมาย</span>}
+      </div>
+
+      {a.status === 'answered' && <>
+        <div style={{ color: 'var(--ink)' }}>{a.answer_plain}</div>
+        {rows.length > 0 && (
+          <div style={{ marginTop: 4, overflowX: 'auto' }}>
+            <table style={{ borderCollapse: 'collapse', fontSize: 11 }}>
+              <tbody>{rows.map((c, i) => (
+                <tr key={i}>
+                  <td style={{ padding: '1px 8px 1px 0', color: 'var(--ink-soft)', whiteSpace: 'nowrap' }}>{c['กรณี'] || '—'}</td>
+                  <td style={{ padding: '1px 8px 1px 0', fontWeight: 600, whiteSpace: 'nowrap' }}>{c['จำนวน'] || ''}</td>
+                  <td style={{ padding: '1px 0', color: 'var(--ink-soft)' }}>{c['ต่อหน่วย'] || ''}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+        {warn && <div style={{ marginTop: 3, color: 'var(--warn)' }}>⚠ {warn}</div>}
+        {evid && <div style={{ marginTop: 3, color: 'var(--ink-soft)' }}>หลักฐานที่ต้องเก็บ: {evid}</div>}
+        {a.unverified_numbers?.length > 0 && (
+          <div style={{ marginTop: 3, color: 'var(--warn)', fontWeight: 600 }}
+            title="ตัวเลขนี้หาที่มาในข้อความที่คัดจากตัวบทไม่เจอ — เปิดตัวบทตรวจก่อนใช้">
+            ⚠ ตรวจตัวเลข {a.unverified_numbers.join(', ')}
+          </div>
+        )}
+      </>}
+
+      {a.status === 'pending_issuance' && <>
+        <div style={{ color: 'var(--ink)' }}>{a.answer_plain}</div>
+        {a.interim_rule
+          ? <div style={{ marginTop: 3, color: 'var(--ink-soft)' }}>ระหว่างรอ: {a.interim_rule}</div>
+          : <div style={{ marginTop: 3, color: 'var(--ink-faint)' }}>ตัวบทไม่ได้บอกวิธีปฏิบัติระหว่างรอไว้</div>}
+        <div style={{ marginTop: 3, color: 'var(--ink-faint)' }}>
+          ยังตัดสินว่าสอดคล้องหรือไม่สอดคล้องไม่ได้ — ตั้งเป็น “รอผู้เกี่ยวข้องประเมิน” ให้แล้ว
+        </div>
+      </>}
+
+      {a.status === 'not_answered' && <>
+        <div style={{ color: 'var(--ink)' }}>{a.note || 'ค้นแล้วยังไม่ได้คำตอบของข้อนี้'}</div>
+        {a.found_instead && <div style={{ marginTop: 3, color: 'var(--ink-soft)' }}>เปิดไปเจอ: {a.found_instead}</div>}
+        {a.anchor_question && (
+          <div style={{ marginTop: 3, color: 'var(--ink-faint)' }}>คำถามที่ต้องหาคำตอบ: {a.anchor_question}</div>
+        )}
+      </>}
+
+      {(a.law_name || a.source_url) && (
+        <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <span style={{ color: 'var(--ink-soft)' }}>
+            {a.law_name || '—'}{a.section_ref ? ` · ${a.section_ref}` : ''}
+          </span>
+          {a.source_url && (
+            <a href={a.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--brand)' }}>เปิดตัวบท ↗</a>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function RelatedLawsPanel({ items = [] }) {
   if (!items.length) return null
   // เรียงตามสิ่งที่ต้องลงมือทำ: not_found/manual (ต้องตรวจเอง) → resolved → rejected (ไม่ได้ดึง ไม่ใช่งานค้าง)
-  const DONE = new Set(['resolved', 'explained'])   // ระบบจัดการให้แล้ว ไม่ใช่งานค้าง
+  // ระบบจัดการให้แล้ว ไม่ใช่งานค้าง · pending_issuance รวมอยู่ด้วยเพราะไม่มีตัวบทให้เปิด
+  // การนับเป็นงานค้างจะทำให้ จป. ไล่ตามของที่ยังไม่มีอยู่จริง
+  const DONE = new Set(['resolved', 'explained', 'answered', 'pending_issuance'])
   const rank = x => x.status === 'rejected' ? 2 : DONE.has(x.status) ? 1 : 0
   const sorted = [...items].sort((a, b) => rank(a) - rank(b))
   // rejected ไม่นับเป็นงานค้าง — ระบบตัดสินแล้วว่าตัวบทไม่ได้อ้างถึง ไม่ใช่ของที่ จป. ต้องไปเปิดเอง
@@ -311,6 +399,8 @@ function ReqRow({ r, i, onChange, onRemove, suggest }) {
           )}
         </div>
       )}
+      {/* P17 · คำตอบของกฎหมายที่ข้อนี้อ้างถึง — อยู่ใต้ข้อโดยตรง ไม่ใช่แถวใหม่ท้ายตาราง */}
+      {(r.ref_answers || []).map((a, k) => <RefAnswerBox key={k} a={a} />)}
       <div style={{ display: 'flex', gap: 8, marginTop: 6, marginLeft: 30 }}>
         <input className="form-input" style={{ marginTop: 0 }} value={r.responsible} onChange={e => set('responsible', e.target.value)} placeholder="ผู้รับผิดชอบ" />
         <input className="form-input" style={{ marginTop: 0 }} value={r.frequency} onChange={e => set('frequency', e.target.value)} placeholder="ความถี่" />

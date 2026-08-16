@@ -114,6 +114,28 @@ function buildSystem(cats){
              อ้างเป็นบทให้อำนาจตรากฎหมาย (รัฐธรรมนูญ มาตราที่ให้อำนาจออกกฎหมายลำดับรอง)
              อ้างเพื่อบอกว่ากฎหมายฉบับนั้นถูกยกเลิก หรืออ้างชื่อกฎหมายในบทนิยามเฉยๆ
    ตั้ง false ไว้ก่อนเมื่อไม่แน่ใจ — ดึงเกินทำให้ได้รายการ "หาตัวบทไม่พบ" ที่ผู้ใช้ไม่ได้ต้องการ
+   for_section = เลขมาตรา/ข้อ "ของฉบับนี้" ที่เป็นจุดอ้างถึง ต้องตรงกับ section_ref ของข้อนั้นเป๊ะๆ
+   ระบบใช้ค่านี้เอาคำตอบไปแสดงใต้ข้อที่ถามถึง ใส่ผิด = คำตอบไปโผล่ผิดข้อ
+
+5.1) จำแนกการอ้างถึงลงฟิลด์ ref_type — 3 ชนิดนี้ระบบจัดการคนละแบบสิ้นเชิง
+   - "specific"  = อ้างมาตรา/ข้อเจาะจง เช่น "ตามความในมาตรา 31" → ระบบดึงมาตรานั้น
+   - "whole_law" = อ้างชื่อกฎหมายโดยไม่ระบุข้อ เช่น "ตามกฎหมายว่าด้วยการควบคุมอาคาร"
+   - "pending"   = อ้างสิ่งที่ยังไม่มีตัวบท เช่น "ตามที่รัฐมนตรีประกาศกำหนด"
+                   ใส่ issuing_authority (ใครเป็นผู้ออก) และ interim_rule
+                   (ตัวบทบอกให้ทำอย่างไรระหว่างรอ — คัดจากตัวบทจริง ไม่มีให้เว้นว่าง ห้ามแต่ง)
+
+5.2) ref_type เป็น "whole_law" ต้องใส่ anchor_question ทุกครั้ง — สำคัญมาก
+   กฎหมายที่ถูกอ้างแบบนี้เป็นกฎหมายทั้งชุดหลายร้อยหน้า ส่งชื่อไปค้นตรงๆ จะได้ของที่ไม่เกี่ยวกลับมา
+   ผู้อ่านข้อนี้มีคำถามอยู่คำถามเดียว — เขียนคำถามนั้นออกมา
+   คำถามที่ใช้ได้ต้องครบ 3 อย่าง:
+     (1) เรื่องที่ข้อนั้นพูดถึง (ห้องส้วม / ทางหนีไฟ / การตรวจสุขภาพ)
+     (2) บริบทของผู้ถาม (อาคารสำนักงาน สถานประกอบกิจการ ลูกจ้างกี่คน)
+     (3) สิ่งที่ต้องการเป็นคำตอบ (จำนวนขั้นต่ำ / ความถี่ / คุณสมบัติ / เอกสาร)
+   ตัวอย่างที่ถูก (จากข้อที่เขียนว่า "ต้องมีห้องน้ำและห้องส้วมตามแบบและจำนวนที่กำหนดในกฎหมายควบคุมอาคาร"):
+     "อาคารสำนักงานหรือสถานประกอบกิจการ ต้องมีที่ถ่ายอุจจาระ ที่ถ่ายปัสสาวะ และอ่างล้างมือ
+      อย่างละกี่ที่ ต่อพื้นที่อาคารหรือจำนวนคนเท่าไร กฎกระทรวงฉบับใด ข้อใด"
+   ตัวอย่างที่ผิด (กว้างเกินจนค้นแล้วได้กฎหมายทั้งฉบับ ระบบจะปฏิเสธคำถามแบบนี้):
+     "กฎหมายว่าด้วยการควบคุมอาคารกำหนดอะไรบ้าง"
 
 การเขียนข้อความ (สำคัญมาก — คนอ่านคือ จป. และพนักงานทั่วไป ไม่ใช่นักกฎหมาย):
 - เขียนเป็นภาษาที่คนทั่วไปอ่านรอบเดียวเข้าใจ ห้ามคัดลอกสำนวนกฎหมายมาตรงๆ ให้เรียบเรียงใหม่ทั้งประโยค
@@ -155,7 +177,7 @@ function buildSystem(cats){
 {"law":{"name":"","type":"","ministry":"","announce_date":"วว/ดด/ปปปป","effective_date":"วว/ดด/ปปปป","effective_rule":{"type":"next_day|same_day|after_days|fixed_date|conditional|not_stated","days":0,"date":"","excerpt":"ข้อความจากตัวบทที่บอกวันบังคับใช้"},"documents":"","cat":"LA","code_suggestion":"","gazette_ref":"เล่ม 143 ตอนที่ 17 ก หน้า 4-7 หรือค่าว่าง"},
  "repeals":[{"law_name":"ชื่อกฎหมายที่ตัวบทสั่งให้ยกเลิก","clause":"มาตราที่สั่งยกเลิก"}],
  "requirements":[{"section_ref":"มาตรา X","req_text":"","source_excerpt":"เฉพาะข้อที่มีตัวเลข: ข้อความจากตัวบทช่วงที่มีตัวเลขนั้น ไม่เกิน 200 ตัวอักษร · ข้อที่ไม่มีตัวเลขให้เว้นว่าง","responsible":"","applicability":"","method":"","documents":"","frequency":"","other_terms":""}],
- "related_laws":[{"law_name":"","clause":"มาตรา 9 หรือ null ถ้าอ้างทั้งฉบับ","appears_in":"ข้อความจากตัวบทจริงคำต่อคำ ตรงจุดที่เอ่ยถึงฉบับนี้","why_needed":"ทำไมต้องรู้เนื้อหานี้ถึงจะปฏิบัติตามได้","needs_lookup":true}]}
+ "related_laws":[{"law_name":"","clause":"มาตรา 9 หรือ null ถ้าอ้างทั้งฉบับ","for_section":"เลขมาตรา/ข้อ ของฉบับนี้ที่เป็นจุดอ้างถึง","appears_in":"ข้อความจากตัวบทจริงคำต่อคำ ตรงจุดที่เอ่ยถึงฉบับนี้","why_needed":"ทำไมต้องรู้เนื้อหานี้ถึงจะปฏิบัติตามได้","needs_lookup":true,"ref_type":"specific|whole_law|pending","anchor_question":"คำถามที่ต้องการคำตอบ — เฉพาะ whole_law","issuing_authority":"ผู้มีอำนาจออกประกาศ — เฉพาะ pending","interim_rule":"ตัวบทบอกให้ทำอย่างไรระหว่างรอ คัดจากตัวบทจริง — เฉพาะ pending"}]}
 ถ้าเอกสารที่ได้รับไม่ใช่ตัวบทกฎหมายไทยเลย (เช่น เป็นข่าว บทความ แบบฟอร์มเปล่า หรือเอกสารที่อ่านไม่ออก) ให้ตอบเป็น JSON นี้แทน ห้ามตอบเป็นข้อความธรรมดา:
 {"status":"not_a_law","reason":"อธิบายสั้นๆ ว่าเอกสารนี้คืออะไร และทำไมจึงสรุปเป็นทะเบียนกฎหมายไม่ได้"}`
 }
@@ -403,7 +425,7 @@ export default async function handler(req,res){
     // Skill 3 · ดึงข้อกำหนดจากกฎหมายที่ตัวบทอ้างถึง มารวมเป็นชุดเดียวกับของฉบับหลัก
     // (กฎกระทรวงมักไม่เขียนซ้ำสิ่งที่อยู่ใน พ.ร.บ.แม่ — อ่านฉบับเดียวจึงตกข้อกำหนด)
     let merged = { requirements: parsed.requirements||[], related_laws:[], related_count:0, unresolved_count:0,
-      inlined_count:0, manual_ref_count:0 }
+      inlined_count:0, manual_ref_count:0, ref_answers:[], answered_count:0, pending_issuance_count:0 }
     // ตรวจก่อนดึง — ปล่อยเฉพาะฉบับที่ยืนยันได้ว่าตัวบทอ้างถึงจริง (กันดึงมั่วจนเสียเงินฟรี)
     // ฉบับที่ตกด่านไม่ได้หายไปเงียบๆ — ส่งกลับไปแสดงในตาราง "กฎหมายที่อ้างถึง" พร้อมเหตุผล
     // ทาง PDF ไม่มีตัวบทเป็นข้อความอยู่แล้ว ต้องแตกเอง · แตกไม่ได้ = ตรวจแบบอ่อน
@@ -420,7 +442,8 @@ export default async function handler(req,res){
       }catch(e){
         console.error('osh-law-relate failed:', e)
         // ล้มเหลวต้องไม่ทำให้การสรุปทั้งหมดพัง — ใช้ผลของฉบับหลักต่อไปตามเดิม
-        merged = { requirements: parsed.requirements||[], related_laws:[], related_count:0, unresolved_count:0 }
+        merged = { requirements: parsed.requirements||[], related_laws:[], related_count:0, unresolved_count:0,
+          ref_answers:[], answered_count:0, pending_issuance_count:0 }
       }
     }
     if(relate !== false && !verifiedRefs.length){
@@ -446,7 +469,8 @@ export default async function handler(req,res){
       // กรณีวางตัวบทเป็นข้อความ (ไม่มี URL ที่ fetch) ให้ใช้ "ลิงก์ตัวบทจริง" ที่ผู้ใช้กรอกมา
       frequency: r.frequency||'', other_terms: r.other_terms||'', source_url: srcUrl || (sourceUrl||'').trim(), status:'proposed',
       from_related_law: r.from_related_law||null,
-      gazette_ref: law.gazette_ref||null   // mig 037 · เลขอ้างอิงราชกิจจาฯ ติดไปกับกฎหมายตอนอนุมัติ
+      gazette_ref: law.gazette_ref||null,  // mig 037 · เลขอ้างอิงราชกิจจาฯ ติดไปกับกฎหมายตอนอนุมัติ
+      ref_answers: r.ref_answers||[]       // mig 040 · คำตอบของกฎหมายที่ข้อนี้อ้างถึง
     }))
     if(stage && rows.length){
       const sr = await fetch(`${SUPA_URL}/rest/v1/lg_import_staging`,{method:'POST',
@@ -470,6 +494,9 @@ export default async function handler(req,res){
       effective_ai_mismatch:eff.effective_ai_mismatch,
       related_laws:[...merged.related_laws, ...rejectedRows],
       related_count:merged.related_count, unresolved_count:merged.unresolved_count,
+      ref_answers:merged.ref_answers||[],
+      answered_count:merged.answered_count||0,
+      pending_issuance_count:merged.pending_issuance_count||0,
       rejected_count:rejectedRows.length,
       inlined_count:merged.inlined_count||0, manual_ref_count:merged.manual_ref_count||0,
       unverified_number_count:numCheck.flagged,

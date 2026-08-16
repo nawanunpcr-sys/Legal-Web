@@ -6,32 +6,16 @@
 //
 // โฟลเดอร์ _lib มีขีดล่างนำหน้า → Vercel ไม่มองเป็น endpoint (เป็น helper อย่างเดียว)
 
+// ด่านตรวจโดเมน ตัวดึงไฟล์ PDF และตัวเรียก Claude ย้ายไป _lib/law-source.js แล้ว (P17)
+// เพราะโฟลว์คำถาม (anchor-answer) ต้องใช้ชุดเดียวกัน — ก๊อปไว้สองที่แล้วมันจะค่อยๆ ต่างกัน
+import { TRUSTED_DOMAINS, hostAllowed, fetchPdfBase64, parseLoose, askClaude, WEB_SEARCH_TOOL } from './law-source.js'
+import { classifyRefs } from './ref-classify.js'
+import { answerAnchoredQuestion, pendingAnswer } from './anchor-answer.js'
+
 const SUPA_URL = process.env.VITE_SUPABASE_URL
 const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
 
-// ทดสอบจริงแล้ว: krisdika.go.th ค้นเจอแต่ไม่มีเนื้อหามาตราในดัชนี เพราะเก็บตัวบทเป็น PDF
-// ผ่าน endpoint librarian/get — ห้ามใส่กลับเข้ามา (ต่างจาก ALLOWED_HOSTS ใน law-analyze.js
-// ที่ผู้ใช้วางลิงก์ PDF เองได้ ตรงนี้คือดัชนีที่ web_search ใช้ค้น ซึ่งไม่มีตัวบท)
-const TRUSTED_DOMAINS = [
-  // ── SHE ──
-  'ratchakitcha.soc.go.th',  // ต้นทางประกาศ path /DATA/PDF/ สกัดข้อความได้
-  'tosh.or.th',              // องค์การมหาชนตาม ม.52 มีตัวบท พ.ร.บ. เต็ม
-  'labour.go.th',            // กรมสวัสดิการฯ และสำนักงานพื้นที่
-  'dlpw.go.th',              // กรมสวัสดิการและคุ้มครองแรงงาน
-  // ── กฎหมายด้านอื่นขององค์กร (หมวด LF) — ไม่มีกลุ่มนี้ Skill 3 จะคืน not_found เสมอ
-  //    เพราะ source_url ที่ค้นเจอจะไม่ผ่านด่านตรวจโดเมนในข้อ (ก) ──
-  'nbtc.go.th',              // กสทช. — โทรคมนาคม
-  'mdes.go.th',              // กระทรวงดิจิทัลฯ — พ.ร.บ.คอมพิวเตอร์ และประกาศใต้กฎหมาย
-  'pdpc.or.th',              // PDPA
-  'ncsa.or.th',              // ความมั่นคงปลอดภัยไซเบอร์
-  'ipthailand.go.th',        // ทรัพย์สินทางปัญญา
-  'rd.go.th',                // สรรพากร
-  'sso.go.th',               // ประกันสังคม
-  'pcd.go.th',               // ควบคุมมลพิษ
-  'onep.go.th',              // สผ. — สิ่งแวดล้อม
-  'dbd.go.th',               // พัฒนาธุรกิจการค้า
-]
 const CACHE_DAYS = 180
 const MAX_PER_WAVE = 12      // จำนวนที่ยิงขนานกันต่อชั้น
                              // (maxDuration ของ api/law-analyze.js = 300 วินาที รองรับได้)
@@ -45,6 +29,10 @@ const MAX_TOTAL_LOOKUPS = 12 // เพดานรวม ทุกชั้น�
 // ต่างกันตรงนี้: ตามเพราะ "จำเป็นต้องรู้จึงจะเขียนข้อให้จบได้" ไม่ใช่เพราะถูกอ้างถึง
 const MAX_DEPTH = 2
 const MAX_DEPTH2_LOOKUPS = 4   // กันชั้น 2 กินโควตาจนเบียดของชั้น 1 ที่สำคัญกว่า
+const MAX_ANCHOR_LOOKUPS = 6 // เพดานจำนวน "คำถาม" ต่อการสรุป 1 ครั้ง
+                             // คำถาม 1 ข้อใช้ได้ถึง 3 คำขอ (ค้น → อ่านไฟล์ → ถอดตาราง)
+                             // จึงแพงกว่าการดึงมาตราเจาะจง ต้องมีเพดานของตัวเอง
+                             // ได้สิทธิ์ใช้โควตารวมก่อน specific เพราะเป็นสิ่งที่ผู้ใช้ถามหาจริง
 const MAX_REQ_PER_LAW = 15   // กัน พ.ร.บ. ใหญ่ดึงมา 70 มาตราจนตารางใช้งานไม่ได้
 
 const SUPA_HEADERS = { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'content-type': 'application/json' }
@@ -153,82 +141,20 @@ export function normalizeRefKey(lawName, clause){
   return `${name}|${cl}`
 }
 
-// ── ตัวช่วย ──────────────────────────────────────────────────────────────────
-function hostAllowed(u){
-  try{
-    const host = new URL(u).hostname.toLowerCase()
-    return TRUSTED_DOMAINS.some(d => host === d || host.endsWith('.' + d))
-  }catch{ return false }
-}
-
-// ── ดึงไฟล์ตัวบทจริงมาอ่าน แทนการเชื่อ snippet จาก web_search ────────────────
-// ทดสอบจริง 2026-08-14: ราชกิจจาฯ ยอมให้ดึงเฉพาะไฟล์ .pdf ตรงๆ เท่านั้น
-//   https://ratchakitcha.soc.go.th/documents/104277.pdf → 200 (ด้วย UA เดิมของเรา)
-//   https://ratchakitcha.soc.go.th/documents/104277     → 403  (หน้า HTML)
-//   https://ratchakitcha.soc.go.th/                     → 403  (หน้าแรกก็โดน)
-//   https://www.ratchakitcha.soc.go.th/DATA/PDF/…       → 403  (path เว็บเวอร์ชันเก่า เลิกใช้แล้ว)
-// web_search อ่านได้แค่หัวข้อกับ snippet แตะเนื้อใน PDF ไม่ได้ → ไม่มี source_excerpt
-// → โดนด่านตรวจ (ข) ตัดทิ้งทั้งก้อน → ขึ้น "หาตัวบทไม่พบ" ทั้งที่ไฟล์ตัวบทเปิดได้
-const PDF_MAX_BYTES = 8_000_000   // กันไฟล์ใหญ่เกินจนคำขอไป Anthropic ล้ม
-const PDF_FETCH_TIMEOUT = 45_000
-
-async function fetchPdfBase64(url){
-  if(!hostAllowed(url)) return null                      // กัน SSRF — ต้องอยู่ในโดเมนที่เชื่อถือได้
-  if(!/\.pdf($|\?|#)/i.test(url)) return null            // เอาเฉพาะไฟล์ .pdf ตรงๆ (หน้า HTML โดนบล็อกอยู่ดี)
-  try{
-    const r = await fetch(url, {
-      headers: { 'user-agent': 'Mozilla/5.0 LexRegistry' },
-      signal: AbortSignal.timeout(PDF_FETCH_TIMEOUT),
-    })
-    if(!r.ok) return null
-    if(!(r.headers.get('content-type') || '').toLowerCase().includes('pdf')) return null
-    const buf = await r.arrayBuffer()
-    if(!buf.byteLength || buf.byteLength > PDF_MAX_BYTES) return null
-    return Buffer.from(buf).toString('base64')
-  }catch{ return null }   // ดึงไม่ได้ไม่ใช่เหตุให้ล้ม — ถอยไปใช้ผลจาก web_search ตามเดิม
-}
-
 // อ่านตัวบทจากไฟล์ PDF จริง · ใช้ SYSTEM ตัวเดียวกัน สคีมา JSON เดิมทุกฟิลด์
 async function readLawFromPdf(ref, url, b64){
-  try{
-    const ask = [
-      `กฎหมายที่ต้องอ่าน: ${ref.lawName}`,
-      ref.clause ? `ส่วนที่ถูกอ้างถึง: ${ref.clause}` : 'ถูกอ้างถึงทั้งฉบับ',
-      ref.parent_law ? `ถูกอ้างถึงจาก: ${ref.parent_law}` : '',
-      ref.why_needed ? `เหตุผลที่ต้องรู้เนื้อหานี้: ${ref.why_needed}` : '',
-      '',
-      `ไฟล์แนบคือตัวบทจริงจาก ${url}`,
-      'อ่านจากไฟล์นี้เท่านั้น ห้ามเติมจากความจำ · source_excerpt ต้องคัดมาจากข้อความในไฟล์จริง',
-      'ถ้าไฟล์นี้ไม่ใช่กฎหมายฉบับที่ระบุข้างต้น ให้ตอบ status เป็น not_found',
-      'สรุปเฉพาะข้อที่บริษัทต้องปฏิบัติ ตามรูปแบบ JSON ที่กำหนด',
-    ].filter(Boolean).join('\n')
-
-    const ar = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01', 'anthropic-beta': 'pdfs-2024-09-25' },
-      body: JSON.stringify({
-        model: MODEL, max_tokens: 8000, system: SYS_CACHED,
-        messages: [{ role: 'user', content: [
-          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
-          { type: 'text', text: ask },
-        ] }],
-      })
-    })
-    if(!ar.ok) return null
-    const data = await ar.json()
-    const txt = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim()
-    return parseLoose(txt)
-  }catch{ return null }
-}
-
-// โมเดลบางครั้งห่อด้วย fence หรือมีข้อความนำ — ลอกทีละชั้นจนกว่าจะ parse ได้
-function parseLoose(txt){
-  let s = String(txt || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim()
-  try{ return JSON.parse(s) }catch{}
-  const m = s.match(/\{[\s\S]*\}/)
-  if(m){ try{ return JSON.parse(m[0]) }catch{} }
-  return null
+  const ask = [
+    `กฎหมายที่ต้องอ่าน: ${ref.lawName}`,
+    ref.clause ? `ส่วนที่ถูกอ้างถึง: ${ref.clause}` : 'ถูกอ้างถึงทั้งฉบับ',
+    ref.parent_law ? `ถูกอ้างถึงจาก: ${ref.parent_law}` : '',
+    ref.why_needed ? `เหตุผลที่ต้องรู้เนื้อหานี้: ${ref.why_needed}` : '',
+    '',
+    `ไฟล์แนบคือตัวบทจริงจาก ${url}`,
+    'อ่านจากไฟล์นี้เท่านั้น ห้ามเติมจากความจำ · source_excerpt ต้องคัดมาจากข้อความในไฟล์จริง',
+    'ถ้าไฟล์นี้ไม่ใช่กฎหมายฉบับที่ระบุข้างต้น ให้ตอบ status เป็น not_found',
+    'สรุปเฉพาะข้อที่บริษัทต้องปฏิบัติ ตามรูปแบบ JSON ที่กำหนด',
+  ].filter(Boolean).join('\n')
+  return askClaude({ system: SYS_CACHED, content: ask, pdfBase64: b64 })
 }
 
 // ── ฟังก์ชัน 2 · ค้นตัวบทของฉบับที่ถูกอ้าง (อ่าน cache ก่อนเสมอ) ─────────────
@@ -537,6 +463,43 @@ export async function inlineSectionRefs(mainReqs, resolved = []){
   }catch{ return { reqs, changed: 0, unresolved: [] } }
 }
 
+// ── P17 · ผูก "คำตอบ" เข้ากับข้อที่ถามถึง ────────────────────────────────────
+// เดิมข้อที่ดึงมาจากกฎหมายอ้างอิงถูก append เป็น "แถวใหม่" ท้ายตาราง
+// ผู้ใช้จึงไม่รู้ว่าแถวไหนมาจากข้อไหน — ซึ่งเป็นเหตุผลหลักที่ผลลัพธ์เดิมดูมั่ว
+// ตอนนี้คำตอบไปอยู่ "ใต้ข้อที่อ้างถึง" โดยตรง
+//
+// จับคู่ 2 ทาง: for_section ที่โมเดลระบุมา แล้วค่อยถอยไปหาจากชื่อกฎหมายในเนื้อข้อ
+// จับคู่ไม่ได้ก็ไม่ทิ้ง — ส่งกลับไปแสดงในแผงรวมแทน ดีกว่าหายไปเงียบๆ
+function normRef(s){ return arabic(String(s || '')).replace(/\s+/g, '').toLowerCase() }
+
+export function attachAnswers(reqs, answers){
+  const rows = Array.isArray(reqs) ? reqs.map(r => ({ ...r })) : []
+  const loose = []
+  const bySection = new Map()
+  rows.forEach((r, i) => {
+    const k = normRef(r.section_ref)
+    if(k && !bySection.has(k)) bySection.set(k, i)
+  })
+
+  for(const ans of (Array.isArray(answers) ? answers : [])){
+    let idx = -1
+    const want = normRef(ans.for_section)
+    if(want && bySection.has(want)) idx = bySection.get(want)
+    if(idx < 0){
+      // ถอยไปหาจาก "ชื่อกฎหมายที่ถูกอ้าง" ที่ยังปรากฏอยู่ในเนื้อข้อ
+      // ชื่อสั้นกว่า 8 ตัวอักษรไปโผล่โดยบังเอิญได้ จึงไม่ใช้เป็นหลักฐาน
+      const name = normRef(ans.law_name)
+      if(name.length >= 8) idx = rows.findIndex(r => normRef(r.req_text).includes(name))
+    }
+    if(idx < 0){ loose.push(ans); continue }
+    rows[idx].ref_answers = [...(rows[idx].ref_answers || []), ans]
+    // ข้อที่ได้คำตอบแล้ว ไม่ต้องขึ้นป้าย "ยังอ้างเลขมาตรา ต้องเปิดตัวบทเติมเอง" อีก
+    // และข้อที่รอประกาศก็ไม่ใช่ "ต้องเปิดตัวบทเติมเอง" เพราะไม่มีตัวบทให้เปิด
+    if(ans.status === 'answered' || ans.status === 'pending_issuance') rows[idx].needs_manual_ref = false
+  }
+  return { reqs: rows, loose }
+}
+
 // ── ฟังก์ชัน 3 · รวมทุกอย่างเป็นชุดเดียว ไม่แยก section ─────────────────────
 // ข้อของฉบับหลักมาก่อนเสมอ ตามด้วยข้อจากกฎหมายที่ถูกอ้าง · req_no ไล่ใหม่ต่อเนื่องทั้งชุด
 function fingerprint(t){ return String(t || '').replace(/\s+/g, '').slice(0, 60) }
@@ -546,25 +509,58 @@ function fingerprint(t){ return String(t || '').replace(/\s+/g, '').slice(0, 60)
 export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadlineAt = Infinity){
   const timeLeft = () => deadlineAt - Date.now()
   const main = Array.isArray(mainReqs) ? mainReqs : []
-  const all = Array.isArray(relatedLaws) ? relatedLaws : []
 
-  // 1-2) ดึงชั้นเดียว: เฉพาะกฎหมายที่ตัวบทซึ่งผู้ใช้วางให้สรุป "อ้างถึงโดยตรง" (MAX_DEPTH = 1)
-  //   กฎหมายที่ฉบับลูกอ้างต่อไปอีก จะไม่ถูกตามไปดึง — ถ้าผู้ใช้ต้องการ ให้เอาฉบับนั้นมาวางสรุปแยก
-  //   ยังกันซ้ำด้วย Set ของ ref_key (กันฉบับเดียวถูกอ้างจากหลายจุดในตัวบทเดียวกัน)
-  //   และเพดานรวม MAX_TOTAL_LOOKUPS
+  // P17 · จำแนกก่อนตัดสินใจ — การอ้างถึง 3 ชนิดต้องการคนละอย่างสิ้นเชิง
+  //   pending    ตัวบทยังไม่ออก      → ไม่เรียก API เลย
+  //   whole_law  อ้างกฎหมายทั้งชุด   → แปลงเป็นคำถามก่อนค้น (ห้ามดึงทั้งฉบับ)
+  //   specific   อ้างมาตราเจาะจง     → ดึงมาตรานั้น (โฟลว์เดิม)
+  const all = classifyRefs(relatedLaws)
+  const wanted = all.filter(r => r && r.needs_lookup === true)
+  const pendingRefs = wanted.filter(r => r.ref_type === 'pending')
+  const anchorRefs = wanted.filter(r => r.ref_type === 'whole_law')
+  const specificRefs = wanted.filter(r => r.ref_type === 'specific')
+
+  let budget = MAX_TOTAL_LOOKUPS
+
+  // 1) pending — สร้างผลลัพธ์ตรงๆ ไม่เสียทั้งเวลาและเงิน
+  //    ค้นหาสิ่งที่ยังไม่มีตัวบท ผลที่ดีที่สุดที่เป็นไปได้คือ "หาไม่เจอ" อยู่แล้ว
+  const answers = pendingRefs.map(r => ({
+    ...pendingAnswer(r), for_section: r.for_section || '', appears_in: r.appears_in || '',
+  }))
+
+  // 2) whole_law — ค้นด้วย "คำถาม" ขนานกัน · แต่ละตัวครอบ catch เอง ตัวหนึ่งล้มต้องไม่ลากตัวอื่นล้ม
+  //    ได้สิทธิ์ใช้โควตาก่อน specific เพราะนี่คือสิ่งที่ผู้ใช้ถามหาจริง ("แล้วต้องมีกี่ที่")
+  let anchorSkipped = 0
+  if(anchorRefs.length){
+    const take = anchorRefs.slice(0, Math.min(MAX_ANCHOR_LOOKUPS, budget))
+    anchorSkipped = anchorRefs.length - take.length
+    budget -= take.length
+    if(timeLeft() < 45_000){ anchorSkipped = anchorRefs.length }
+    else {
+      const got = await Promise.all(take.map(r =>
+        answerAnchoredQuestion(r, deadlineAt)
+          .then(a => ({ ...a, for_section: r.for_section || '', appears_in: r.appears_in || '' }))
+          .catch(e => ({ status: 'not_answered', ref_type: 'whole_law',
+            anchor_question: r.anchor_question || '', law_name: r.law_name || '',
+            for_section: r.for_section || '', appears_in: r.appears_in || '',
+            answer_plain: '', answer_detail: {}, source_url: '', source_excerpt: '',
+            note: String(e && e.message || e).slice(0, 200) }))
+      ))
+      answers.push(...got)
+    }
+  }
+
+  // 3) specific — โฟลว์เดิมทั้งหมด ดึงมาตราที่ถูกอ้างเจาะจง
   const touched = new Set()
   const results = []
   const deferred = []
-  let budget = MAX_TOTAL_LOOKUPS
-  // ต้องเป็น true ชัดๆ เท่านั้นถึงดึง — เดิมใช้ !== false ทำให้ฉบับที่โมเดล "ลืมใส่ฟิลด์"
-  // ถูกดึงทุกครั้ง ทั้งที่ prompt สั่งให้ตั้ง false ไว้ก่อนเมื่อไม่แน่ใจ (ไม่ระบุ = ไม่ดึง)
-  let frontier = all.filter(r => r && r.needs_lookup === true)
+  let frontier = specificRefs
 
   // กันฉบับหลักถูกดึงกลับมาเป็นกฎหมายอ้างอิงของตัวเอง — พ.ร.บ.แม่มักอ้างกลับมาที่กฎกระทรวงลูก
   // เทียบที่ "ชื่อ" อย่างเดียว (ตัดส่วน clause ทิ้ง) เพื่อกันทุกกรณีไม่ว่าจะอ้างทั้งฉบับหรือรายข้อ
   const selfName = normalizeRefKey(parentName || '', '').split('|')[0]
 
-  let skippedForTime = 0
+  let skippedForTime = anchorSkipped
   for(let depth = 1; depth <= MAX_DEPTH && frontier.length && budget > 0; depth++){
     // ชั้น 1 ต้องมีเวลาอย่างน้อย 70 วิ · ชั้น 2 (ตามต่อการมอบอำนาจ) ต้องการ 90 วิ เพราะยอมข้ามได้
     const need = depth === 1 ? 70_000 : 90_000
@@ -608,7 +604,7 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
       : []
   }
 
-  // 3) ตัดข้อซ้ำ — ของฉบับหลักชนะเสมอ
+  // 4) ตัดข้อซ้ำ — ของฉบับหลักชนะเสมอ
   const seen = new Set(main.map(r => fingerprint(r?.req_text)))
   const relatedReqs = []
   for(const res of results){
@@ -618,8 +614,8 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
       const fp = fingerprint(r.req_text)
       if(!fp || seen.has(fp)) continue
       seen.add(fp)
-      // 4) ติดที่มาไปกับข้อ — ชื่อกฎหมาย ลิงก์ไฟล์ตัวบท และระดับความมั่นใจ
-      //    เพื่อให้ จป. เปิดตัวบทตรวจเองได้ และรู้ว่าข้อไหนยังไม่ยืนยัน 100%
+      // ติดที่มาไปกับข้อ — ชื่อกฎหมาย ลิงก์ไฟล์ตัวบท และระดับความมั่นใจ
+      // เพื่อให้ จป. เปิดตัวบทตรวจเองได้ และรู้ว่าข้อไหนยังไม่ยืนยัน 100%
       relatedReqs.push({ ...r,
         from_related_law: srcName,
         from_law_url: res.source_url || '',
@@ -639,22 +635,36 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
   const inlined = timeLeft() > 45_000
     ? await inlineSectionRefs(requirements, results)
     : { reqs: requirements, changed: 0, unresolved: [] }
-  requirements = inlined.reqs.map((r, i) => ({ ...r, req_no: i + 1 }))
+
+  // 5.2) P17 · ผูกคำตอบเข้ากับข้อที่ถามถึง — ต้องทำหลัง inlineSectionRefs
+  //      เพราะขั้นนั้นตั้งป้าย needs_manual_ref ไว้ ซึ่งข้อที่ได้คำตอบแล้วไม่ควรมีป้ายนั้น
+  const attached = attachAnswers(inlined.reqs, answers)
+  requirements = attached.reqs.map((r, i) => ({ ...r, req_no: i + 1 }))
 
   // 6) deferred เข้า related_laws ด้วย เพื่อให้เห็นว่ายังมีที่ยังไม่ได้ดึง
   const related_laws = [
     ...results.map(r => ({ law_name: r.law_name, clause: r.clause, status: r.status,
-      depth: r.depth || 1, via: r.via || '',
+      ref_type: 'specific', depth: r.depth || 1, via: r.via || '',
       source_url: r.source_url || '', resolved_text: r.resolved_text || '',
       confidence: r.confidence || '', note: r.note || '', from_cache: !!r.from_cache,
       read_ok: !!r.read_ok, explain: r.explain || '',
       req_count: r.status === 'resolved' ? (r.requirements || []).length : 0 })),
+    // P17 · คำตอบก็ต้องอยู่ในแผงรวมด้วย ไม่งั้นการอ้างถึงที่จับคู่กับข้อไม่ได้จะหายไปเงียบๆ
+    ...answers.map(a => ({ law_name: a.law_name || '', clause: a.section_ref || 'ทั้งฉบับ',
+      status: a.status, ref_type: a.ref_type || 'whole_law', depth: 1, via: '',
+      source_url: a.source_url || '', resolved_text: a.answer_plain || '',
+      confidence: a.confidence || '', note: a.note || '', from_cache: !!a.from_cache,
+      read_ok: a.status === 'answered', explain: a.answer_plain || '',
+      anchor_question: a.anchor_question || '', for_section: a.for_section || '',
+      issuing_authority: a.issuing_authority || '', interim_rule: a.interim_rule || '',
+      found_instead: a.found_instead || '', from_table: !!a.from_table,
+      unlinked: attached.loose.includes(a), req_count: 0 })),
     ...deferred.map(r => ({ law_name: r.law_name || '', clause: r.clause || 'ทั้งฉบับ',
-      status: 'manual', depth: 0, via: r.via || '',
+      status: 'manual', ref_type: r.ref_type || 'specific', depth: 0, via: r.via || '',
       source_url: '', resolved_text: '', confidence: '', note: 'เกินจำนวนที่ดึงได้ในรอบเดียว',
       from_cache: false, req_count: 0 })),
     ...frontier.map(r => ({ law_name: r.law_name || '', clause: r.clause || 'ทั้งฉบับ',
-      status: 'manual', depth: 0, via: r.via || '',
+      status: 'manual', ref_type: r.ref_type || 'specific', depth: 0, via: r.via || '',
       source_url: '', resolved_text: '', confidence: '',
       note: 'ยังไม่ได้ดึง — เวลาในรอบนี้ไม่พอ ลองสรุปซ้ำอีกครั้งจะดึงต่อจาก cache ได้เร็วขึ้น',
       from_cache: false, req_count: 0 }))
@@ -663,12 +673,18 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
   return {
     requirements,
     related_laws,
+    ref_answers: answers,                                                // P17 · คำตอบทั้งชุด
     related_count: relatedReqs.length,                                   // จำนวน "ข้อ" ไม่ใช่จำนวนฉบับ
-    // นับเฉพาะฉบับที่ จป. ต้องไปเปิดเอง — explained ระบบอ่านและสรุปสาระมาให้แล้ว
-    // link_only ยังนับเป็นงานค้าง เพราะ จป. ต้องเปิดลิงก์อ่านเอง · explained ระบบสรุปให้แล้ว
-    unresolved_count: results.filter(r => r.status !== 'resolved' && r.status !== 'explained').length,
+    answered_count: answers.filter(a => a.status === 'answered').length,
+    pending_issuance_count: answers.filter(a => a.status === 'pending_issuance').length,
+    // นับเฉพาะที่ จป. ต้องไปเปิดเอง · explained ระบบสรุปสาระมาให้แล้ว
+    // pending_issuance ไม่นับ — ไม่มีตัวบทให้เปิด รอหน่วยงานออกประกาศ ไม่ใช่งานค้างของ จป.
+    unresolved_count:
+      results.filter(r => r.status !== 'resolved' && r.status !== 'explained').length +
+      answers.filter(a => a.status === 'not_answered').length,
     inlined_count: inlined.changed,                    // ข้อที่เขียนใหม่ให้อ่านจบในตัวแล้ว
     skipped_for_time: skippedForTime,                  // ฉบับที่ยังไม่ได้ดึงเพราะเวลาไม่พอ
-    manual_ref_count: inlined.unresolved.length        // ข้อที่ยังอ้างเลขมาตรา ต้องเปิดตัวบทเอง
+    // ข้อที่ยังอ้างเลขมาตรา ต้องเปิดตัวบทเอง — นับใหม่หลังผูกคำตอบ เพราะข้อที่ได้คำตอบแล้วหลุดป้ายไป
+    manual_ref_count: requirements.filter(r => r.needs_manual_ref).length,
   }
 }

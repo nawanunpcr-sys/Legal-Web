@@ -74,14 +74,20 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   // P18 · แต่ละข้อปฏิบัติเก็บโครงสร้าง + ผลประเมิน inline (choice: null|'met'|'unmet'|'waiting')
   // Skill 3 · ที่มา (from_*) ต้องพกต่อจากหน้าสรุปกฎหมายจนถึงตอนบันทึกลง lg_requirements
   //   ไม่งั้นผู้ตรวจ ISO เปิด F-259 แล้วเจอข้อที่ไม่มีในตัวบทของกฎหมายฉบับนั้น โดยหาที่มาไม่ได้
+  // P17 · ข้อที่อ้างถึงตัวบทซึ่ง "ยังไม่ถูกออกมา" ประเมินความสอดคล้องไม่ได้
+  //   ปล่อยให้ผู้ใช้กด "ไม่สอดคล้อง" = สร้าง NC ปลอมให้บริษัท ทั้งที่ยังไม่มีอะไรให้ทำตาม
+  //   จึงตั้ง "รอผู้เกี่ยวข้องประเมิน" ให้ล่วงหน้า (ผู้ใช้เปลี่ยนเองได้ถ้าเห็นต่าง)
+  const pendingIssuance = q => (q.ref_answers || []).some(a => a.status === 'pending_issuance')
   const [reqRows, setReqRows] = useState(() => (initialData?.requirements || []).map(q => ({
     text: `${q.section_ref ? q.section_ref + ': ' : ''}${q.req_text || ''}`.trim(),
-    choice: null, responsible: q.responsible || '', waitDate: '',
+    choice: pendingIssuance(q) ? 'waiting' : null,
+    responsible: q.responsible || '', waitDate: '',
     frequency: q.frequency || '', documents: q.documents || '',
     from_related_law: q.from_related_law || null,
     from_law_url: q.from_law_url || '',
     from_law_confidence: q.from_law_confidence || '',
     from_law_note: q.from_law_note || '',
+    ref_answers: q.ref_answers || [],   // mig 040 · พกคำตอบต่อไปเก็บใน lg_requirements
   })).filter(r => r.text))
   const [saving, setSaving] = useState(false)
   const [newLaw, setNewLaw] = useState(null)
@@ -174,6 +180,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
         from_related_law: r.from_related_law || null,
         from_law_url: r.from_law_url || '',
         from_law_confidence: r.from_law_confidence || '',
+        ref_answers: r.ref_answers || [],   // mig 040 · คำตอบของกฎหมายที่ข้อนี้อ้างถึง
       }))
       const { law } = await onCreate({
         lawFields: { code: previewCode, cat, name: name.trim(), hierarchy_level: level, law_type: lawType || null, ministry,

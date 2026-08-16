@@ -354,6 +354,10 @@ export async function createLawFull({ code, cat, name, hierarchy_level, law_type
       from_related_law: r.from_related_law || null,
       from_law_url: r.from_law_url || null,
       from_law_confidence: r.from_law_confidence || null,
+      // P17 (mig 040) · คำตอบของกฎหมายที่ข้อนี้อ้างถึง — เก็บติดไปกับข้อ
+      // เพื่อให้เปิดทะเบียนย้อนหลังยังเห็นว่าข้อนี้อ้างถึงอะไร และได้คำตอบว่าอย่างไร
+      // โดยไม่ต้องยิง AI ซ้ำ · ที่สำคัญคือรู้ว่า "ยังรอประกาศอยู่" ซึ่งเปลี่ยนวิธีประเมิน
+      ref_answers: Array.isArray(r.ref_answers) ? r.ref_answers : [],
     }
   })
   const reqStatusList = clean.map(r => ({ status: (r.choice === 'met') ? 'met' : 'unmet' }))
@@ -661,6 +665,7 @@ export async function addStagedLaw(rows) {
     // Skill 3 · lg_import_staging เก็บ from_related_law มาตั้งแต่ 034 (api/law-analyze.js เขียนค่าลงไปแล้ว)
     // แต่ตอนย้ายเข้า lg_requirements เคยตกหล่น — ที่มาจึงหายตอนอนุมัติเข้าทะเบียน
     from_related_law: r.from_related_law || null,
+    ref_answers: Array.isArray(r.ref_answers) ? r.ref_answers : [],   // P17 (mig 040) · ทางอนุมัติจาก staging
   }))
   const { error: e2 } = await supabase.from('lg_requirements').insert(reqRows)
   if (e2) throw e2
