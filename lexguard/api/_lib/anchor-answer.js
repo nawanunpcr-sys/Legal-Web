@@ -15,7 +15,7 @@
 // ระบบที่ดึงเฉพาะข้อความของมาตราจะได้คำตอบว่า "ให้เป็นไปตามตารางที่ 2" ซึ่งไม่ใช่คำตอบ
 // → จึงต้องมีรอบที่ 3 ที่ตามเข้าไปถอดเนื้อหาตารางออกมา
 
-import { hostAllowed, fetchPdfBase64, askClaude, WEB_SEARCH_TOOL } from './law-source.js'
+import { hostAllowed, isSecondarySource, fetchPdfBase64, askClaude, WEB_SEARCH_TOOL } from './law-source.js'
 import { normalizeQuestionKey, questionUsable } from './ref-classify.js'
 import { flagUnverifiedNumbers } from './verify-numbers.js'
 
@@ -307,7 +307,14 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
     source_url: url,
     confidence: String(out.confidence || '').trim(),
     unverified_numbers: unverified,
-    note: fromTable ? 'คำตอบมาจากตารางท้ายกฎหมาย' : '',
+    // ที่มาของคำตอบต้องติดไปด้วยเสมอ — จป. เอาไปอ้างกับผู้ตรวจ ISO ต้องรู้ว่าอ้างจากอะไรได้
+    note: [
+      fromTable ? 'คำตอบมาจากตารางท้ายกฎหมาย' : '',
+      isSecondarySource(url)
+        ? 'อ่านจากฉบับรวมขององค์กรวิชาชีพ ไม่ใช่ต้นฉบับราชกิจจาฯ — ฉบับรวมมักมีเชิงอรรถบอกว่าข้อไหนถูกแก้แล้ว แต่ควรตรวจกับต้นฉบับก่อนใช้อ้างอิง'
+        : '',
+    ].filter(Boolean).join(' · '),
+    from_secondary_source: isSecondarySource(url),
   }
 
   await writeCache({

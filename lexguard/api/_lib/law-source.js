@@ -9,10 +9,15 @@
 
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
 
-// ทดสอบจริงแล้ว: krisdika.go.th ค้นเจอแต่ไม่มีเนื้อหามาตราในดัชนี เพราะเก็บตัวบทเป็น PDF
-// ผ่าน endpoint librarian/get — ห้ามใส่กลับเข้ามา (ต่างจาก ALLOWED_HOSTS ใน law-analyze.js
-// ที่ผู้ใช้วางลิงก์ PDF เองได้ ตรงนี้คือดัชนีที่ web_search ใช้ค้น ซึ่งไม่มีตัวบท)
-export const TRUSTED_DOMAINS = [
+// ── krisdika.go.th · ห้ามใส่กลับเข้ามา ───────────────────────────────────────
+// เหตุผลเดิม: ค้นเจอแต่ไม่มีเนื้อหามาตราในดัชนี เพราะเก็บตัวบทเป็น PDF ผ่าน endpoint librarian/get
+// ทดสอบซ้ำ 2026-08-16 เจอเหตุผลที่หนักกว่านั้น — ดึงไฟล์ไม่ได้เลยแม้จะรู้ URL:
+//   krisdika.go.th          → DNS ไม่ resolve (ไม่มี A record ที่ apex)
+//   www.krisdika.go.th      → SSL self-signed certificate · fetch() ปฏิเสธการเชื่อมต่อ
+// ใส่เข้ามาก็ได้แค่ not_found ที่ช้าลง
+
+// ── ชั้นที่ 1 · ต้นทางของกฎหมาย (หน่วยงานที่ออกกฎหมายนั้นเอง) ────────────────
+export const PRIMARY_DOMAINS = [
   // ── SHE ──
   'ratchakitcha.soc.go.th',  // ต้นทางประกาศ path /documents/<id>.pdf สกัดข้อความได้
   'tosh.or.th',              // องค์การมหาชนตาม ม.52 มีตัวบท พ.ร.บ. เต็ม
@@ -33,16 +38,50 @@ export const TRUSTED_DOMAINS = [
   // ── P17 · กฎหมายอาคาร/ผังเมือง ──
   //    ตัวบทไทยอ้าง "ตามกฎหมายว่าด้วยการควบคุมอาคาร" บ่อยมาก (ห้องน้ำ ทางหนีไฟ แสงสว่าง ระบายอากาศ)
   //    ไม่มีโดเมนกลุ่มนี้ คำตอบจะตกด่านโดเมนทุกครั้งแล้วกลายเป็น "หาไม่เจอ" ทั้งที่ตัวบทเปิดได้
+  //    ยืนยันแล้ว info.dpt.go.th เสิร์ฟไฟล์ตัวบทเป็น application/pdf จริง (ครอบคลุมด้วย dpt.go.th)
   'dpt.go.th',               // กรมโยธาธิการและผังเมือง — เจ้าของ พ.ร.บ.ควบคุมอาคาร + กฎกระทรวงใต้กฎหมาย
   'bangkok.go.th',           // กทม. — ข้อบัญญัติควบคุมอาคารในเขต กทม.
+
+  // ── ปิดช่องโหว่: โดเมนที่ law-analyze.js เชื่อมาตลอด แต่ Skill 3 ไม่เคยเชื่อ ──
+  //    ผลคือผู้ใช้วางลิงก์เองได้ แต่ระบบตามไปดึงเองไม่ได้ ทั้งที่เป็นแหล่งเดียวกัน
+  //    เจอตอนทดสอบกฎกระทรวงควบคุมสถานประกอบกิจการฯ 2560 ซึ่งเป็นกฎกระทรวง "สาธารณสุข"
+  //    แต่ moph.go.th ไม่อยู่ในรายการนี้ — กฎหมายแม่ของตัวบทที่กำลังสรุปเลยตามไปอ่านไม่ได้
+  'moph.go.th',              // สธ. — ครอบคลุม ddc./anamai. (เจ้าของ พ.ร.บ.การสาธารณสุข)
+  'diw.go.th',               // กรมโรงงานอุตสาหกรรม — "กฎหมายว่าด้วยโรงงาน" ที่ตัวบทอ้างถึงบ่อย
+  'doeb.go.th',              // กรมธุรกิจพลังงาน — น้ำมันเชื้อเพลิง/ก๊าซ (หมวด LB)
+  'disaster.go.th',          // ปภ. — การป้องกันและระงับอัคคีภัย (หมวด LC)
+  'mnre.go.th',              // กระทรวงทรัพยากรธรรมชาติและสิ่งแวดล้อม
 ]
 
-export function hostAllowed(u){
+// ── ชั้นที่ 2 · ฉบับรวมที่จัดทำโดยองค์กรวิชาชีพ ──────────────────────────────
+// ไม่ใช่ต้นฉบับราชกิจจาฯ แต่ "แม่นกว่า" สำหรับกฎหมายที่ถูกแก้หลายรอบ เพราะรวมฉบับแก้ไขไว้แล้ว
+// พร้อมเชิงอรรถว่าข้อไหนถูกยกเลิกโดยฉบับใด
+//
+// ทำไมถึงคุ้ม — เคสจริงจากการทดสอบ:
+//   ตารางที่ 2 ของกฎกระทรวง ฉบับที่ 39 (พ.ศ. 2537) ถูกยกเลิกโดยฉบับที่ 63 (พ.ศ. 2551)
+//   ดึงราชกิจจาฯ ฉบับ 39 มาตรงๆ จะได้ "ตารางที่ถูกยกเลิกไปแล้ว" โดยไม่มีอะไรเตือนเลย
+//   ซึ่งอันตรายกว่าการอ่านฉบับรวมที่มีเชิงอรรถบอกว่าตารางนี้ถูกแทนที่แล้ว
+//
+// แลกมาด้วยความเสี่ยงว่าฉบับรวมอาจอัปเดตไม่ทัน จึงติด note เตือนทุกครั้งที่คำตอบมาจากชั้นนี้
+// ด่านตรวจอื่นยังบังคับครบเหมือนเดิม (source_excerpt · ตัวเลขต้องมีที่มา · ห้าม "ตามที่กฎหมายกำหนด")
+export const SECONDARY_DOMAINS = [
+  'asa.or.th',               // สมาคมสถาปนิกสยาม ในพระราชูปถัมภ์ — ฉบับรวมกฎหมายควบคุมอาคาร
+  'shawpat.or.th',           // สมาคมส่งเสริมความปลอดภัยฯ — law-analyze เชื่ออยู่แล้ว
+]
+
+export const TRUSTED_DOMAINS = [...PRIMARY_DOMAINS, ...SECONDARY_DOMAINS]
+
+function inList(u, list){
   try{
     const host = new URL(u).hostname.toLowerCase()
-    return TRUSTED_DOMAINS.some(d => host === d || host.endsWith('.' + d))
+    return list.some(d => host === d || host.endsWith('.' + d))
   }catch{ return false }
 }
+
+export function hostAllowed(u){ return inList(u, TRUSTED_DOMAINS) }
+
+// คำตอบมาจากฉบับรวมของเอกชน ไม่ใช่ต้นฉบับราชกิจจาฯ — ผู้ใช้ควรรู้ก่อนเอาไปอ้างอิงกับผู้ตรวจ
+export function isSecondarySource(u){ return inList(u, SECONDARY_DOMAINS) }
 
 // ── ดึงไฟล์ตัวบทจริงมาอ่าน แทนการเชื่อ snippet จาก web_search ────────────────
 // ทดสอบจริง 2026-08-14: ราชกิจจาฯ ยอมให้ดึงเฉพาะไฟล์ .pdf ตรงๆ เท่านั้น
@@ -64,7 +103,14 @@ export async function fetchPdfBase64(url){
     })
     if(!r.ok) return null
     if(!(r.headers.get('content-type') || '').toLowerCase().includes('pdf')) return null
+    // เช็คขนาดจากหัว response ก่อนอ่าน body — ไม่งั้นดาวน์โหลดจบแล้วค่อยรู้ว่าใหญ่เกิน
+    // เจอจริง: info.dpt.go.th/.../2522update.pdf (พ.ร.บ.ควบคุมอาคาร ฉบับรวม) = 165 MB
+    // ของเดิมจะดูดครบ 165 MB เข้า memory ของ serverless function แล้วค่อยทิ้ง
+    // ซึ่งกินทั้งเวลาในงบ 255 วิ และเสี่ยงทำให้ฟังก์ชันตายจาก memory limit
+    const declared = Number(r.headers.get('content-length') || 0)
+    if(declared > PDF_MAX_BYTES){ try{ await r.body?.cancel?.() }catch{} ; return null }
     const buf = await r.arrayBuffer()
+    // ยังต้องเช็คซ้ำหลังอ่าน — เซิร์ฟเวอร์ที่ส่งแบบ chunked ไม่มี content-length มาให้
     if(!buf.byteLength || buf.byteLength > PDF_MAX_BYTES) return null
     return Buffer.from(buf).toString('base64')
   }catch{ return null }   // ดึงไม่ได้ไม่ใช่เหตุให้ล้ม — ถอยไปใช้ผลจาก web_search ตามเดิม
