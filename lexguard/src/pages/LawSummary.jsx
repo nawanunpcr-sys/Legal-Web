@@ -197,7 +197,9 @@ function RefAnswer({ a }) {
   ].filter(Boolean)
 
   return (
-    <div style={{ marginLeft: 30, marginTop: 4, fontSize: 12.5, lineHeight: 1.65 }}>
+    <div style={{ marginLeft: 30, marginTop: 5, fontSize: 13.5, lineHeight: 1.7 }}>
+      {/* ขนาดตัวอักษรและระยะเยื้องเท่ากับเนื้อข้อ — สิ่งที่กฎหมายที่อ้างถึงกำหนด
+          คือ "สิ่งที่ข้อนี้สั่งให้ทำ" จริง ๆ ไม่ใช่หมายเหตุประกอบ จึงต้องอ่านต่อเนื่องกัน */}
       <div style={{ color: 'var(--ink)' }}>
         {body}
         {a.from_table && <span style={{ color: 'var(--ink-faint)' }}> (จากตารางท้ายกฎหมาย)</span>}
@@ -205,7 +207,7 @@ function RefAnswer({ a }) {
 
       {rows.length > 0 && (
         <div style={{ marginTop: 4, overflowX: 'auto' }}>
-          <table style={{ borderCollapse: 'collapse', fontSize: 11.5, fontVariantNumeric: 'tabular-nums' }}>
+          <table style={{ borderCollapse: 'collapse', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
             <tbody>{rows.map((c, i) => (
               <tr key={i}>
                 <td style={{ padding: '1px 12px 1px 0', color: 'var(--ink-soft)', whiteSpace: 'nowrap' }}>{c['กรณี'] || '—'}</td>
