@@ -148,89 +148,95 @@ const REL_STATUS = {
   not_answered: { label: () => 'เปิดตัวบทแล้วแต่ยังไม่ได้คำตอบ', color: 'var(--warn)' },
 }
 
-/* ── P17 · คำตอบของกฎหมายที่ข้อนี้อ้างถึง — แสดง "ใต้ข้อ" ไม่ใช่แถวใหม่ท้ายตาราง ──
-   ของเดิม append เป็นแถวแยก ผู้ใช้จึงไม่รู้ว่าแถวไหนมาจากข้อไหน
-   ซึ่งเป็นเหตุผลหลักที่ผลลัพธ์เดิมดูมั่ว */
-const ANS_LOOK = {
-  answered:         { icon: '✅', bg: 'var(--ok-bg, rgba(16,150,90,.08))', bd: 'var(--ok)', fg: 'var(--ok)' },
-  pending_issuance: { icon: '⏳', bg: 'var(--line)', bd: 'var(--line)', fg: 'var(--ink-soft)' },
-  not_answered:     { icon: '⚠️', bg: 'var(--warn-bg)', bd: 'var(--warn)', fg: 'var(--warn)' },
+/* ── P17 · คำตอบของกฎหมายที่ข้อนี้อ้างถึง — เขียนต่อ "ในเนื้อข้อ" เลย ──
+   รุ่นก่อนเป็นกล่องสีแยกพร้อมไอคอนและหัวข้อ "กฎหมายที่อ้างถึงระบุว่า"
+   ผู้ใช้บอกว่ามันกลายเป็นของอีกชิ้นที่ต้องอ่านต่อ ทั้งที่มันคือ "สิ่งที่ข้อนี้สั่งให้ทำ" อยู่แล้ว
+   ตอนนี้จึงเหลือ: เนื้อความต่อจากข้อ → ตารางเกณฑ์ → ปุ่มกางดูตัวบท → บรรทัดที่มา + ลิงก์
+   ไม่มีไอคอน ไม่มีกรอบสี · สีใช้เฉพาะที่ "ป้ายบอกสถานะ" ซึ่งต้องกวาดตาเจอ */
+const SRC_LABEL = {
+  answered:         { t: 'ตามกฎหมายที่อ้างถึง', c: 'var(--ok)' },
+  pending_issuance: { t: 'รอประกาศ',            c: 'var(--ink-faint)' },
+  not_answered:     { t: 'ยังเปิดตัวบทไม่ได้',   c: 'var(--warn)' },
 }
 
-function RefAnswerBox({ a }) {
-  const look = ANS_LOOK[a.status] || ANS_LOOK.not_answered
+/* ปุ่มกางดูข้อความจากตัวบท — หลักฐานของข้อนั้น พับไว้ไม่ให้บังเนื้อความ
+   แต่ต้องกางได้ในที่เดียวกับที่อ่าน ไม่ใช่ต้องไปเปิดไฟล์ทั้งฉบับเพื่อดูประโยคเดียว */
+function ExcerptToggle({ text }) {
+  const [open, setOpen] = useState(false)
+  if (!String(text || '').trim()) return null
+  return (
+    <div style={{ marginTop: 3 }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer',
+          font: 'inherit', fontSize: 11.5, color: open ? 'var(--brand)' : 'var(--ink-faint)' }}>
+        {open ? '▾' : '▸'} ข้อความจากตัวบท
+      </button>
+      {open && (
+        <div style={{ marginTop: 3, padding: '4px 0 4px 9px', borderLeft: '2px solid var(--line)',
+          fontSize: 11.5, lineHeight: 1.6, color: 'var(--ink-soft)' }}>{text}</div>
+      )}
+    </div>
+  )
+}
+
+function RefAnswer({ a }) {
   const rows = Array.isArray(a.answer_detail?.['เกณฑ์']) ? a.answer_detail['เกณฑ์'] : []
   const warn = a.answer_detail?.['ข้อควรระวัง']
   const evid = a.answer_detail?.['หลักฐานที่ต้องเก็บ']
+  const label = SRC_LABEL[a.status] || SRC_LABEL.not_answered
+
+  // ข้อความที่เขียนต่อในเนื้อข้อ — ต่างกันตามสถานะ แต่รูปแบบการแสดงเหมือนกันหมด
+  const body = a.status === 'answered' ? a.answer_plain
+    : a.status === 'pending_issuance'
+      ? [a.answer_plain, a.interim_rule ? `ระหว่างรอ ${a.interim_rule}` : '',
+         'ยังตัดสินว่าสอดคล้องหรือไม่สอดคล้องไม่ได้ — ตั้งเป็น “รอผู้เกี่ยวข้องประเมิน” ให้แล้ว'].filter(Boolean).join(' · ')
+      : [a.note || 'ค้นแล้วยังไม่ได้คำตอบของข้อนี้', a.found_instead ? `เปิดไปเจอ: ${a.found_instead}` : ''].filter(Boolean).join(' · ')
+
+  // หมายเหตุของ "แหล่ง" — อยู่ท้ายสุดกับบรรทัดที่มา ไม่ใช่ปนอยู่ในเนื้อความ
+  const srcNotes = [
+    warn || '',
+    evid ? `หลักฐานที่ต้องเก็บ: ${evid}` : '',
+    a.unverified_numbers?.length ? `ตรวจตัวเลข ${a.unverified_numbers.join(', ')} — หาที่มาในข้อความที่คัดจากตัวบทไม่เจอ` : '',
+    a.from_secondary_source ? 'อ่านจากฉบับรวมขององค์กรวิชาชีพ — ตรวจกับต้นฉบับราชกิจจาฯ ก่อนใช้อ้างอิง' : '',
+    a.status === 'not_answered' && a.anchor_question ? `คำถามที่ต้องหาคำตอบ: ${a.anchor_question}` : '',
+  ].filter(Boolean)
+
   return (
-    <div style={{ marginLeft: 30, marginTop: 5, padding: '7px 10px', borderRadius: 8,
-      background: look.bg, borderLeft: `3px solid ${look.bd}`, fontSize: 11.5, lineHeight: 1.65 }}>
-      <div style={{ color: look.fg, fontWeight: 600, marginBottom: 2 }}>
-        {look.icon} กฎหมายที่อ้างถึงระบุว่า
-        {a.from_table && <span style={{ fontWeight: 400 }}> · จากตารางท้ายกฎหมาย</span>}
+    <div style={{ marginLeft: 30, marginTop: 4, fontSize: 12.5, lineHeight: 1.65 }}>
+      <div style={{ color: 'var(--ink)' }}>
+        {body}
+        {a.from_table && <span style={{ color: 'var(--ink-faint)' }}> (จากตารางท้ายกฎหมาย)</span>}
       </div>
 
-      {a.status === 'answered' && <>
-        <div style={{ color: 'var(--ink)' }}>{a.answer_plain}</div>
-        {rows.length > 0 && (
-          <div style={{ marginTop: 4, overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'collapse', fontSize: 11 }}>
-              <tbody>{rows.map((c, i) => (
-                <tr key={i}>
-                  <td style={{ padding: '1px 8px 1px 0', color: 'var(--ink-soft)', whiteSpace: 'nowrap' }}>{c['กรณี'] || '—'}</td>
-                  <td style={{ padding: '1px 8px 1px 0', fontWeight: 600, whiteSpace: 'nowrap' }}>{c['จำนวน'] || ''}</td>
-                  <td style={{ padding: '1px 0', color: 'var(--ink-soft)' }}>{c['ต่อหน่วย'] || ''}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        )}
-        {warn && <div style={{ marginTop: 3, color: 'var(--warn)' }}>⚠ {warn}</div>}
-        {evid && <div style={{ marginTop: 3, color: 'var(--ink-soft)' }}>หลักฐานที่ต้องเก็บ: {evid}</div>}
-        {a.unverified_numbers?.length > 0 && (
-          <div style={{ marginTop: 3, color: 'var(--warn)', fontWeight: 600 }}
-            title="ตัวเลขนี้หาที่มาในข้อความที่คัดจากตัวบทไม่เจอ — เปิดตัวบทตรวจก่อนใช้">
-            ⚠ ตรวจตัวเลข {a.unverified_numbers.join(', ')}
-          </div>
-        )}
-        {/* คำตอบจาก "ฉบับรวม" ขององค์กรวิชาชีพ ไม่ใช่ต้นฉบับราชกิจจาฯ
-            จป. เอาไปอ้างกับผู้ตรวจ ISO ต้องรู้ว่าอ้างจากอะไรได้ ก่อนจะอ้างไปแล้วโดนถาม */}
-        {a.from_secondary_source && (
-          <div style={{ marginTop: 3, color: 'var(--warn)' }}
-            title="ฉบับรวมมักมีเชิงอรรถบอกว่าข้อไหนถูกแก้แล้ว ซึ่งต้นฉบับราชกิจจาฯ รายฉบับไม่มี แต่ก็อาจอัปเดตไม่ทัน">
-            ⚠ อ่านจากฉบับรวมขององค์กรวิชาชีพ — ตรวจกับต้นฉบับราชกิจจาฯ ก่อนใช้อ้างอิง
-          </div>
-        )}
-      </>}
-
-      {a.status === 'pending_issuance' && <>
-        <div style={{ color: 'var(--ink)' }}>{a.answer_plain}</div>
-        {a.interim_rule
-          ? <div style={{ marginTop: 3, color: 'var(--ink-soft)' }}>ระหว่างรอ: {a.interim_rule}</div>
-          : <div style={{ marginTop: 3, color: 'var(--ink-faint)' }}>ตัวบทไม่ได้บอกวิธีปฏิบัติระหว่างรอไว้</div>}
-        <div style={{ marginTop: 3, color: 'var(--ink-faint)' }}>
-          ยังตัดสินว่าสอดคล้องหรือไม่สอดคล้องไม่ได้ — ตั้งเป็น “รอผู้เกี่ยวข้องประเมิน” ให้แล้ว
-        </div>
-      </>}
-
-      {a.status === 'not_answered' && <>
-        <div style={{ color: 'var(--ink)' }}>{a.note || 'ค้นแล้วยังไม่ได้คำตอบของข้อนี้'}</div>
-        {a.found_instead && <div style={{ marginTop: 3, color: 'var(--ink-soft)' }}>เปิดไปเจอ: {a.found_instead}</div>}
-        {a.anchor_question && (
-          <div style={{ marginTop: 3, color: 'var(--ink-faint)' }}>คำถามที่ต้องหาคำตอบ: {a.anchor_question}</div>
-        )}
-      </>}
-
-      {(a.law_name || a.source_url) && (
-        <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <span style={{ color: 'var(--ink-soft)' }}>
-            {a.law_name || '—'}{a.section_ref ? ` · ${a.section_ref}` : ''}
-          </span>
-          {a.source_url && (
-            <a href={a.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--brand)' }}>เปิดตัวบท ↗</a>
-          )}
+      {rows.length > 0 && (
+        <div style={{ marginTop: 4, overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', fontSize: 11.5, fontVariantNumeric: 'tabular-nums' }}>
+            <tbody>{rows.map((c, i) => (
+              <tr key={i}>
+                <td style={{ padding: '1px 12px 1px 0', color: 'var(--ink-soft)', whiteSpace: 'nowrap' }}>{c['กรณี'] || '—'}</td>
+                <td style={{ padding: '1px 12px 1px 0', fontWeight: 600, whiteSpace: 'nowrap' }}>{c['จำนวน'] || ''}</td>
+                <td style={{ padding: '1px 0', color: 'var(--ink-soft)' }}>{c['ต่อหน่วย'] || ''}</td>
+              </tr>
+            ))}</tbody>
+          </table>
         </div>
       )}
+
+      <ExcerptToggle text={a.source_excerpt} />
+
+      {/* บรรทัดที่มา — ชื่อกฎหมายที่อ้างถึง + ไฟล์ตัวบท เท่านั้น */}
+      <div style={{ marginTop: 3, display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12 }}>
+        <span style={{ color: label.c, whiteSpace: 'nowrap' }}>{label.t}</span>
+        <span style={{ color: 'var(--ink-soft)' }}>
+          {a.law_name || '—'}{a.section_ref ? ` · ${a.section_ref}` : ''}
+        </span>
+        {a.source_url && (
+          <a href={a.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--brand)' }}>เปิดตัวบท ↗</a>
+        )}
+      </div>
+      {srcNotes.map((n, k) => (
+        <div key={k} style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--ink-faint)' }}>{n}</div>
+      ))}
     </div>
   )
 }
@@ -249,7 +255,7 @@ function RelatedLawsPanel({ items = [] }) {
   return (
     <details open={pending > 0} style={{ margin: '0 0 10px', fontSize: 12 }}>
       <summary style={{ cursor: 'pointer', color: 'var(--brand)' }}>
-        กฎหมายที่อ้างถึง ({items.length} ฉบับ)
+        กฎหมายที่อ้างถึง — ที่ยังไม่ได้ผูกกับข้อใด ({items.length} ฉบับ)
         {pending > 0 && <span style={{ color: 'var(--warn)' }}> · ต้องตรวจเอง {pending} ฉบับ</span>}
       </summary>
       <div style={{ marginTop: 6, borderTop: '1px solid var(--line)' }}>
@@ -408,7 +414,11 @@ function ReqRow({ r, i, onChange, onRemove, suggest }) {
         </div>
       )}
       {/* P17 · คำตอบของกฎหมายที่ข้อนี้อ้างถึง — อยู่ใต้ข้อโดยตรง ไม่ใช่แถวใหม่ท้ายตาราง */}
-      {(r.ref_answers || []).map((a, k) => <RefAnswerBox key={k} a={a} />)}
+      {(r.ref_answers || []).map((a, k) => <RefAnswer key={k} a={a} />)}
+      {/* หลักฐานของข้อนี้เอง — พับไว้เหมือนกัน กางดูได้โดยไม่ต้องเปิดไฟล์ทั้งฉบับ */}
+      {r.source_excerpt && (
+        <div style={{ marginLeft: 30 }}><ExcerptToggle text={r.source_excerpt} /></div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 6, marginLeft: 30 }}>
         <input className="form-input" style={{ marginTop: 0 }} value={r.responsible} onChange={e => set('responsible', e.target.value)} placeholder="ผู้รับผิดชอบ" />
         <input className="form-input" style={{ marginTop: 0 }} value={r.frequency} onChange={e => set('frequency', e.target.value)} placeholder="ความถี่" />
@@ -441,6 +451,20 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
   const [pendingCount, setPendingCount] = useState(0)   // จำนวนกฎหมายที่รอตามอ่าน
   // ตั้งไว้เมื่อคำขอที่ 2 ล้ม เพื่อให้กดลองเฉพาะด่านนั้นซ้ำได้ (cache ทำให้รอบสองเร็วมาก)
   const [relateRetry, setRelateRetry] = useState(null)
+
+  // ── ฉบับที่ยังไม่ได้ไปโผล่ใต้ข้อใดข้อหนึ่ง ────────────────────────────────
+  // 3 สถานะนี้มาจากโฟลว์คำถาม (P17) ซึ่งถูกผูกไว้กับข้อผ่าน for_section แล้ว
+  // จึงตัดออกจากแผงรวม "เฉพาะเมื่อผูกติดข้อได้จริง" — เช็คจากชื่อกฎหมายใน ref_answers ของข้อ
+  // ผูกไม่ติด (for_section ไม่ตรงข้อไหนเลย) ต้องยังอยู่ในแผง ไม่งั้นข้อมูลหายเงียบ
+  const leftoverRefs = useMemo(() => {
+    const INLINE = new Set(['answered', 'pending_issuance', 'not_answered'])
+    const attached = new Set(
+      reqs.flatMap(r => (r.ref_answers || []).map(a => String(a.law_name || '').trim()))
+    )
+    return (related.laws || []).filter(
+      x => !INLINE.has(x.status) || !attached.has(String(x.law_name || '').trim())
+    )
+  }, [related.laws, reqs])
 
   async function analyze() {
     if (!src.trim() || busy) return
@@ -667,9 +691,11 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
               )}
             </div>
           )}
-          {/* รายฉบับ — ต้องบอกให้ได้ว่า "ฉบับไหน" ที่ต้องไปเปิดตัวบทเอง ไม่ใช่แค่จำนวน */}
-          <RelatedLawsPanel items={related.laws} />
           {reqs.map((r, i) => <ReqRow key={i} r={r} i={i} onChange={setReq} onRemove={rmReq} suggest={suggest} />)}
+          {/* รายฉบับ — เหลือเฉพาะที่ยังไม่ได้ไปโผล่ใต้ข้อใดข้อหนึ่ง
+              ฉบับที่ผูกกับข้อได้แล้วอยู่ท้ายข้อนั้นแล้ว เอามาซ้ำที่นี่คือให้อ่านสองรอบเปล่าๆ
+              แต่ที่ผูกไม่ได้ห้ามหาย — ไม่งั้น จป. ไม่รู้ว่ายังต้องไปเปิดฉบับไหนเอง */}
+          <RelatedLawsPanel items={leftoverRefs} />
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button className="btn btn-primary" disabled={saving || !law.name?.trim() || !can('edit')} onClick={() => onAddToRegistry(buildInitialData(law, reqs))}>
