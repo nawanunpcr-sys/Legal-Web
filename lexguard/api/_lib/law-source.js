@@ -120,9 +120,21 @@ export function isSecondarySource(u){ return inList(u, SECONDARY_DOMAINS) }
 const PDF_MAX_BYTES = 8_000_000   // กันไฟล์ใหญ่เกินจนคำขอไป Anthropic ล้ม
 const PDF_FETCH_TIMEOUT = 45_000
 
+// ── ที่อยู่ที่ "ไม่ลงท้ายด้วย .pdf แต่เสิร์ฟไฟล์ PDF จริง" ────────────────────
+// เว็บหน่วยงานไทยจำนวนมากเสิร์ฟตัวบทผ่าน endpoint ดาวน์โหลดที่มีแต่ query string
+// ยืนยัน 2026-08-17: laws.anamai.moph.go.th/th/practices/download/?did=…&id=…
+//   → 200 · application/pdf · 108 KB (ตัวบทจริง)
+// กฎ ".pdf เท่านั้น" ของเดิมจึงปิดตัวเองไม่ให้อ่านตัวบทของกรมอนามัยทั้งกรม
+// ทั้งที่ไฟล์เปิดได้ — เป็นสาเหตุที่คำถามเรื่องเกณฑ์คุณภาพน้ำบริโภคตอบไม่ได้
+//
+// ด่านจริงยังเป็น content-type ข้างล่างเหมือนเดิม — ตรงนี้แค่เลิกตัดทิ้งตั้งแต่ยังไม่ได้ลอง
+// ไม่ปล่อยให้ยิงมั่วทุก URL เพราะหน้า HTML ที่ยิงไปแล้วโดน content-type ตีกลับ ก็เสียเวลาฟรีอยู่ดี
+const PDF_ENDPOINT_RE = /\/downloads?\/?(?:\?|$)|[?&](?:did|fid|file_id|attach(?:ment)?_id)=/i
+
 export async function fetchPdfBase64(url){
   if(!hostAllowed(url)) return null                      // กัน SSRF — ต้องอยู่ในโดเมนที่เชื่อถือได้
-  if(!/\.pdf($|\?|#)/i.test(url)) return null            // เอาเฉพาะไฟล์ .pdf ตรงๆ (หน้า HTML โดนบล็อกอยู่ดี)
+  // ไฟล์ .pdf ตรงๆ หรือ endpoint ดาวน์โหลดที่รู้จัก · หน้า HTML ทั่วไปยังถูกตัดตั้งแต่ตรงนี้
+  if(!/\.pdf($|\?|#)/i.test(url) && !PDF_ENDPOINT_RE.test(url)) return null
   try{
     const r = await fetch(url, {
       headers: { 'user-agent': 'Mozilla/5.0 LexRegistry' },
@@ -183,6 +195,23 @@ export async function askClaude({ system, content, tools = null, maxTokens = 800
     return parseLoose(txt)
   }catch{ return null }
 }
+
+// ── กฎเรื่อง "ที่อยู่ของไฟล์ตัวบท" ที่ต้องบอกโมเดลทุกครั้งที่ให้ค้นเว็บ ───────
+// อยู่ไฟล์เดียวกับ DEAD_SOURCES ตั้งใจ — prompt กับด่านตรวจต้องเปลี่ยนพร้อมกันเสมอ
+// แยกไปไว้คนละที่แล้วมันจะเพี้ยนจากกัน แล้วโมเดลจะคืนที่อยู่ที่โค้ดตัดทิ้งอยู่เรื่อยๆ
+//
+// ทำไมต้องบอกตั้งแต่รอบแรก แทนที่จะปล่อยให้ผิดแล้วค่อยยิงซ้ำ: การยิงซ้ำคือคำขอเพิ่มอีก 1 ครั้ง
+// แต่ประโยคพวกนี้ฟรี · เจอจริงตอนสรุปกฎกระทรวงควบคุมสถานประกอบกิจการฯ 2560
+// ผลค้นคืนที่อยู่รูปแบบเก่าของราชกิจจาฯ มา แล้วตกด่านโดเมนทั้งที่ตัวบทฉบับนั้นเปิดได้
+export const SOURCE_URL_RULES = `เรื่องที่อยู่ (URL) ของไฟล์ตัวบท — คืนเฉพาะที่อยู่ที่เปิดได้จริง:
+- ราชกิจจานุเบกษาเปิดได้เฉพาะรูปแบบ https://ratchakitcha.soc.go.th/documents/<เลข>.pdf
+- รูปแบบเก่า https://www.ratchakitcha.soc.go.th/DATA/PDF/... ใช้ไม่ได้แล้ว (เว็บกันด้วย Cloudflare)
+  ผลค้นยังคืนรูปแบบนี้มาบ่อยเพราะดัชนีเก่ายังไม่หมด — เจอแล้วห้ามใช้เป็น source_url
+  ให้ค้นต่อจนได้ที่อยู่แบบ /documents/<เลข>.pdf หรือหาแหล่งอื่นในรายการโดเมนที่กำหนดแทน
+- legal.labour.go.th เปิดไม่ได้ (ใบรับรอง SSL ไม่ผ่าน) ให้ใช้ osh.labour.go.th หรือ dlpw.go.th แทน
+- ที่อยู่ที่ไม่ลงท้ายด้วย .pdf ใช้ได้ ถ้าเป็นลิงก์ "ดาวน์โหลดไฟล์ตัวบท" โดยตรง
+  เช่น https://laws.anamai.moph.go.th/th/practices/download/?did=<เลข>&id=<เลข>
+  แต่ห้ามคืนที่อยู่ของ "หน้าเว็บที่มีลิงก์ดาวน์โหลด" มาแทนตัวไฟล์`
 
 export const WEB_SEARCH_TOOL = {
   type: 'web_search_20250305', name: 'web_search', max_uses: 5, allowed_domains: TRUSTED_DOMAINS,

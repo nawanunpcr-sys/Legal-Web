@@ -15,7 +15,7 @@
 // ระบบที่ดึงเฉพาะข้อความของมาตราจะได้คำตอบว่า "ให้เป็นไปตามตารางที่ 2" ซึ่งไม่ใช่คำตอบ
 // → จึงต้องมีรอบที่ 3 ที่ตามเข้าไปถอดเนื้อหาตารางออกมา
 
-import { hostAllowed, isSecondarySource, deadSource, fetchPdfBase64, askClaude, WEB_SEARCH_TOOL } from './law-source.js'
+import { hostAllowed, isSecondarySource, deadSource, fetchPdfBase64, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
 import { normalizeQuestionKey, questionUsable } from './ref-classify.js'
 import { flagUnverifiedNumbers } from './verify-numbers.js'
 
@@ -67,6 +67,8 @@ const SYSTEM = `คุณคือผู้ช่วยด้านกฎหม�
 ถ้าข้อที่เจอเขียนว่า "ตามตารางที่ ..." "ท้ายกฎกระทรวงนี้" "บัญชีท้ายประกาศ" "ตามภาคผนวก" "แนบท้าย"
 แปลว่า "ยังไม่ได้คำตอบ" ให้ตั้ง points_to_table เป็น true และระบุ table_hint
 ห้ามตอบว่า "ให้เป็นไปตามตารางที่ 2" แล้วถือว่าตอบแล้ว เพราะผู้ใช้ยังไม่รู้ตัวเลข
+
+${SOURCE_URL_RULES}
 
 ${WRITING_RULES}
 

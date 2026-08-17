@@ -8,7 +8,7 @@
 
 // ด่านตรวจโดเมน ตัวดึงไฟล์ PDF และตัวเรียก Claude ย้ายไป _lib/law-source.js แล้ว (P17)
 // เพราะโฟลว์คำถาม (anchor-answer) ต้องใช้ชุดเดียวกัน — ก๊อปไว้สองที่แล้วมันจะค่อยๆ ต่างกัน
-import { TRUSTED_DOMAINS, hostAllowed, deadSource, fetchPdfBase64, parseLoose, askClaude, WEB_SEARCH_TOOL } from './law-source.js'
+import { TRUSTED_DOMAINS, hostAllowed, deadSource, fetchPdfBase64, parseLoose, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
 import { classifyRefs } from './ref-classify.js'
 import { answerAnchoredQuestion, pendingAnswer } from './anchor-answer.js'
 
@@ -107,6 +107,8 @@ const SYSTEM = `คุณคือผู้ช่วยด้านกฎหม�
   อาทิ (เช่น) · หากแต่ (แต่) · เพื่อการนี้ (ตัดทิ้ง)
 - ตัวเลขใช้เลขอารบิกพร้อมหน่วยเต็ม เช่น "ปีละ 1 ครั้ง" "ปรับสูงสุด 400,000 บาท" "ไม่เกิน 34 องศาเซลเซียส"
   ห้ามเขียนว่า "ตามระยะเวลาที่กฎหมายกำหนด" หรือ "ปรับไม่เกินสี่แสนบาท"
+
+${SOURCE_URL_RULES}
 
 ตอบเป็น JSON เท่านั้น ห้ามมี markdown fence:
 {"status":"resolved"|"not_found","law_full_name":"","source_url":"","explain":"สาระของมาตราที่ถูกอ้างถึง เขียนให้คนทั่วไปอ่านจบในตัว ไม่เกิน 400 ตัวอักษร ห้ามใส่เลขมาตรา","explain_excerpt":"ข้อความจากตัวบทจริงที่รองรับ explain ไม่เกิน 300 ตัวอักษร","is_delegation":true ถ้ามาตรานี้ไม่ได้กำหนดเงื่อนไขเอง แต่ชี้ไปให้ดูกฎกระทรวง/ประกาศฉบับอื่น มิฉะนั้น false,"resolved_text":"สรุปสาระของส่วนที่ถูกอ้างถึง ไม่เกิน 500 ตัวอักษร","confidence":"high"|"medium"|"low","note":"ข้อสังเกต เช่น พบเฉพาะฉบับก่อนแก้ไข","requirements":[{"section_ref":"มาตรา 9","req_text":"ข้อความที่ต้องทำ อ่านจบในตัว","action_required":"","frequency":"","evidence":"","penalty":"ระบุตัวเลขจริง หรือค่าว่าง","source_excerpt":"ข้อความจากตัวบทจริง ไม่เกิน 300 ตัวอักษร"}],"related_laws":[{"law_name":"","clause":"มาตรา X หรือ null ถ้าอ้างทั้งฉบับ","why_needed":"ทำไมต้องรู้เนื้อหานี้ถึงจะปฏิบัติตามได้","needs_lookup":true}]}`
