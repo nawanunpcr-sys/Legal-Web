@@ -15,7 +15,7 @@
 // ระบบที่ดึงเฉพาะข้อความของมาตราจะได้คำตอบว่า "ให้เป็นไปตามตารางที่ 2" ซึ่งไม่ใช่คำตอบ
 // → จึงต้องมีรอบที่ 3 ที่ตามเข้าไปถอดเนื้อหาตารางออกมา
 
-import { hostAllowed, isSecondarySource, fetchPdfBase64, askClaude, WEB_SEARCH_TOOL } from './law-source.js'
+import { hostAllowed, isSecondarySource, deadSource, fetchPdfBase64, askClaude, WEB_SEARCH_TOOL } from './law-source.js'
 import { normalizeQuestionKey, questionUsable } from './ref-classify.js'
 import { flagUnverifiedNumbers } from './verify-numbers.js'
 
@@ -281,10 +281,15 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
   const plain = String(out.answer_plain || '').trim()
   const foundInstead = String(out.found_instead || '').trim()
 
-  // (ก) แหล่งต้องอยู่ในโดเมนที่เชื่อถือได้
-  if(!hostAllowed(url)) return cacheFail({ ...fail(url
-    ? 'แหล่งที่ค้นเจอไม่อยู่ในโดเมนที่เชื่อถือได้ — เปิดตรวจเองก่อนใช้'
-    : 'ค้นไม่เจอตัวบทที่ตอบคำถามนี้'), source_url: url, found_instead: foundInstead })
+  // (ก) แหล่งต้องอยู่ในโดเมนที่เชื่อถือได้ และต้องเป็นที่อยู่ที่ยังเปิดได้จริง
+  //     แยกข้อความ 2 กรณีให้ชัด — "โดเมนไม่น่าเชื่อถือ" กับ "ที่อยู่นี้ตายแล้ว" ต้องแก้คนละแบบ
+  //     กรณีหลังตัวบทเปิดได้อยู่ แค่ต้องไปที่อยู่ใหม่ ผู้ใช้จึงตามต่อเองได้ทันที
+  const deadWhy = deadSource(url)
+  if(!hostAllowed(url)) return cacheFail({ ...fail(deadWhy
+    ? 'ที่อยู่ตัวบทที่ค้นเจอเปิดไม่ได้แล้ว — ' + deadWhy
+    : url
+      ? 'แหล่งที่ค้นเจอไม่อยู่ในโดเมนที่เชื่อถือได้ — เปิดตรวจเองก่อนใช้'
+      : 'ค้นไม่เจอตัวบทที่ตอบคำถามนี้'), source_url: url, found_instead: foundInstead })
 
   // (ข) ไม่มีข้อความจากตัวบทรองรับ = แต่งจากความจำ
   if(!excerpt || !plain) return cacheFail({ ...fail('เปิดตัวบทแล้วแต่ไม่มีข้อความจากตัวบทรองรับคำตอบ'),

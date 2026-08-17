@@ -71,6 +71,30 @@ export const SECONDARY_DOMAINS = [
 
 export const TRUSTED_DOMAINS = [...PRIMARY_DOMAINS, ...SECONDARY_DOMAINS]
 
+// ── ที่อยู่ที่ "โดเมนถูก แต่เปิดไม่ได้จริง" ──────────────────────────────────
+// ต่างจากโดเมนนอกรายการตรงที่ด่านโดเมนปล่อยผ่าน แล้วไปตายตอน fetch
+// ราคาที่จ่าย: เสียคำขอ 1 ครั้งต่อ 1 คำถามเพื่อได้ค่าว่างกลับมา และผู้ใช้เห็นเหตุผลผิด
+// ("ไม่อยู่ในโดเมนที่เชื่อถือได้" ทั้งที่โดเมนถูก — แค่ที่อยู่นั้นเลิกใช้ไปแล้ว)
+//
+// ยืนยัน 2026-08-17 ระหว่างสรุปกฎกระทรวงควบคุมสถานประกอบกิจการฯ 2560:
+// คำถาม 8 ข้อ เสียคำขอไปกับ 2 ที่อยู่นี้ 4 ครั้ง โดยไม่ได้อะไรกลับมาสักครั้ง
+const DEAD_SOURCES = [
+  // web_search ยังคืนที่อยู่รูปแบบเก่านี้อยู่เรื่อยๆ เพราะดัชนีเก่ายังไม่หมดไป
+  // ทดสอบ: /DATA/PDF/2556/A/113/9.PDF → ได้หน้า Cloudflare challenge (HTML 5 KB) ไม่ใช่ไฟล์
+  { re: /^https?:\/\/(?:www\.)?ratchakitcha\.soc\.go\.th\/DATA\/PDF\//i,
+    why: 'ที่อยู่เดิมของราชกิจจานุเบกษาถูกกันด้วย Cloudflare แล้ว — ตัวบทฉบับเดียวกันเปิดได้ที่ /documents/<id>.pdf' },
+  // อาการเดียวกับ krisdika: ใบรับรองยืนยันไม่ผ่าน → fetch() ปฏิเสธก่อนถึงเนื้อหา
+  { re: /^https?:\/\/legal\.labour\.go\.th(?:[:/]|$)/i,
+    why: 'ใบรับรอง SSL ของโฮสต์นี้ยืนยันไม่ผ่าน fetch() จึงต่อไม่ติด (อาการเดียวกับ krisdika)' },
+]
+
+// คืน "เหตุผล" เมื่อที่อยู่นี้เปิดไม่ได้ · คืนค่าว่างเมื่อใช้ได้ตามปกติ
+// มีเหตุผลติดมาด้วยเพราะ UI ต้องบอกให้ต่างจาก "โดเมนไม่น่าเชื่อถือ" ซึ่งคนละเรื่องกัน
+export function deadSource(u){
+  const s = String(u || '')
+  return DEAD_SOURCES.find(d => d.re.test(s))?.why || ''
+}
+
 function inList(u, list){
   try{
     const host = new URL(u).hostname.toLowerCase()
@@ -78,7 +102,9 @@ function inList(u, list){
   }catch{ return false }
 }
 
-export function hostAllowed(u){ return inList(u, TRUSTED_DOMAINS) }
+// ที่อยู่ที่รู้แล้วว่าเปิดไม่ได้ ถือว่าไม่ผ่านตั้งแต่ด่านนี้ — ประหยัดคำขอโดยไม่ผ่อนด่านตรวจใดเลย
+// (ด่านหลักฐานยังบังคับเหมือนเดิมทุกข้อ ที่ตัดออกคือ "การไปดึงของที่ดึงไม่ได้อยู่แล้ว")
+export function hostAllowed(u){ return !deadSource(u) && inList(u, TRUSTED_DOMAINS) }
 
 // คำตอบมาจากฉบับรวมของเอกชน ไม่ใช่ต้นฉบับราชกิจจาฯ — ผู้ใช้ควรรู้ก่อนเอาไปอ้างอิงกับผู้ตรวจ
 export function isSecondarySource(u){ return inList(u, SECONDARY_DOMAINS) }
@@ -88,6 +114,7 @@ export function isSecondarySource(u){ return inList(u, SECONDARY_DOMAINS) }
 //   https://ratchakitcha.soc.go.th/documents/104277.pdf → 200 (ด้วย UA เดิมของเรา)
 //   https://ratchakitcha.soc.go.th/documents/104277     → 403  (หน้า HTML)
 //   https://www.ratchakitcha.soc.go.th/DATA/PDF/…       → 403  (path เว็บเวอร์ชันเก่า เลิกใช้แล้ว)
+//                                                        2026-08-17 กลายเป็นหน้า Cloudflare → ใส่ DEAD_SOURCES แล้ว
 // web_search อ่านได้แค่หัวข้อกับ snippet แตะเนื้อใน PDF ไม่ได้ → ไม่มี source_excerpt
 // → โดนด่านตรวจหลักฐานตัดทิ้งทั้งก้อน → ขึ้น "หาตัวบทไม่พบ" ทั้งที่ไฟล์ตัวบทเปิดได้
 const PDF_MAX_BYTES = 8_000_000   // กันไฟล์ใหญ่เกินจนคำขอไป Anthropic ล้ม

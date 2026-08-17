@@ -8,7 +8,7 @@
 
 // ด่านตรวจโดเมน ตัวดึงไฟล์ PDF และตัวเรียก Claude ย้ายไป _lib/law-source.js แล้ว (P17)
 // เพราะโฟลว์คำถาม (anchor-answer) ต้องใช้ชุดเดียวกัน — ก๊อปไว้สองที่แล้วมันจะค่อยๆ ต่างกัน
-import { TRUSTED_DOMAINS, hostAllowed, fetchPdfBase64, parseLoose, askClaude, WEB_SEARCH_TOOL } from './law-source.js'
+import { TRUSTED_DOMAINS, hostAllowed, deadSource, fetchPdfBase64, parseLoose, askClaude, WEB_SEARCH_TOOL } from './law-source.js'
 import { classifyRefs } from './ref-classify.js'
 import { answerAnchoredQuestion, pendingAnswer } from './anchor-answer.js'
 
@@ -283,7 +283,10 @@ export async function fetchRelatedLaw(ref){
     ? String(out.explain).trim() : ''
   if(!trustedUrl && rawUrl){
     reqs = []
-    note = (note ? note + ' · ' : '') + 'แหล่งที่ค้นเจอไม่อยู่ในโดเมนที่เชื่อถือได้ — ให้ลิงก์ไว้เปิดตรวจเอง'
+    const deadWhy = deadSource(rawUrl)
+    note = (note ? note + ' · ' : '') + (deadWhy
+      ? 'ที่อยู่ตัวบทที่ค้นเจอเปิดไม่ได้แล้ว — ' + deadWhy
+      : 'แหล่งที่ค้นเจอไม่อยู่ในโดเมนที่เชื่อถือได้ — ให้ลิงก์ไว้เปิดตรวจเอง')
   }
 
   // (ข) ข้อที่ไม่มี source_excerpt = โมเดลแต่งจากความจำ ไม่มีตัวบทรองรับ → ตัดทิ้งทั้งข้อ
