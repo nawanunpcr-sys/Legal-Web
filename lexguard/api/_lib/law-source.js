@@ -183,10 +183,16 @@ export async function pdfPagesAround(b64, hint, after = 3, before = 1){
   let parser
   try{
     // "ตารางที่ 2 ท้ายกฎกระทรวง ฉบับที่ 39" → หาเลขตารางที่ต้องการก่อน
-    const m = norm(hint).match(/(ตาราง|บญช|ภาคผนวก|แนบทาย)\D{0,4}(\d+)/)
+    //
+    // ระยะคั่นต้อง 10 ไม่ใช่ 4 — ตัวบทเขียน "บัญชีหมายเลข 1" ซึ่งหลัง norm เหลือ
+    // "บญชหมายเลข1" มีอักษรคั่น 7 ตัว เกินเพดานเดิม 4 จึงจับไม่ได้ คืนค่าว่าง
+    // แล้วถอยไปส่ง PDF ทั้งฉบับแทน (ประกาศกรมอนามัยฯ น้ำบริโภค เจอเคสนี้)
+    // ซึ่งย้อนกลับไปเสียทั้งเวลาและ token ที่การตัดหน้าตั้งใจประหยัด
+    const GAP = '\\D{0,10}'
+    const m = norm(hint).match(new RegExp(`(ตาราง|บญช|ภาคผนวก|แนบทาย)${GAP}(\\d+)`))
     if(!m) return ''
     // ในหน้าอาจเขียน "ตารางท 2" หรือ "ตารางท2" — ยอมให้มีอักขระคั่นได้เล็กน้อย
-    const needle = new RegExp(m[1] + '\\D{0,4}' + m[2] + '(?!\\d)')
+    const needle = new RegExp(m[1] + GAP + m[2] + '(?!\\d)')
 
     const { PDFParse } = await import('pdf-parse')
     parser = new PDFParse({ data: Buffer.from(b64, 'base64'), verbosity: 0 })
@@ -200,9 +206,19 @@ export async function pdfPagesAround(b64, hint, after = 3, before = 1){
     if(hit < 0) return ''
 
     const slice = pages.slice(Math.max(0, hit - before), hit + after + 1).join('\n')
-    // ด่านคุณภาพเดียวกับที่ law-analyze ใช้ — ข้อความที่ถอดรหัสไม่ออกส่งไปก็ไร้ประโยชน์
+    if(!slice.trim()) return ''
+
+    // ด่านคุณภาพ — กันข้อความที่ถอดรหัสไม่ออก ไม่ใช่กันข้อความที่มีภาษาอังกฤษเยอะ
+    //
+    // เดิมใช้สัดส่วนอักขระไทย ≥ 50% ซึ่งเป็นเกณฑ์ของ "หน้าเนื้อความ" ไม่ใช่ของตาราง
+    // ตารางเกณฑ์มักมีชื่อพารามิเตอร์และวิธีวิเคราะห์เป็นอังกฤษเต็มคอลัมน์
+    // (บัญชีหมายเลข 1 ของประกาศกรมอนามัยฯ น้ำบริโภค: Nephelometry · ion chromatography ·
+    //  AAS (graphite furnace) · Spectrophotometric) จนไทยเหลือต่ำกว่าครึ่ง แล้วถูกตีตกทั้งที่อ่านออกดี
+    //
+    // เกณฑ์ใหม่ดูจำนวนอักขระไทยเป็นจำนวนจริง ไม่ใช่สัดส่วน — หน้าที่ถอดรหัสไม่ออก
+    // จะได้อักขระไทยใกล้ศูนย์อยู่แล้ว ซึ่งยังตกด่านนี้เหมือนเดิม
     const thai = (slice.match(/[฀-๿]/g) || []).length
-    if(!slice.trim() || thai / slice.length < 0.5) return ''
+    if(thai < 200 && thai / slice.length < 0.5) return ''
     return slice
   }catch{ return '' }
   finally{ try{ await parser?.destroy?.() }catch{} }

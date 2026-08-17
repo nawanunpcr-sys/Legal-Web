@@ -111,8 +111,17 @@ export function flagUnverifiedNumbers(reqs = [], fullText = ''){
   const out = (Array.isArray(reqs) ? reqs : []).map(r => {
     if(!r || !String(r.req_text || '').trim()) return r
     // หลักฐานของข้อนี้ = excerpt ของตัวเอง + ตัวบทเต็ม (ถ้ามี) + ฟิลด์อื่นที่คัดมาจากตัวบท
+    //
+    // รวม excerpt ของกฎหมายที่อ้างถึงด้วย — ตั้งแต่ mergeAnswerText() เขียนเนื้อความจาก
+    // กฎหมายที่อ้างถึงลง req_text ตัวเลขอย่าง "300 ตารางเมตร" หรือ "ภายใน 30 วัน"
+    // จึงมาจาก excerpt ของ *กฎหมายอีกฉบับ* ไม่ใช่ของข้อนี้
+    // ไม่รวมเข้ามา = ติดป้าย "ไม่พบในตัวบท" ให้ตัวเลขที่คัดมาจากตัวบทจริงทุกตัว
+    // ซึ่งเป็นสัญญาณเตือนปลอมที่ทำให้ผู้ใช้เลิกเชื่อป้ายนี้ทั้งหมด รวมกรณีที่มันถูก
+    const refEvidence = (Array.isArray(r.ref_answers) ? r.ref_answers : [])
+      .map(a => a?.source_excerpt || '').filter(Boolean).join(' ')
     const evidence = expand(numbersIn(
-      [r.source_excerpt, r.other_terms, r.frequency, r.method, r.documents].filter(Boolean).join(' ')))
+      [r.source_excerpt, r.other_terms, r.frequency, r.method, r.documents, refEvidence]
+        .filter(Boolean).join(' ')))
     const missing = []
     for(const n of numbersIn(r.req_text)){
       if(IGNORE.has(n)) continue
