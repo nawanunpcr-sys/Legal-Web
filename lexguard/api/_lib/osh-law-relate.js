@@ -10,7 +10,7 @@
 // เพราะโฟลว์คำถาม (anchor-answer) ต้องใช้ชุดเดียวกัน — ก๊อปไว้สองที่แล้วมันจะค่อยๆ ต่างกัน
 import { TRUSTED_DOMAINS, hostAllowed, deadSource, fetchPdfBase64, parseLoose, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
 import { classifyRefs } from './ref-classify.js'
-import { answerAnchoredQuestion, pendingAnswer } from './anchor-answer.js'
+import { answerAnchoredQuestion, pendingAnswer, recheckPending } from './anchor-answer.js'
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL
 const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
@@ -37,6 +37,13 @@ const MAX_DEPTH2_LOOKUPS = 4   // กันชั้น 2 กินโควต�
 //   - pending ไม่เสียคำขอเลย (ในเอกสารทดสอบคือ 7 จาก 16 จุด)
 //   - ข้ามรอบอ่านไฟล์เมื่อผลค้นผ่านด่านครบแล้ว (ดู firstRoundComplete ใน anchor-answer.js)
 const MAX_ANCHOR_LOOKUPS = MAX_TOTAL_LOOKUPS
+
+// เพดานการ recheck จุด pending ("ประกาศออกแล้วหรือยัง") ต่อการสรุป 1 ครั้ง
+// ตั้งต่ำกว่า anchor เพราะ whole_law คือคำถามที่ผู้ใช้ถามหาโดยตรง ต้องได้โควตาก่อน
+// แต่ต้องมากพอให้ครอบคลุมกฎกระทรวงที่มอบอำนาจไว้หลายข้อ (ฉบับที่ใช้ทดสอบมี 7 จุด)
+// ราคาที่แลกมา: เจอ 4 จุดที่ระบบเดิมบอกว่า "ยังไม่มีตัวบท" ทั้งที่ออกประกาศมาแล้ว
+// และ cache ผูกกับคำถาม การสรุปกฎหมายฉบับอื่นที่ชี้ไปประกาศเดียวกันจึงไม่เสียคำขอซ้ำ
+const MAX_PENDING_RECHECK = 6
 const MAX_REQ_PER_LAW = 15   // กัน พ.ร.บ. ใหญ่ดึงมา 70 มาตราจนตารางใช้งานไม่ได้
 
 const SUPA_HEADERS = { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'content-type': 'application/json' }
@@ -567,12 +574,7 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
   const specificRefs = wanted.filter(r => r.ref_type === 'specific')
 
   let budget = MAX_TOTAL_LOOKUPS
-
-  // 1) pending — สร้างผลลัพธ์ตรงๆ ไม่เสียทั้งเวลาและเงิน
-  //    ค้นหาสิ่งที่ยังไม่มีตัวบท ผลที่ดีที่สุดที่เป็นไปได้คือ "หาไม่เจอ" อยู่แล้ว
-  const answers = pendingRefs.map(r => ({
-    ...pendingAnswer(r), for_section: r.for_section || '', appears_in: r.appears_in || '',
-  }))
+  const answers = []
 
   // 2) whole_law — ค้นด้วย "คำถาม" ขนานกัน · แต่ละตัวครอบ catch เอง ตัวหนึ่งล้มต้องไม่ลากตัวอื่นล้ม
   //    ได้สิทธิ์ใช้โควตาก่อน specific เพราะนี่คือสิ่งที่ผู้ใช้ถามหาจริง ("แล้วต้องมีกี่ที่")
@@ -594,6 +596,39 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
       ))
       answers.push(...got)
     }
+  }
+
+  // 2.5) pending — recheck ว่า "ประกาศออกมาแล้วหรือยัง" ก่อนจะพูดอะไรเกี่ยวกับมัน
+  //
+  // เดิมข้ามขั้นนี้ทั้งหมดเพราะเชื่อว่าตัวบทยังไม่ออก (0 คำขอ) แล้วเขียนไปเลยว่า "ยังไม่มีตัวบท"
+  // ทดสอบจริง 2026-08-17 กับกฎกระทรวงควบคุมสถานประกอบกิจการฯ 2560 ซึ่งมี pending 7 จุด:
+  // ไล่เปิดประกาศของกรมอนามัยทุกฉบับตั้งแต่ปี 2560 แล้วพบว่า **4 ใน 7 จุดออกประกาศมาแล้ว**
+  //   ข้อ 3 วรรคหนึ่ง → มลพิษทางเสียง 2561 · ข้อ 4 → ผู้สูงอายุ 2564 + โควิด 2566
+  //   ข้อ 11 วรรคสาม → บ่อดักไขมัน 2565 · ข้อ 12 → แมลงและสัตว์พาหะ 2564
+  // สมมติฐานเดิม ("ค้นไปก็ไม่เจอ เพราะยังไม่มี") จึงผิดตั้งแต่ต้น และผิดในทางที่อันตราย
+  // คือทำให้ จป. ข้ามข้อที่มีหน้าที่ต้องทำจริง
+  //
+  // ตรวจได้เท่าที่งบเหลือหลังจาก whole_law (ซึ่งคือคำถามที่ผู้ใช้ถามหาโดยตรง) เอาไปแล้ว
+  // ตรวจไม่ทัน = คืนข้อความที่ไม่ยืนยันอะไรทั้งนั้น ซึ่งยังปลอดภัยกว่าการเดาว่าไม่มี
+  let pendingChecked = 0
+  if(pendingRefs.length){
+    const take = budget > 0 && timeLeft() > 45_000
+      ? pendingRefs.slice(0, Math.min(MAX_PENDING_RECHECK, budget))
+      : []
+    budget -= take.length
+    pendingChecked = take.length
+    const rest = pendingRefs.slice(take.length)
+    if(take.length){
+      const got = await Promise.all(take.map(r =>
+        recheckPending(r, parentName, deadlineAt)
+          .then(a => ({ ...a, for_section: r.for_section || '', appears_in: r.appears_in || '' }))
+          .catch(() => ({ ...pendingAnswer(r), for_section: r.for_section || '', appears_in: r.appears_in || '' }))
+      ))
+      answers.push(...got)
+    }
+    answers.push(...rest.map(r => ({
+      ...pendingAnswer(r), for_section: r.for_section || '', appears_in: r.appears_in || '',
+    })))
   }
 
   // 3) specific — โฟลว์เดิมทั้งหมด ดึงมาตราที่ถูกอ้างเจาะจง

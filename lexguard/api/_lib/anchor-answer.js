@@ -168,6 +168,57 @@ export function pendingAnswer(ref){
   }
 }
 
+// ── recheck · "ประกาศฉบับนั้นออกมาแล้วหรือยัง" ต้องรู้จากการตรวจ ไม่ใช่จากการเดา ──
+//
+// ตั้งคำถามจากข้อที่อ้างถึง แล้วส่งเข้าโฟลว์เดียวกับ whole_law ทุกประการ
+// (ด่านโดเมน · source_excerpt · ห้าม "ตามที่กฎหมายกำหนด" · ตรวจตัวเลข บังคับครบเหมือนเดิม)
+// ตอบได้ = ประกาศออกแล้วจริง และได้เนื้อหามาด้วย · ตอบไม่ได้ = ยังไม่ยืนยัน ไม่ใช่ "ไม่มี"
+export function pendingQuestion(ref, parentName){
+  const clause = String(ref?.for_section || '').trim()
+  const who = String(ref?.issuing_authority || '').trim()
+  const topic = String(ref?.why_needed || ref?.law_name || '').trim().slice(0, 90)
+  const mother = String(parentName || '').trim()
+  if(!mother && !clause) return ''
+  return [
+    `มีประกาศที่ออกตามความใน${clause || 'ข้อที่อ้างถึง'}`,
+    mother ? `แห่ง${mother}` : '',
+    'ออกมาแล้วหรือยัง',
+    who ? `ผู้มีอำนาจออกคือ${who}` : '',
+    topic ? `เรื่องที่ต้องการคือ ${topic}` : '',
+    'ถ้ามีแล้ว ให้บอกชื่อฉบับ ปี พ.ศ. และเกณฑ์ที่สถานประกอบกิจการต้องทำตาม',
+  ].filter(Boolean).join(' ')
+}
+
+export async function recheckPending(ref, parentName, deadlineAt = Infinity){
+  const base = pendingAnswer(ref)
+  const q = pendingQuestion(ref, parentName)
+  if(!questionUsable(q)) return base
+
+  const hit = await answerAnchoredQuestion({ ...ref, ref_type: 'whole_law', anchor_question: q }, deadlineAt)
+
+  // เจอแล้ว — ฉบับนั้นออกมาแล้วจริง เลิกเรียกว่า "รอประกาศ" ได้เลย
+  if(hit && hit.status === 'answered'){
+    return {
+      ...hit,
+      ref_type: 'pending',
+      issuing_authority: base.issuing_authority,
+      interim_rule: '',      // ออกประกาศแล้ว วิธีปฏิบัติระหว่างรอไม่เกี่ยวอีกต่อไป
+      note: [hit.note, 'ตรวจแล้วพบว่าประกาศฉบับนี้ออกมาแล้ว — ไม่ใช่ข้อที่ยังไม่มีตัวบท'].filter(Boolean).join(' · '),
+    }
+  }
+
+  // ค้นแล้วยังไม่เจอ — ยังไม่ใช่ข้อยืนยันว่าไม่มี · ดัชนีของหน่วยงานไม่ครบก็เจอบ่อย
+  return {
+    ...base,
+    rechecked: true,
+    note: [
+      'ค้นแล้วยังไม่พบฉบับที่ออกตามข้อนี้ — ยังไม่ใช่ข้อยืนยันว่าไม่มี ควรเปิดดัชนีประกาศของหน่วยงานตรวจซ้ำ',
+      hit?.found_instead ? `เปิดไปเจอ: ${hit.found_instead}` : '',
+      base.interim_rule ? 'ตัวบทฉบับหลักบอกวิธีปฏิบัติไว้ให้ใช้ระหว่างที่ยังไม่มีประกาศ' : '',
+    ].filter(Boolean).join(' · '),
+  }
+}
+
 // ── ตัวหลัก ──────────────────────────────────────────────────────────────────
 // คืนผลเสมอ ไม่ throw · ทุกความล้มเหลวกลายเป็น not_answered พร้อมเหตุผล
 export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
