@@ -16,7 +16,7 @@
 // → จึงต้องมีรอบที่ 3 ที่ตามเข้าไปถอดเนื้อหาตารางออกมา
 
 import { hostAllowed, isSecondarySource, deadSource, fetchPdfBase64, pdfPagesAround, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
-import { normalizeQuestionKey, questionUsable } from './ref-classify.js'
+import { normalizeQuestionKey, normalizeTopicKey, questionUsable } from './ref-classify.js'
 import { flagUnverifiedNumbers } from './verify-numbers.js'
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL
@@ -112,16 +112,32 @@ export function pointsToTable(out){
 }
 
 // ── cache ────────────────────────────────────────────────────────────────────
-async function readCache(key){
+const fresh = row => row && (Date.now() - new Date(row.resolved_at).getTime()) / 86400000 <= CACHE_DAYS
+
+async function query(qs){
+  const r = await fetch(`${SUPA_URL}/rest/v1/lg_ref_answers?${qs}`, { headers: SUPA_HEADERS })
+  return r.ok ? (await r.json()) : []
+}
+
+async function readCache(key, topic){
   try{
     if(!SUPA_URL || !SUPA_KEY) return null
-    const r = await fetch(`${SUPA_URL}/rest/v1/lg_ref_answers?question_key=eq.${encodeURIComponent(key)}&select=*&limit=1`,
-      { headers: SUPA_HEADERS })
-    if(!r.ok) return null
-    const hit = (await r.json())?.[0]
-    if(!hit) return null
-    if((Date.now() - new Date(hit.resolved_at).getTime()) / 86400000 > CACHE_DAYS) return null
-    return hit
+    // 1) คำถามตัวอักษรตรงกัน — ใช้ได้ทุกสถานะ รวม not_answered
+    const exact = (await query(`question_key=eq.${encodeURIComponent(key)}&select=*&limit=1`))?.[0]
+    if(fresh(exact)) return exact
+
+    // 2) คีย์รอง (กฎหมาย + เรื่อง) — คำถามคนละสำนวนแต่ถามเรื่องเดียวกันกับกฎหมายฉบับเดียวกัน
+    //
+    // รับเฉพาะคำตอบที่ "ตอบได้และมีข้อความจากตัวบทรองรับ" เท่านั้น
+    // not_answered ขึ้นกับสำนวนที่ใช้ค้น เปลี่ยนคำถามแล้วอาจเจอ จึงห้ามข้ามสำนวนมาใช้
+    // ไม่งั้นสำนวนที่ค้นไม่เจอครั้งเดียวจะตรึงทุกสำนวนถัดไปไว้ 180 วัน
+    if(!topic) return null
+    const rows = await query(
+      `topic_key=eq.${encodeURIComponent(topic)}&status=eq.answered&select=*` +
+      `&order=resolved_at.desc&limit=1`)
+    const near = rows?.[0]
+    if(fresh(near) && String(near.source_excerpt || '').trim()) return near
+    return null
   }catch{ return null }
 }
 
@@ -232,6 +248,7 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
   const question = String(ref?.anchor_question || '').trim()
   const lawHint = String(ref?.law_name || '').trim()
   const key = normalizeQuestionKey(question)
+  const topic = normalizeTopicKey(lawHint, question)
   const base = {
     ref_type: 'whole_law', anchor_question: question, law_name: lawHint,
     answer_detail: {}, from_table: false, source_excerpt: '', source_url: '', section_ref: '',
@@ -243,7 +260,7 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
   // ซึ่งไม่ได้จ่ายอะไรไปและอาจเปลี่ยนผลได้ในรอบหน้า จึงไม่ควรตรึงไว้ใน cache
   const cacheFail = async res => {
     await writeCache({
-      question_key: key, anchor_question: question, ref_type: 'whole_law',
+      question_key: key, topic_key: topic || null, anchor_question: question, ref_type: 'whole_law',
       answer_plain: '', answer_detail: {},
       law_name: res.law_name || lawHint, section_ref: res.section_ref || '',
       from_table: false, source_excerpt: res.source_excerpt || '', source_url: res.source_url || '',
@@ -265,7 +282,7 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
 
   // 1) cache — คำถามเดียวกันเคยตอบแล้วไม่ต้องค้นใหม่
   //    ผูกกับ "คำถาม" ไม่ใช่ "ชื่อกฎหมาย" เพราะกฎหมายฉบับเดียวตอบได้หลายคำถาม
-  const hit = await readCache(key)
+  const hit = await readCache(key, topic)
   if(hit) return {
     ...base, status: hit.status, answer_plain: hit.answer_plain || '',
     answer_detail: hit.answer_detail || {}, law_name: hit.law_name || lawHint,
@@ -309,10 +326,16 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
     String(out.answer_plain || '').trim() &&
     !pointsToTable(out)
 
+  // ชี้ไปตาราง = รู้อยู่แล้วว่ารอบนี้ตอบไม่ได้ ตัวเลขจริงอยู่ในตาราง ไม่ได้อยู่ในเนื้อความของข้อ
+  // อ่านไฟล์รอบนี้จึงได้ผลลัพธ์เดิมกลับมา ("ให้เป็นไปตามตารางที่ 2") แล้วต้องไปรอบ 3 อยู่ดี
+  // ข้ามมาเข้ารอบถอดตารางตรง ๆ — ตัด 1 คำขอออกจาก "เส้นทางที่ยาวที่สุด" ซึ่งเป็นตัวกำหนดเวลารวม
+  // ไฟล์ยังถูกดึงในรอบ 3 เหมือนเดิม หลักฐานที่ใช้ตอบจึงยังมาจากตัวบทจริงเท่าเดิม
+  const tableAhead = pointsToTable(out)
+
   let skippedRead = false
   if(firstRoundComplete){
     skippedRead = true
-  } else if(hostAllowed(url) && timeLeft() > 50_000){
+  } else if(!tableAhead && hostAllowed(url) && timeLeft() > 50_000){
     pdfB64 = await fetchPdfBase64(url) || ''
     if(pdfB64){
       const better = await askClaude({
@@ -418,7 +441,7 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
   }
 
   await writeCache({
-    question_key: key, anchor_question: question, ref_type: 'whole_law',
+    question_key: key, topic_key: topic || null, anchor_question: question, ref_type: 'whole_law',
     answer_plain: result.answer_plain, answer_detail: result.answer_detail,
     law_name: result.law_name, section_ref: result.section_ref, from_table: fromTable,
     source_excerpt: excerpt, source_url: url, status: 'answered',
