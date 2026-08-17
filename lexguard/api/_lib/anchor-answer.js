@@ -15,7 +15,7 @@
 // ระบบที่ดึงเฉพาะข้อความของมาตราจะได้คำตอบว่า "ให้เป็นไปตามตารางที่ 2" ซึ่งไม่ใช่คำตอบ
 // → จึงต้องมีรอบที่ 3 ที่ตามเข้าไปถอดเนื้อหาตารางออกมา
 
-import { hostAllowed, isSecondarySource, deadSource, fetchPdfBase64, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
+import { hostAllowed, isSecondarySource, deadSource, fetchPdfBase64, pdfPagesAround, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
 import { normalizeQuestionKey, questionUsable } from './ref-classify.js'
 import { flagUnverifiedNumbers } from './verify-numbers.js'
 
@@ -324,10 +324,20 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
     if(!pdfB64 && hostAllowed(url)) pdfB64 = await fetchPdfBase64(url) || ''
     if(pdfB64){
       const hint = String(out.table_hint || '').trim()
+
+      // ส่งเฉพาะหน้าที่มีตาราง แทนไฟล์ทั้งฉบับ — วัดกับกฎกระทรวง ฉบับที่ 39:
+      // ไฟล์เต็ม ~27,500 token → ตัดหน้า ~3,500 token (ลด 82%) โดยเนื้อหาที่ใช้ตอบครบเท่าเดิม
+      // (แถวสำนักงาน · แถวโรงงาน · หัวตาราง · เชิงอรรถว่าตารางถูกฉบับ 63 แทนที่)
+      // ตัดไม่ได้เมื่อไร (หาหน้าไม่เจอ/ข้อความถอดรหัสไม่ออก) ถอยไปส่งไฟล์ทั้งฉบับตามเดิม
+      const pagesText = await pdfPagesAround(pdfB64, hint)
+      const task = `${ctx}\n\nตารางที่ต้องถอด: ${hint || 'ตาราง/บัญชีท้ายกฎหมายที่ตัวบทข้อนี้อ้างถึง'}\nถอดเฉพาะแถวที่ตอบคำถามข้างต้น พร้อมหัวตาราง`
+
       const tbl = await askClaude({
         system: [{ type: 'text', text: TABLE_SYSTEM, cache_control: { type: 'ephemeral' } }],
-        content: `${ctx}\n\nตารางที่ต้องถอด: ${hint || 'ตาราง/บัญชีท้ายกฎหมายที่ตัวบทข้อนี้อ้างถึง'}\nไฟล์แนบคือตัวบทฉบับเต็มจาก ${url} ซึ่งมีตารางอยู่ท้ายไฟล์\nถอดเฉพาะแถวที่ตอบคำถามข้างต้น พร้อมหัวตาราง`,
-        pdfBase64: pdfB64,
+        content: pagesText
+          ? `${task}\n\nข้อความข้างล่างคือหน้าที่มีตารางนั้น คัดมาจากตัวบทจริงที่ ${url}\nอ่านจากข้อความนี้เท่านั้น ห้ามเติมจากความจำ\n\n${pagesText}`
+          : `${task}\nไฟล์แนบคือตัวบทฉบับเต็มจาก ${url} ซึ่งมีตารางอยู่ท้ายไฟล์`,
+        pdfBase64: pagesText ? '' : pdfB64,
       })
       if(tbl && tbl.status === 'answered' && String(tbl.source_excerpt || '').trim()){
         out = { ...tbl, source_url: url, law_name: tbl.law_name || out.law_name,

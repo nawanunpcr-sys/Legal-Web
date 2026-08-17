@@ -576,60 +576,54 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
   let budget = MAX_TOTAL_LOOKUPS
   const answers = []
 
-  // 2) whole_law — ค้นด้วย "คำถาม" ขนานกัน · แต่ละตัวครอบ catch เอง ตัวหนึ่งล้มต้องไม่ลากตัวอื่นล้ม
-  //    ได้สิทธิ์ใช้โควตาก่อน specific เพราะนี่คือสิ่งที่ผู้ใช้ถามหาจริง ("แล้วต้องมีกี่ที่")
-  let anchorSkipped = 0
-  if(anchorRefs.length){
-    const take = anchorRefs.slice(0, Math.min(MAX_ANCHOR_LOOKUPS, budget))
-    anchorSkipped = anchorRefs.length - take.length
-    budget -= take.length
-    if(timeLeft() < 45_000){ anchorSkipped = anchorRefs.length }
-    else {
-      const got = await Promise.all(take.map(r =>
+  // 2) whole_law + pending recheck — คำถามอิสระต่อกัน ยิงขนานกันทั้งหมดในคลื่นเดียว
+  //
+  // เดิมแยกเป็นสอง `await Promise.all` เรียงกัน เวลารวมจึงเป็น T(anchor) + T(pending)
+  // ทั้งที่ไม่มีอะไรผูกกันเลย · รวมเป็นคลื่นเดียวแล้วเวลารวมเหลือ max(...) แทนผลบวก
+  // ไม่แตะด่านตรวจใดเลย — เปลี่ยนแค่จังหวะยิง
+  //
+  // โควตายังแบ่งลำดับเดิม: whole_law ได้ก่อน เพราะเป็นคำถามที่ผู้ใช้ถามหาโดยตรง
+  // ("แล้วต้องมีกี่ที่") ส่วน pending recheck ใช้ที่เหลือ
+  //
+  // ทำไม pending ต้อง recheck: เดิมข้ามทั้งหมดเพราะเชื่อว่าตัวบทยังไม่ออก แล้วเขียนไปเลยว่า
+  // "ยังไม่มีตัวบท" · ทดสอบจริง 2026-08-17 กับกฎกระทรวงควบคุมสถานประกอบกิจการฯ 2560
+  // (pending 7 จุด) พบว่า 4 จุดออกประกาศมาแล้ว — เสียง 2561 · ผู้สูงอายุ 2564 + โควิด 2566 ·
+  // บ่อดักไขมัน 2565 · แมลงและสัตว์พาหะ 2564 · สมมติฐานเดิมจึงผิด และผิดในทางที่ทำให้ จป.
+  // ข้ามข้อที่มีหน้าที่ต้องทำจริง
+  const enoughTime = timeLeft() > 45_000
+
+  const anchorTake = enoughTime ? anchorRefs.slice(0, Math.min(MAX_ANCHOR_LOOKUPS, budget)) : []
+  const anchorSkipped = anchorRefs.length - anchorTake.length
+  budget -= anchorTake.length
+
+  const pendingTake = (enoughTime && budget > 0)
+    ? pendingRefs.slice(0, Math.min(MAX_PENDING_RECHECK, budget))
+    : []
+  const pendingChecked = pendingTake.length
+  budget -= pendingTake.length
+
+  const withRef = (a, r) => ({ ...a, for_section: r.for_section || '', appears_in: r.appears_in || '' })
+
+  if(anchorTake.length || pendingTake.length){
+    const wave = [
+      ...anchorTake.map(r =>
         answerAnchoredQuestion(r, deadlineAt)
-          .then(a => ({ ...a, for_section: r.for_section || '', appears_in: r.appears_in || '' }))
-          .catch(e => ({ status: 'not_answered', ref_type: 'whole_law',
+          .then(a => withRef(a, r))
+          .catch(e => withRef({ status: 'not_answered', ref_type: 'whole_law',
             anchor_question: r.anchor_question || '', law_name: r.law_name || '',
-            for_section: r.for_section || '', appears_in: r.appears_in || '',
             answer_plain: '', answer_detail: {}, source_url: '', source_excerpt: '',
-            note: String(e && e.message || e).slice(0, 200) }))
-      ))
-      answers.push(...got)
-    }
+            note: String(e && e.message || e).slice(0, 200) }, r))),
+      ...pendingTake.map(r =>
+        recheckPending(r, parentName, deadlineAt)
+          .then(a => withRef(a, r))
+          .catch(() => withRef(pendingAnswer(r), r))),
+    ]
+    answers.push(...await Promise.all(wave))
   }
 
-  // 2.5) pending — recheck ว่า "ประกาศออกมาแล้วหรือยัง" ก่อนจะพูดอะไรเกี่ยวกับมัน
-  //
-  // เดิมข้ามขั้นนี้ทั้งหมดเพราะเชื่อว่าตัวบทยังไม่ออก (0 คำขอ) แล้วเขียนไปเลยว่า "ยังไม่มีตัวบท"
-  // ทดสอบจริง 2026-08-17 กับกฎกระทรวงควบคุมสถานประกอบกิจการฯ 2560 ซึ่งมี pending 7 จุด:
-  // ไล่เปิดประกาศของกรมอนามัยทุกฉบับตั้งแต่ปี 2560 แล้วพบว่า **4 ใน 7 จุดออกประกาศมาแล้ว**
-  //   ข้อ 3 วรรคหนึ่ง → มลพิษทางเสียง 2561 · ข้อ 4 → ผู้สูงอายุ 2564 + โควิด 2566
-  //   ข้อ 11 วรรคสาม → บ่อดักไขมัน 2565 · ข้อ 12 → แมลงและสัตว์พาหะ 2564
-  // สมมติฐานเดิม ("ค้นไปก็ไม่เจอ เพราะยังไม่มี") จึงผิดตั้งแต่ต้น และผิดในทางที่อันตราย
-  // คือทำให้ จป. ข้ามข้อที่มีหน้าที่ต้องทำจริง
-  //
-  // ตรวจได้เท่าที่งบเหลือหลังจาก whole_law (ซึ่งคือคำถามที่ผู้ใช้ถามหาโดยตรง) เอาไปแล้ว
-  // ตรวจไม่ทัน = คืนข้อความที่ไม่ยืนยันอะไรทั้งนั้น ซึ่งยังปลอดภัยกว่าการเดาว่าไม่มี
-  let pendingChecked = 0
-  if(pendingRefs.length){
-    const take = budget > 0 && timeLeft() > 45_000
-      ? pendingRefs.slice(0, Math.min(MAX_PENDING_RECHECK, budget))
-      : []
-    budget -= take.length
-    pendingChecked = take.length
-    const rest = pendingRefs.slice(take.length)
-    if(take.length){
-      const got = await Promise.all(take.map(r =>
-        recheckPending(r, parentName, deadlineAt)
-          .then(a => ({ ...a, for_section: r.for_section || '', appears_in: r.appears_in || '' }))
-          .catch(() => ({ ...pendingAnswer(r), for_section: r.for_section || '', appears_in: r.appears_in || '' }))
-      ))
-      answers.push(...got)
-    }
-    answers.push(...rest.map(r => ({
-      ...pendingAnswer(r), for_section: r.for_section || '', appears_in: r.appears_in || '',
-    })))
-  }
+  // จุด pending ที่งบหรือเวลาไม่พอให้ตรวจ — คืนข้อความที่ไม่ยืนยันอะไรทั้งนั้น
+  // ซึ่งยังปลอดภัยกว่าการเดาว่าไม่มี
+  answers.push(...pendingRefs.slice(pendingTake.length).map(r => withRef(pendingAnswer(r), r)))
 
   // 3) specific — โฟลว์เดิมทั้งหมด ดึงมาตราที่ถูกอ้างเจาะจง
   const touched = new Set()
