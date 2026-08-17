@@ -103,7 +103,10 @@ export default function ReviewModal({ batch, cats = [], onClose, onSaveEdits, on
                   <span className="num" style={{ color: 'var(--ink-faint)' }}>{i + 1}.</span>
                   <input className="form-input" style={{ marginTop: 0, width: 130 }} value={r.section_ref} onChange={e => setR(i, 'section_ref', e.target.value)} placeholder="มาตรา/ข้อ" />
                 </div>
-                <textarea className="form-input" rows={2} style={{ marginTop: 0 }} value={r.req_text} onChange={e => setR(i, 'req_text', e.target.value)} placeholder="เนื้อหาข้อปฏิบัติ" />
+                {/* ยืดตามความยาว — ข้อที่รวมเนื้อความจากกฎหมายที่อ้างถึงแล้วยาวกว่าเดิมมาก
+                    ต้องเห็นทั้งข้อตอนตรวจก่อนบันทึกเข้าทะเบียน ไม่ใช่เลื่อนอ่านในกล่อง 2 แถว */}
+                <textarea className="form-input" rows={Math.min(12, Math.max(2, Math.ceil((r.req_text || '').length / 60)))}
+                  style={{ marginTop: 0 }} value={r.req_text} onChange={e => setR(i, 'req_text', e.target.value)} placeholder="เนื้อหาข้อปฏิบัติ" />
                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                   <input className="form-input" style={{ marginTop: 0 }} value={r.responsible} onChange={e => setR(i, 'responsible', e.target.value)} placeholder="ผู้รับผิดชอบ" />
                   <input className="form-input" style={{ marginTop: 0 }} value={r.frequency} onChange={e => setR(i, 'frequency', e.target.value)} placeholder="ความถี่" />

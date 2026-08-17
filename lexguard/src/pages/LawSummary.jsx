@@ -181,7 +181,9 @@ function RefAnswer({ a }) {
   const warn = a.answer_detail?.['ข้อควรระวัง']
 
   // ข้อความที่เขียนต่อในเนื้อข้อ — ต่างกันตามสถานะ แต่รูปแบบการแสดงเหมือนกันหมด
-  const body = a.status === 'answered' ? a.answer_plain
+  // answered: เนื้อความถูกรวมเข้า req_text ตั้งแต่ฝั่ง server แล้ว (mergeAnswerText)
+  // พิมพ์ซ้ำตรงนี้จะเห็นสองรอบ · เหลือแค่ตารางเกณฑ์ · ปุ่มกางตัวบท · บรรทัดที่มา
+  const body = a.status === 'answered' ? ''
     : a.status === 'pending_issuance'
       ? [a.answer_plain,
          a.interim_rule ? `ถ้าตรวจแล้วยังไม่มีประกาศ ตัวบทบอกให้ ${a.interim_rule}` : '',
@@ -200,10 +202,14 @@ function RefAnswer({ a }) {
     <div style={{ marginLeft: 30, marginTop: 5, fontSize: 13.5, lineHeight: 1.7 }}>
       {/* ขนาดตัวอักษรและระยะเยื้องเท่ากับเนื้อข้อ — สิ่งที่กฎหมายที่อ้างถึงกำหนด
           คือ "สิ่งที่ข้อนี้สั่งให้ทำ" จริง ๆ ไม่ใช่หมายเหตุประกอบ จึงต้องอ่านต่อเนื่องกัน */}
-      <div style={{ color: 'var(--ink)' }}>
-        {body}
-        {a.from_table && <span style={{ color: 'var(--ink-faint)' }}> (จากตารางท้ายกฎหมาย)</span>}
-      </div>
+      {(body || (a.from_table && rows.length > 0)) && (
+        <div style={{ color: 'var(--ink)' }}>
+          {body}
+          {a.from_table && rows.length > 0 && (
+            <span style={{ color: 'var(--ink-faint)' }}>เกณฑ์ข้างล่างมาจากตารางท้ายกฎหมาย</span>
+          )}
+        </div>
+      )}
 
       {rows.length > 0 && (
         <div style={{ marginTop: 4, overflowX: 'auto' }}>
@@ -367,7 +373,11 @@ function ReqRow({ r, i, onChange, onRemove, suggest }) {
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
         <span className="num" style={{ paddingTop: 9, minWidth: 22, color: 'var(--ink-faint)' }}>{i + 1}.</span>
         <input className="form-input" style={{ marginTop: 0, maxWidth: 130 }} value={r.section_ref} onChange={e => set('section_ref', e.target.value)} placeholder="มาตรา/ข้อ" />
-        <textarea className="form-input" rows={1} style={{ marginTop: 0 }} value={r.req_text} onChange={e => set('req_text', e.target.value)} placeholder="เนื้อหาข้อปฏิบัติ…" />
+        {/* ยืดตามความยาวของข้อความ — ข้อที่รวมเนื้อความจากกฎหมายที่อ้างถึงแล้วยาวขึ้นมาก
+            rows คงที่ทำให้ต้องเลื่อนอ่านในกล่องเล็ก ๆ ซึ่งตรวจงานไม่ได้จริง
+            เพดาน 12 แถวกันข้อเดียวกินทั้งหน้าจอ เกินจากนั้นค่อยเลื่อนในกล่อง */}
+        <textarea className="form-input" rows={Math.min(12, Math.max(1, Math.ceil((r.req_text || '').length / 60)))}
+          style={{ marginTop: 0 }} value={r.req_text} onChange={e => set('req_text', e.target.value)} placeholder="เนื้อหาข้อปฏิบัติ…" />
         <button className="btn btn-ghost" style={{ padding: '7px 9px' }} onClick={() => onRemove(i)}><I n="x" /></button>
       </div>
       {/* ตัวเลขที่ไม่พบในตัวบท — อันตรายสุดในบรรดาป้ายทั้งหมด เพราะอัตรา/วงเงิน/วันที่ผิด

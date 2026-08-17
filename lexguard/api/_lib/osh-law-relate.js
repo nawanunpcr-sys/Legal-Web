@@ -522,6 +522,27 @@ export async function inlineSectionRefs(mainReqs, resolved = []){
 // จับคู่ไม่ได้ก็ไม่ทิ้ง — ส่งกลับไปแสดงในแผงรวมแทน ดีกว่าหายไปเงียบๆ
 function normRef(s){ return arabic(String(s || '')).replace(/\s+/g, '').toLowerCase() }
 
+// ── รวมเนื้อความจากกฎหมายที่อ้างถึงเข้ากับเนื้อข้อ ──────────────────────────
+// รวมเฉพาะที่ได้เนื้อหาจริง (answered) · pending/not_answered ไม่มีอะไรให้รวม
+// และไม่ควรรวม เพราะจะกลายเป็นการเขียนข้อความ "ยังไม่พบเกณฑ์" ลงทะเบียนกฎหมาย
+//
+// เพดานความยาว: ข้อในทะเบียนที่ยาวเกินคนอ่านไม่จบ ก็ไม่ต่างจากไม่มีข้อมูล
+// answer_plain ถูกจำกัดไว้ที่ 300 ตัวอักษรจาก schema อยู่แล้ว · ตรงนี้กันกรณีข้อเดียว
+// อ้างถึงกฎหมายหลายฉบับ (ข้อ 7 อ้าง 2 ฉบับ) ซึ่งรวมกันแล้วบานได้
+const REQ_TEXT_MAX = 900
+
+function mergeAnswerText(reqText, ans){
+  const base = String(reqText || '').trim()
+  if(ans?.status !== 'answered') return base
+  const add = String(ans.answer_plain || '').trim()
+  if(!add) return base
+  // กันเขียนซ้ำเมื่อรันซ้ำหรือกดปุ่มลองใหม่ — เทียบแบบตัดช่องว่างทิ้ง
+  const flat = x => x.replace(/\s+/g, '')
+  if(flat(base).includes(flat(add))) return base
+  const merged = base ? `${base} · ${add}` : add
+  return merged.length > REQ_TEXT_MAX ? base : merged
+}
+
 export function attachAnswers(reqs, answers){
   const rows = Array.isArray(reqs) ? reqs.map(r => ({ ...r })) : []
   const loose = []
@@ -543,6 +564,12 @@ export function attachAnswers(reqs, answers){
     }
     if(idx < 0){ loose.push(ans); continue }
     rows[idx].ref_answers = [...(rows[idx].ref_answers || []), ans]
+    // เขียนเนื้อความจากกฎหมายที่อ้างถึงลง req_text เลย ไม่ใช่เก็บไว้แสดงอย่างเดียว
+    //
+    // เดิมคำตอบอยู่ใน ref_answers ซึ่งใช้แสดงผลอย่างเดียว · กด "เพิ่มเข้าทะเบียน" แล้ว
+    // ทะเบียนได้แค่ "ต้องมีห้องน้ำตามที่กฎหมายควบคุมอาคารกำหนด" ไม่มีเลข 300 ตารางเมตร
+    // ซึ่งคือตัวเลขเดียวที่ผู้ตรวจ ISO ถามหา · เท่ากับงานที่จ่ายเงินไปตามอ่านมาแล้วหายตอนบันทึก
+    rows[idx].req_text = mergeAnswerText(rows[idx].req_text, ans)
     // ข้อที่ได้คำตอบแล้ว ไม่ต้องขึ้นป้าย "ยังอ้างเลขมาตรา ต้องเปิดตัวบทเติมเอง" อีก
     // และข้อที่รอประกาศก็ไม่ใช่ "ต้องเปิดตัวบทเติมเอง" เพราะไม่มีตัวบทให้เปิด
     if(ans.status === 'answered' || ans.status === 'pending_issuance') rows[idx].needs_manual_ref = false
