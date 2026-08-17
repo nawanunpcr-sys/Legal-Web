@@ -472,6 +472,22 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
     )
   }, [related.laws, reqs])
 
+  // ── แสดงผลครั้งเดียวเมื่อตามอ่านครบ ──────────────────────────────────────
+  // เดิมด่านแรกจบแล้ว setLaw/setReqs ทันที ตารางขึ้นก่อน แล้วข้อจากกฎหมายที่อ้างถึง
+  // ค่อยเติมเข้ามาทีหลัง ผู้ใช้บอกว่าอ่านสรุปที่ยังไม่ครบแล้วสับสน เพราะไม่รู้ว่าที่เห็น
+  // คือของจริงหรือของชั่วคราว · ตอนนี้จึงถือผลของด่านแรกไว้ในตัวแปร แล้วค่อยลงจอ
+  // พร้อมกันทีเดียวเมื่อด่านสองเสร็จ
+  //
+  // ยังคงยิง 2 คำขอเหมือนเดิม — การรวมเป็นคำขอเดียวจะชนเพดาน maxDuration 300 วิ
+  // ของ Vercel ซึ่งเป็นเหตุผลที่แยกไว้ตั้งแต่แรก (P16) · ที่เปลี่ยนคือจังหวะแสดงผล
+  // ไม่ใช่สถาปัตยกรรม
+  function commit(l, rows, rp, eff) {
+    setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
+    setReqs(rows)
+    setRepeals(rp || [])
+    setEffInfo(eff)
+  }
+
   async function analyze() {
     if (!src.trim() || busy) return
     setBusy(true); setLaw(null); setReqs([]); setRelated({ count: 0, unresolved: 0, laws: [] }); setRepeals([]); setHistId(null); setHistMeta(null); setEffInfo(null); setRelateRetry(null); setPendingCount(0)
@@ -480,12 +496,9 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
       const { law: l, requirements, rejected_count, repeals: rp, pending_refs,
         effective_source, effective_note, effective_ai_mismatch } = await analyzeSource({ source: src, sourceUrl: srcUrl.trim() })
       const rows = toReqRows(requirements)
-      setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
-      setReqs(rows); setRepeals(rp || [])
-      setEffInfo({ source: effective_source, note: effective_note, mismatch: effective_ai_mismatch })
-      toast('อ่านตัวบทแล้ว — ' + (pending_refs.length ? `กำลังตามอ่านกฎหมายที่อ้างถึง ${pending_refs.length} ฉบับ` : 'ตรวจ/แก้ไขได้'), 'success')
+      const eff = { source: effective_source, note: effective_note, mismatch: effective_ai_mismatch }
       await runRelate({ refs: pending_refs, requirements, lawName: l.name || '' }, l, rows,
-        /^https?:\/\//i.test(src.trim()) ? 'link' : 'text', rejected_count)
+        /^https?:\/\//i.test(src.trim()) ? 'link' : 'text', rejected_count, rp, eff)
     } catch (e) { toast('สรุปไม่สำเร็จ: ' + e.message); setPhase(null) }
     setBusy(false)
   }
@@ -500,24 +513,24 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
       const { law: l, requirements, rejected_count, repeals: rp, pending_refs,
         effective_source, effective_note, effective_ai_mismatch } = await analyzeSource({ pdfBase64, pdfName: file.name, sourceUrl: srcUrl.trim() })
       const rows = toReqRows(requirements)
-      setLaw({ ...l, cat: l.cat || cats[0]?.code || 'LA' })
-      setReqs(rows); setRepeals(rp || [])
-      setEffInfo({ source: effective_source, note: effective_note, mismatch: effective_ai_mismatch })
-      toast('อ่านตัวบทแล้ว — ' + (pending_refs.length ? `กำลังตามอ่านกฎหมายที่อ้างถึง ${pending_refs.length} ฉบับ` : 'ตรวจ/แก้ไขได้'), 'success')
-      await runRelate({ refs: pending_refs, requirements, lawName: l.name || '' }, l, rows, 'pdf', rejected_count)
+      const eff = { source: effective_source, note: effective_note, mismatch: effective_ai_mismatch }
+      await runRelate({ refs: pending_refs, requirements, lawName: l.name || '' }, l, rows, 'pdf', rejected_count, rp, eff)
     } catch (e) { toast('สรุป PDF ไม่สำเร็จ: ' + e.message); setPhase(null) }
     setBusy(false)
   }
 
-  // ด่านที่ 2 · ตามอ่านกฎหมายที่อ้างถึง แล้ว merge กลับเข้า state เดิม
-  // ล้มเหลวต้องไม่ล้างผลของด่านแรก — ข้อของฉบับหลักอยู่บนจอแล้ว ผู้ใช้ทำงานต่อได้
-  async function runRelate(ctx, l, mainRows, input, rejected_count) {
+  // ด่านที่ 2 · ตามอ่านกฎหมายที่อ้างถึง แล้วลงจอพร้อมกับผลของด่านแรกทีเดียว
+  //
+  // ล้มเหลวต้องไม่ทำให้ไม่ได้อะไรเลย — ลงผลของด่านแรกแทน (rp/eff ที่ถือมาจากด่านแรก)
+  // แล้วขึ้นปุ่ม "ลองเติมกฎหมายที่อ้างถึงอีกครั้ง" · หลักประกันเดิมของ P16 ยังอยู่ครบ
+  // เปลี่ยนแค่ว่าผลของด่านแรกลงจอ "ตอนล้มเหลว" แทนที่จะลงตั้งแต่ต้น
+  async function runRelate(ctx, l, mainRows, input, rejected_count, rp, eff) {
     setPhase('relate')
     setPendingCount(ctx.refs.length)
     try {
       const rel = await relateSource(ctx)
       const rows = toReqRows(rel.requirements)      // req_no ชุดใหม่จาก response
-      setReqs(rows)
+      commit(l, rows, rp, eff)
       setRelated({ count: rel.related_count, unresolved: rel.unresolved_count, laws: rel.related_laws })
       setRelateRetry(null)
       await logRun(l, rows, { related_count: rel.related_count,
@@ -525,7 +538,8 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
       if (rel.skipped_for_time > 0) toast(`ตามอ่านได้บางส่วน — ยังเหลือ ${rel.skipped_for_time} ฉบับ กดปุ่มลองอีกครั้งจะเร็วขึ้น`)
       else toast('สรุปครบแล้ว — ตรวจ/แก้ไขได้', 'success')
     } catch (e) {
-      setRelateRetry(ctx)
+      commit(l, mainRows, rp, eff)
+      setRelateRetry({ ...ctx, _l: l, _rows: mainRows, _input: input, _rejected: rejected_count, _rp: rp, _eff: eff })
       toast('เติมกฎหมายที่อ้างถึงไม่สำเร็จ: ' + e.message + ' — ข้อของฉบับหลักยังอยู่ครบ')
       await logRun(l, mainRows, { related_count: 0, unresolved_count: 0, rejected_count }, input)
     }
@@ -614,18 +628,18 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
         <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>รองรับ PDF ≤ 4MB (เหมาะกับลิงก์ราชกิจจาฯ ที่เป็นไฟล์ PDF)</span>
       </div>
 
-      {/* P16 · แยกเป็น 2 ด่าน ข้อความจึงต้องบอกให้ตรงว่ากำลังทำอะไรอยู่
-          ด่านแรกจบแล้วตารางขึ้นเลย ผู้ใช้ตรวจไปพลางระหว่างด่านสองทำงานได้ */}
+      {/* ยิง 2 คำขอเหมือนเดิม แต่ผลลงจอครั้งเดียวตอนจบ — ระหว่างรอจึงต้องบอกให้ชัด
+          ว่าอยู่ขั้นไหนและเหลืออีกกี่ฉบับ ไม่งั้นหน้าจอว่างเปล่าจะดูเหมือนค้าง */}
       {busy && (
         <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--warn-soft, rgba(255,176,32,.12))', fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.6 }}>
           {phase === 'relate' ? (
             <>
-              กำลังตามอ่านกฎหมายที่ตัวบทอ้างถึง{pendingCount ? ` (${pendingCount} ฉบับ)` : ''}…<br />
-              ตารางข้อปฏิบัติของฉบับหลักขึ้นแล้วด้านล่าง <b>ตรวจไปพลางได้เลย</b> ข้อจากกฎหมายที่อ้างถึงจะเติมเข้ามาเมื่อเสร็จ
+              <b>ขั้นที่ 2 จาก 2</b> · กำลังตามอ่านกฎหมายที่ตัวบทอ้างถึง{pendingCount ? ` ${pendingCount} ฉบับ` : ''}…<br />
+              อ่านตัวบทฉบับหลักเสร็จแล้ว รอเติมข้อจากกฎหมายที่อ้างถึงให้ครบ แล้วจะขึ้นสรุปทีเดียว
             </>
           ) : (
             <>
-              กำลังอ่านตัวบทและแตกข้อปฏิบัติ… — กฎหมายสั้นราว 30 วินาที ส่วนกฎหมายยาว (5–10 หน้า) อาจใช้เวลา <b>1–2 นาที</b><br />
+              <b>ขั้นที่ 1 จาก 2</b> · กำลังอ่านตัวบทและแตกข้อปฏิบัติ… — กฎหมายสั้นราว 30 วินาที ส่วนกฎหมายยาว (5–10 หน้า) อาจใช้เวลา <b>1–2 นาที</b><br />
               กรุณาอย่าปิดหน้าต่างหรือกดซ้ำระหว่างรอ
             </>
           )}
@@ -638,7 +652,15 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
           <span>ยังเติมข้อจากกฎหมายที่อ้างถึงไม่สำเร็จ ({relateRetry.refs.length} ฉบับ) — ข้อของฉบับหลักครบแล้ว</span>
           <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 11.5, marginLeft: 'auto' }}
             disabled={busy}
-            onClick={async () => { setBusy(true); await runRelate(relateRetry, law || {}, reqs, 'retry', 0); setBusy(false) }}>
+            onClick={async () => {
+              setBusy(true)
+              // ผลของด่านแรกลงจอไปแล้วตอนล้มเหลว — ยิงซ้ำจึงส่งของเดิมกลับเข้าไป
+              // เพื่อให้ commit() ครั้งใหม่ไม่ล้าง repeals/effInfo ที่ผู้ใช้เห็นอยู่
+              await runRelate(relateRetry, relateRetry._l || law || {}, relateRetry._rows || reqs,
+                relateRetry._input || 'retry', relateRetry._rejected || 0,
+                relateRetry._rp ?? repeals, relateRetry._eff ?? effInfo)
+              setBusy(false)
+            }}>
             ลองเติมกฎหมายที่อ้างถึงอีกครั้ง
           </button>
         </div>
