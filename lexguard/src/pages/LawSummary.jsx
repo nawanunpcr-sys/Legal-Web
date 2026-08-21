@@ -52,6 +52,7 @@ async function relateSource({ refs, requirements, lawName }) {
     related_count: d.related_count || 0, unresolved_count: d.unresolved_count || 0,
     inlined_count: d.inlined_count || 0, manual_ref_count: d.manual_ref_count || 0,
     skipped_for_time: d.skipped_for_time || 0,
+    skipped_for_quota: d.skipped_for_quota || 0,
     unverified_number_count: d.unverified_number_count || 0 }
 }
 
@@ -69,8 +70,7 @@ function readFileBase64(file) {
 const ALLOWED_SITES = [
   ['ราชกิจจานุเบกษา', 'ratchakitcha.soc.go.th'],
   ['สำนักงานคณะกรรมการกฤษฎีกา', 'krisdika.go.th'],
-  ['กรมสวัสดิการและคุ้มครองแรงงาน', 'dlpw.go.th'],
-  ['กระทรวงแรงงาน', 'labour.go.th'],
+  ['กระทรวงแรงงาน / กรมสวัสดิการและคุ้มครองแรงงาน', 'labour.go.th'],
   ['สมาคมส่งเสริมความปลอดภัยฯ (ShawPat)', 'shawpat.or.th'],
   ['กรมควบคุมโรค', 'ddc.moph.go.th'],
   ['กระทรวงสาธารณสุข', 'moph.go.th'],
@@ -539,7 +539,10 @@ function AiSummaryZone({ cats, laws = [], suggest, onQueued, onAddToRegistry, on
       setRelateRetry(null)
       await logRun(l, rows, { related_count: rel.related_count,
         unresolved_count: rel.unresolved_count, rejected_count }, input)
-      if (rel.skipped_for_time > 0) toast(`ตามอ่านได้บางส่วน — ยังเหลือ ${rel.skipped_for_time} ฉบับ กดปุ่มลองอีกครั้งจะเร็วขึ้น`)
+      const left = rel.skipped_for_time + rel.skipped_for_quota
+      if (left > 0) toast(rel.skipped_for_time >= rel.skipped_for_quota
+        ? `ตามอ่านได้บางส่วน — ยังเหลือ ${left} ฉบับ (เวลาในรอบนี้ไม่พอ) กดปุ่มลองอีกครั้งจะเร็วขึ้น`
+        : `ตามอ่านได้บางส่วน — ยังเหลือ ${left} ฉบับ (เต็มโควตาการค้นต่อรอบ) กดปุ่มลองอีกครั้งเพื่อดึงส่วนที่เหลือ`)
       else toast('สรุปครบแล้ว — ตรวจ/แก้ไขได้', 'success')
     } catch (e) {
       commit(l, mainRows, rp, eff)

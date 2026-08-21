@@ -324,7 +324,9 @@ function verifyRelatedRefs(refs, sourceText){
 // ── โดเมนที่อนุญาตให้ fetch ได้ (กัน SSRF) — เฉพาะเว็บราชการ/แหล่งกฎหมาย รวม subdomain ──
 // กลุ่มบน = SHE เดิม · กลุ่มล่าง = หน่วยงานเจ้าของกฎหมายด้านอื่นขององค์กร (หมวด LF)
 const ALLOWED_HOSTS = [
-  'ratchakitcha.soc.go.th','dlpw.go.th','labour.go.th','shawpat.or.th','ddc.moph.go.th','moph.go.th','diw.go.th',
+  // dlpw.go.th ถูกถอดออก 2026-08-21 — DNS ไม่ resolve ทั้ง apex และ www
+  // ลิงก์บนโดเมนนี้ผู้ใช้เองก็เปิดไม่ได้ · ครอบคลุมด้วย labour.go.th แทน (ดู _lib/law-source.js)
+  'ratchakitcha.soc.go.th','labour.go.th','shawpat.or.th','ddc.moph.go.th','moph.go.th','diw.go.th',
   'krisdika.go.th',      // สำนักงานคณะกรรมการกฤษฎีกา — ตัวบทรวมฉบับแก้ไขล่าสุด
   'nbtc.go.th',          // กสทช. — ประกาศด้านโทรคมนาคม
   'mdes.go.th',          // กระทรวงดิจิทัลเพื่อเศรษฐกิจและสังคม
@@ -517,6 +519,7 @@ export default async function handler(req,res){
       inlined_count:merged.inlined_count||0, manual_ref_count:merged.manual_ref_count||0,
       unverified_number_count:numCheck.flagged,
       skipped_for_time:merged.skipped_for_time||0,
+      skipped_for_quota:merged.skipped_for_quota||0,
       // relate=false → ส่งรายการที่ผ่านด่าน verifyRelatedRefs แล้วกลับไป
       // ให้ client ยิงต่อที่ /api/law-relate · endpoint นั้นเชื่อว่ากรองมาแล้ว
       pending_refs: relate === false ? verifiedRefs : [],

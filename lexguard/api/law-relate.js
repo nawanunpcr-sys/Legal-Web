@@ -56,6 +56,7 @@ export default async function handler(req, res){
       inlined_count: merged.inlined_count || 0,
       manual_ref_count: merged.manual_ref_count || 0,
       skipped_for_time: merged.skipped_for_time || 0,
+      skipped_for_quota: merged.skipped_for_quota || 0,
       unverified_number_count: numCheck.flagged,
       elapsed_ms: Date.now() - startedAt,
     })

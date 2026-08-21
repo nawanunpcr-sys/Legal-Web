@@ -8,7 +8,7 @@
 
 // ด่านตรวจโดเมน ตัวดึงไฟล์ PDF และตัวเรียก Claude ย้ายไป _lib/law-source.js แล้ว (P17)
 // เพราะโฟลว์คำถาม (anchor-answer) ต้องใช้ชุดเดียวกัน — ก๊อปไว้สองที่แล้วมันจะค่อยๆ ต่างกัน
-import { TRUSTED_DOMAINS, hostAllowed, deadSource, fetchPdfBase64, parseLoose, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
+import { hostAllowed, deadSource, fetchPdfBase64, parseLoose, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
 import { classifyRefs } from './ref-classify.js'
 import { answerAnchoredQuestion, pendingAnswer, recheckPending } from './anchor-answer.js'
 
@@ -37,6 +37,14 @@ const MAX_DEPTH2_LOOKUPS = 4   // กันชั้น 2 กินโควต�
 //   - pending ไม่เสียคำขอเลย (ในเอกสารทดสอบคือ 7 จาก 16 จุด)
 //   - ข้ามรอบอ่านไฟล์เมื่อผลค้นผ่านด่านครบแล้ว (ดู firstRoundComplete ใน anchor-answer.js)
 const MAX_ANCHOR_LOOKUPS = MAX_TOTAL_LOOKUPS
+
+// ── โควตาที่กันไว้ให้ "การอ้างแบบเจาะจงมาตรา" · whole_law กับ pending แตะส่วนนี้ไม่ได้ ──
+// เหตุที่ต้องกัน: whole_law หยิบก่อนและหยิบได้ถึงเพดานรวม ถ้ามันหยิบเต็ม 12 ตัว
+// โควตาเหลือ 0 ทันที แล้วลูป specific ข้างล่างไม่ได้รันเลยสักรอบ
+// ผลคือการอ้างเจาะจงมาตรา — ซึ่งตรงที่สุด ถูกที่สุด และคือหัวใจของ "เอาเฉพาะที่อ้างถึง" —
+// ถูกการอ้างลอยๆ เบียดตกทั้งหมด โดยไม่มีอะไรฟ้อง (ผลขาดแบบเงียบที่สุดในเส้นนี้)
+// กันเท่าที่มีจริง ไม่ได้กันแบบตายตัว: ไม่มี specific สักตัว whole_law ยังได้เต็มเพดานเหมือนเดิม
+const SPECIFIC_RESERVE = 6
 
 // เพดานการ recheck จุด pending ("ประกาศออกแล้วหรือยัง") ต่อการสรุป 1 ครั้ง
 // ตั้งต่ำกว่า anchor เพราะ whole_law คือคำถามที่ผู้ใช้ถามหาโดยตรง ต้องได้โควตาก่อน
@@ -227,7 +235,9 @@ export async function fetchRelatedLaw(ref){
       body: JSON.stringify({
         model: MODEL, max_tokens: 8000, system: SYS_CACHED,
         messages: [{ role: 'user', content: ask }],
-        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5, allowed_domains: TRUSTED_DOMAINS }]
+        // ใช้ตัวเดียวกับฝั่งคำถาม — ประกาศซ้ำไว้ตรงนี้เมื่อไหร่ วันหนึ่งสองที่จะต่างกันเงียบๆ
+        // (เวอร์ชันของ tool หรือรายการโดเมนถูกแก้ที่เดียว แล้วอีกเส้นยังค้นด้วยของเก่า)
+        tools: [WEB_SEARCH_TOOL]
       })
     })
     if(!ar.ok) return { ...base, status: 'not_found', note: 'เรียก Claude API ไม่สำเร็จ: ' + (await ar.text()).slice(0, 200) }
@@ -601,6 +611,9 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
   const specificRefs = wanted.filter(r => r.ref_type === 'specific')
 
   let budget = MAX_TOTAL_LOOKUPS
+  // ส่วนที่กันไว้ให้ specific — ชั้น whole_law/pending มองเห็นแค่ openBudget() เท่านั้น
+  const reservedForSpecific = Math.min(specificRefs.length, SPECIFIC_RESERVE)
+  const openBudget = () => Math.max(0, budget - reservedForSpecific)
   const answers = []
 
   // 2) whole_law + pending recheck — คำถามอิสระต่อกัน ยิงขนานกันทั้งหมดในคลื่นเดียว
@@ -619,14 +632,13 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
   // ข้ามข้อที่มีหน้าที่ต้องทำจริง
   const enoughTime = timeLeft() > 45_000
 
-  const anchorTake = enoughTime ? anchorRefs.slice(0, Math.min(MAX_ANCHOR_LOOKUPS, budget)) : []
+  const anchorTake = enoughTime ? anchorRefs.slice(0, Math.min(MAX_ANCHOR_LOOKUPS, openBudget())) : []
   const anchorSkipped = anchorRefs.length - anchorTake.length
   budget -= anchorTake.length
 
-  const pendingTake = (enoughTime && budget > 0)
-    ? pendingRefs.slice(0, Math.min(MAX_PENDING_RECHECK, budget))
+  const pendingTake = (enoughTime && openBudget() > 0)
+    ? pendingRefs.slice(0, Math.min(MAX_PENDING_RECHECK, openBudget()))
     : []
-  const pendingChecked = pendingTake.length
   budget -= pendingTake.length
 
   const withRef = (a, r) => ({ ...a, for_section: r.for_section || '', appears_in: r.appears_in || '' })
@@ -645,7 +657,13 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
           .then(a => withRef(a, r))
           .catch(() => withRef(pendingAnswer(r), r))),
     ]
-    answers.push(...await Promise.all(wave))
+    const done = await Promise.all(wave)
+    answers.push(...done)
+    // ที่มาจาก cache ไม่ได้ยิงคำขอสักครั้ง — คืนโควตาให้ชั้น specific ใช้ต่อ
+    // budget คือเพดาน "ค่าใช้จ่าย" ไม่ใช่เพดานจำนวนรายการ · ของฟรีไม่ควรกินโควตา
+    // และนี่คือสิ่งที่ทำให้คำแนะนำ "ลองสรุปซ้ำอีกครั้ง" เป็นจริง — รอบสอง ของเดิมมาจาก cache
+    // โควตาจึงไหลไปให้ฉบับที่ยังไม่ได้ดึงจริงๆ แทนที่จะถูกกินซ้ำที่เดิม
+    budget += done.filter(a => a && a.from_cache).length
   }
 
   // จุด pending ที่งบหรือเวลาไม่พอให้ตรวจ — คืนข้อความที่ไม่ยืนยันอะไรทั้งนั้น
@@ -662,11 +680,15 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
   // เทียบที่ "ชื่อ" อย่างเดียว (ตัดส่วน clause ทิ้ง) เพื่อกันทุกกรณีไม่ว่าจะอ้างทั้งฉบับหรือรายข้อ
   const selfName = normalizeRefKey(parentName || '', '').split('|')[0]
 
-  let skippedForTime = anchorSkipped
+  // แยกเหตุผลให้ตรงกับความจริง — "เวลาไม่พอ" กับ "เต็มโควตา" คนละเรื่องและแก้คนละทาง
+  // เดิมยัดทุกอย่างเป็น "เวลาไม่พอ" ผู้ใช้กดลองใหม่แล้วได้ผลเดิม เพราะสาเหตุจริงคือโควตา
+  let skippedForTime = enoughTime ? 0 : anchorSkipped
+  let skippedForQuota = enoughTime ? anchorSkipped : 0
+  let frontierWhy = 'quota'          // เหตุผลของฉบับที่ยังค้างใน frontier ตอนออกจากลูป
   for(let depth = 1; depth <= MAX_DEPTH && frontier.length && budget > 0; depth++){
     // ชั้น 1 ต้องมีเวลาอย่างน้อย 70 วิ · ชั้น 2 (ตามต่อการมอบอำนาจ) ต้องการ 90 วิ เพราะยอมข้ามได้
     const need = depth === 1 ? 70_000 : 90_000
-    if(timeLeft() < need){ skippedForTime += frontier.length; break }
+    if(timeLeft() < need){ skippedForTime += frontier.length; frontierWhy = 'time'; break }
     // ตัดตัวที่เคยแตะแล้วออกก่อนนับโควตา
     const fresh = []
     for(const r of frontier){
@@ -678,7 +700,9 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
       touched.add(k)
       fresh.push(r)
     }
-    if(!fresh.length) break
+    // เหลือแต่ตัวที่ดึงไปแล้ว หรืออ้างกลับมาที่ฉบับหลักเอง — ไม่ใช่ของที่ "ยังไม่ได้ดึง"
+    // ล้าง frontier ทิ้ง ไม่งั้นมันไปโผล่ในแผงรวมพร้อมเหตุผลที่ไม่ตรงกับความจริง
+    if(!fresh.length){ frontier = []; break }
 
     const take = fresh.slice(0, Math.min(MAX_PER_WAVE, budget))
     deferred.push(...fresh.slice(take.length))
@@ -750,6 +774,12 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
     needs_manual_ref: answered(r) ? false : !!r.needs_manual_ref }))
 
   // 6) deferred เข้า related_laws ด้วย เพื่อให้เห็นว่ายังมีที่ยังไม่ได้ดึง
+  //    เหตุผลต้องตรงกับสิ่งที่เกิดขึ้นจริง ไม่ใช่เดาว่าเป็นเรื่องเวลาเสมอ
+  const QUOTA_NOTE = `ยังไม่ได้ดึง — เต็มโควตาการค้นต่อรอบ (สูงสุด ${MAX_TOTAL_LOOKUPS} ฉบับ) ลองสรุปซ้ำอีกครั้ง ฉบับที่ดึงไปแล้วจะมาจาก cache แล้วคืนโควตาให้ฉบับที่เหลือ`
+  const TIME_NOTE = 'ยังไม่ได้ดึง — เวลาในรอบนี้ไม่พอ ลองสรุปซ้ำอีกครั้งจะดึงต่อจาก cache ได้เร็วขึ้น'
+  if(frontierWhy !== 'time') skippedForQuota += frontier.length
+  skippedForQuota += deferred.length
+
   const related_laws = [
     ...results.map(r => ({ law_name: r.law_name, clause: r.clause, status: r.status,
       ref_type: 'specific', depth: r.depth || 1, via: r.via || '',
@@ -767,14 +797,22 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
       issuing_authority: a.issuing_authority || '', interim_rule: a.interim_rule || '',
       found_instead: a.found_instead || '', from_table: !!a.from_table,
       unlinked: attached.loose.includes(a), req_count: 0 })),
+    // whole_law ที่ไม่ได้ถามในรอบนี้ ต้องขึ้นแผงรวมด้วย ไม่ใช่โผล่แค่ในตัวเลขสรุป
+    // ไม่งั้นผู้ใช้รู้ว่า "หายไป 6 จุด" แต่ไม่มีทางรู้ว่าหายจุดไหน — ซึ่งตามเองต่อไม่ได้เลย
+    ...anchorRefs.slice(anchorTake.length).map(r => ({ law_name: r.law_name || '', clause: 'ทั้งฉบับ',
+      status: 'manual', ref_type: 'whole_law', depth: 0, via: '',
+      source_url: '', resolved_text: '', confidence: '',
+      note: enoughTime ? QUOTA_NOTE : TIME_NOTE,
+      anchor_question: r.anchor_question || '', for_section: r.for_section || '',
+      from_cache: false, req_count: 0 })),
     ...deferred.map(r => ({ law_name: r.law_name || '', clause: r.clause || 'ทั้งฉบับ',
       status: 'manual', ref_type: r.ref_type || 'specific', depth: 0, via: r.via || '',
-      source_url: '', resolved_text: '', confidence: '', note: 'เกินจำนวนที่ดึงได้ในรอบเดียว',
+      source_url: '', resolved_text: '', confidence: '', note: QUOTA_NOTE,
       from_cache: false, req_count: 0 })),
     ...frontier.map(r => ({ law_name: r.law_name || '', clause: r.clause || 'ทั้งฉบับ',
       status: 'manual', ref_type: r.ref_type || 'specific', depth: 0, via: r.via || '',
       source_url: '', resolved_text: '', confidence: '',
-      note: 'ยังไม่ได้ดึง — เวลาในรอบนี้ไม่พอ ลองสรุปซ้ำอีกครั้งจะดึงต่อจาก cache ได้เร็วขึ้น',
+      note: frontierWhy === 'time' ? TIME_NOTE : QUOTA_NOTE,
       from_cache: false, req_count: 0 }))
   ]
 
@@ -792,6 +830,7 @@ export async function relateAndMerge(relatedLaws, mainReqs, parentName, deadline
       answers.filter(a => a.status === 'not_answered').length,
     inlined_count: inlined.changed,                    // ข้อที่เขียนใหม่ให้อ่านจบในตัวแล้ว
     skipped_for_time: skippedForTime,                  // ฉบับที่ยังไม่ได้ดึงเพราะเวลาไม่พอ
+    skipped_for_quota: skippedForQuota,                // ฉบับที่ยังไม่ได้ดึงเพราะเต็มโควตาต่อรอบ
     // ข้อที่ยังอ้างเลขมาตรา ต้องเปิดตัวบทเอง — นับใหม่หลังผูกคำตอบ เพราะข้อที่ได้คำตอบแล้วหลุดป้ายไป
     manual_ref_count: requirements.filter(r => r.needs_manual_ref).length,
   }
