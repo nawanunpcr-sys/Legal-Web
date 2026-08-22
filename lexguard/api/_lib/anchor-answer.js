@@ -18,7 +18,8 @@
 import { hostAllowed, isSecondarySource, deadSource, fetchPdfBase64, pdfPagesAround, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
 import { normalizeQuestionKey, normalizeTopicKey, questionUsable, topicMatchText } from './ref-classify.js'
 import { flagUnverifiedNumbers } from './verify-numbers.js'
-import { findChildAnnouncements, formatGazetteHits, rememberGazetteDoc, resolveGazetteLink } from './gazette-index.js'
+import { findChildAnnouncements, formatGazetteHits, rememberGazetteDoc, resolveGazetteLink, searchGazette, gazetteNeedles } from './gazette-index.js'
+import { findLawIdentity, leadNote } from './open-web-lead.js'
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL
 const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
@@ -414,6 +415,72 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
     }
   }
 
+  // 5.5) รอบกู้ · ค้นเว็บกว้างเพื่อ "ระบุตัวฉบับ" แล้วกลับไปเปิดตัวบทจริง
+  //
+  // ถึงตรงนี้แปลว่าเส้นทางปกติไม่ได้ผล — ไม่เจอ · เจอแต่โดเมนไม่ผ่าน · หรือไม่มีข้อความรองรับ
+  // เดิมจบแค่นี้ ผู้ใช้ได้ "ไม่พบ" ซึ่งตันสนิท ทั้งที่บล็อกกฎหมายหรือสรุปของที่ปรึกษา
+  // มักบอกไว้ตรง ๆ ว่าเกณฑ์นั้นอยู่ในประกาศฉบับไหน ข้อไหน
+  //
+  // ⚠ เว็บนอกรายการมีสิทธิ์เดียว: บอกว่า "ให้ไปเปิดฉบับไหน"
+  // เนื้อหาจากมัน **ห้ามกลายเป็น answer_plain หรือ source_excerpt** เด็ดขาด
+  // ได้ชื่อฉบับมาแล้วต้องกลับไปเปิดตัวบทจริงจากแหล่งที่เชื่อถือได้เอง แล้วผ่านด่านเดิมครบทุกด่าน
+  // เปิดไม่ได้ = ยังตอบ not_answered เหมือนเดิม แต่แนบเบาะแสไปด้วย
+  // ซึ่งเปลี่ยน "ไม่พบ" เป็น "คำตอบอยู่ในฉบับนี้ ข้อนี้ ไปเปิดต่อ" — จป. ทำต่อเองได้ใน 2 นาที
+  let webLead = null
+  const primaryUnusable = out.status !== 'answered'
+    || !hostAllowed(String(out.source_url || '').trim())
+    || String(out.source_excerpt || '').trim().length < 20
+  if(primaryUnusable && timeLeft() > 60_000){
+    try{
+      const lead = await findLawIdentity(question, lawHint, ctx)
+      if(lead){
+        webLead = lead
+        // แปลงเบาะแสเป็น URL ที่เชื่อถือได้ · ลองดัชนีก่อน เพราะการันตีว่าลิงก์เปิดได้
+        let openUrl = ''
+        const gz = await resolveGazetteLink(lead.law_name)
+        if(gz) openUrl = gz.gazette_url
+        if(!openUrl){
+          const hits = await searchGazette(gazetteNeedles(lead.law_name).slice(0, 1), { limit: 4 })
+          openUrl = (hits || []).map(h => h.doc_url).find(u => hostAllowed(u)) || ''
+        }
+        // ยังไม่ได้ URL → ค้นในโดเมนที่เชื่อถือได้อีกรอบ แต่คราวนี้ค้นด้วย "ชื่อฉบับที่รู้แล้ว"
+        // ไม่ใช่คำถามลอย ๆ แบบรอบแรก · นี่คือจุดที่เบาะแสให้ผลจริงที่สุด
+        // เพราะเว็บหน่วยงานเก็บไฟล์ไว้ใต้ชื่อเรื่อง ไม่ได้เก็บไว้ใต้คำถามของผู้ใช้
+        if(!openUrl && timeLeft() > 55_000){
+          const byName = await askClaude({
+            system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
+            content: `${ctx}\n\nรู้แล้วว่าเกณฑ์นี้อยู่ใน: ${lead.law_name}`
+              + `${lead.section_ref ? ` ${lead.section_ref}` : ''}\n`
+              + 'ค้นหาไฟล์ตัวบทของฉบับนี้จากเว็บที่กำหนด แล้วตอบคำถามข้างต้นจากตัวบทจริง\n'
+              + 'ค้นด้วยชื่อฉบับนี้ ไม่ใช่ด้วยคำถาม — เว็บหน่วยงานเก็บไฟล์ไว้ใต้ชื่อเรื่อง',
+            tools: [WEB_SEARCH_TOOL],
+          })
+          const u2 = String(byName?.source_url || '').trim()
+          if(u2 && hostAllowed(u2)){
+            openUrl = u2
+            // ผลรอบนี้ผ่านด่านโดเมนแล้วและมีข้อความจากตัวบท ใช้ต่อได้เลยโดยไม่ต้องอ่านไฟล์ซ้ำ
+            if(String(byName.source_excerpt || '').trim().length >= 20) out = { ...byName, source_url: u2 }
+          }
+        }
+        if(openUrl && hostAllowed(openUrl) && timeLeft() > 45_000){
+          const b64 = await fetchPdfBase64(openUrl)
+          if(b64){
+            const rescued = await askClaude({
+              system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
+              content: `${ctx}\n\nไฟล์แนบคือตัวบทจริงของ ${lead.law_name} จาก ${openUrl}\n`
+                + `${lead.section_ref ? `เบาะแสจากการค้นเว็บระบุว่าเกณฑ์อยู่ที่ ${lead.section_ref} — ตรวจจากไฟล์ว่าจริงหรือไม่\n` : ''}`
+                + 'อ่านจากไฟล์นี้เท่านั้น ห้ามเติมจากความจำและห้ามใช้สิ่งที่อ่านมาจากเว็บอื่น\n'
+                + 'ถ้าไฟล์นี้ไม่ได้ตอบคำถาม ให้ตอบ not_answered แล้วบอกใน found_instead ว่าไฟล์นี้ว่าด้วยเรื่องอะไร',
+              pdfBase64: b64,
+            })
+            // รับผลใหม่เฉพาะเมื่อมันคัดข้อความจากตัวบทมาได้จริง — ด่านเดิมยังตรวจต่ออีกชั้น
+            if(rescued && String(rescued.source_excerpt || '').trim()) out = { ...rescued, source_url: openUrl }
+          }
+        }
+      }
+    }catch{ /* รอบกู้ล้มเหลวไม่ใช่เหตุให้ทั้งเส้นล้ม — ตกไปตอบ not_answered ตามเดิม */ }
+  }
+
   // 6) ด่านตรวจ — ตัดสินจากหลักฐาน ไม่ใช่จากป้ายที่โมเดลติดมา
   url = String(out.source_url || '').trim()
   const excerpt = String(out.source_excerpt || '').trim()
@@ -424,19 +491,24 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
   //     แยกข้อความ 2 กรณีให้ชัด — "โดเมนไม่น่าเชื่อถือ" กับ "ที่อยู่นี้ตายแล้ว" ต้องแก้คนละแบบ
   //     กรณีหลังตัวบทเปิดได้อยู่ แค่ต้องไปที่อยู่ใหม่ ผู้ใช้จึงตามต่อเองได้ทันที
   const deadWhy = deadSource(url)
-  if(!hostAllowed(url)) return cacheFail({ ...fail(deadWhy
+  // เบาะแสจากรอบกู้ต่อท้ายเหตุผลเสมอ — ผู้ใช้จะได้ไม่ตันแม้ระบบเปิดตัวบทไม่ได้
+  const lead = leadNote(webLead)
+  if(!hostAllowed(url)) return cacheFail({ ...fail([deadWhy
     ? 'ที่อยู่ตัวบทที่ค้นเจอเปิดไม่ได้แล้ว — ' + deadWhy
     : url
       ? 'แหล่งที่ค้นเจอไม่อยู่ในโดเมนที่เชื่อถือได้ — เปิดตรวจเองก่อนใช้'
-      : 'ค้นไม่เจอตัวบทที่ระบุเกณฑ์ของข้อนี้'), source_url: url, found_instead: foundInstead })
+      : 'ค้นไม่เจอตัวบทที่ระบุเกณฑ์ของข้อนี้', lead].filter(Boolean).join(' · ')),
+    source_url: url, found_instead: foundInstead })
 
   // (ข) ไม่มีข้อความจากตัวบทรองรับ = แต่งจากความจำ
-  if(!excerpt || !plain) return cacheFail({ ...fail('เปิดตัวบทแล้วแต่ไม่มีข้อความจากตัวบทรองรับ'),
+  if(!excerpt || !plain) return cacheFail({
+    ...fail(['เปิดตัวบทแล้วแต่ไม่มีข้อความจากตัวบทรองรับ', lead].filter(Boolean).join(' · ')),
     source_url: url, law_name: out.law_name || lawHint, section_ref: out.section_ref || '',
     found_instead: foundInstead })
 
   // (ค) เขียนว่า "ตามที่กฎหมายกำหนด" = ยังไม่ได้ตอบคำถาม (สเปกข้อ 4)
-  if(NON_ANSWER_RE.test(plain)) return cacheFail({ ...fail('เปิดตัวบทแล้วแต่ยังไม่พบเกณฑ์ที่เป็นรูปธรรม'),
+  if(NON_ANSWER_RE.test(plain)) return cacheFail({
+    ...fail(['เปิดตัวบทแล้วแต่ยังไม่พบเกณฑ์ที่เป็นรูปธรรม', lead].filter(Boolean).join(' · ')),
     source_url: url, law_name: out.law_name || lawHint, section_ref: out.section_ref || '',
     found_instead: foundInstead || plain })
 
