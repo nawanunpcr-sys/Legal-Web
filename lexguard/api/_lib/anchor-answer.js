@@ -16,8 +16,9 @@
 // → จึงต้องมีรอบที่ 3 ที่ตามเข้าไปถอดเนื้อหาตารางออกมา
 
 import { hostAllowed, isSecondarySource, deadSource, fetchPdfBase64, pdfPagesAround, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
-import { normalizeQuestionKey, normalizeTopicKey, questionUsable } from './ref-classify.js'
+import { normalizeQuestionKey, normalizeTopicKey, questionUsable, topicMatchText } from './ref-classify.js'
 import { flagUnverifiedNumbers } from './verify-numbers.js'
+import { findChildAnnouncements, formatGazetteHits, rememberGazetteDoc } from './gazette-index.js'
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL
 const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
@@ -217,7 +218,10 @@ export async function recheckPending(ref, parentName, deadlineAt = Infinity){
   const q = pendingQuestion(ref, parentName)
   if(!questionUsable(q)) return base
 
-  const hit = await answerAnchoredQuestion({ ...ref, ref_type: 'whole_law', anchor_question: q }, deadlineAt)
+  // gazette_parent = ชื่อกฎหมายแม่ · ดัชนีราชกิจจาฯ ใช้ค่านี้หา "ประกาศลูกที่ออกตามฉบับนี้"
+  // ต้องเป็นชื่อแม่ ไม่ใช่ ref.law_name ซึ่งเป็นชื่อที่โมเดลเดาให้ประกาศที่ยังไม่รู้ว่ามีจริงไหม
+  const hit = await answerAnchoredQuestion(
+    { ...ref, ref_type: 'whole_law', anchor_question: q, gazette_parent: parentName }, deadlineAt)
 
   // เจอแล้ว — ฉบับนั้นออกมาแล้วจริง เลิกเรียกว่า "รอประกาศ" ได้เลย
   if(hit && hit.status === 'answered'){
@@ -294,13 +298,46 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
   const timeLeft = () => deadlineAt - Date.now()
   if(timeLeft() < 40_000) return fail('เวลาในรอบนี้ไม่พอค้น — ลองสรุปซ้ำอีกครั้ง')
 
-  // 2) รอบ 1 · ค้นด้วยคำถาม ไม่ใช่ด้วยชื่อกฎหมาย
+  // 2) รอบ 0 · เปิดดัชนีราชกิจจานุเบกษาของเราเองก่อนยิง web_search
+  //
+  // ดัชนีนี้บอกได้ว่า "ฉบับไหนมีอยู่จริง ชื่อเต็มว่าอะไร และไฟล์อยู่ที่ URL ใด"
+  // ซึ่งเป็นสองเรื่องที่ web_search ทำได้แย่ที่สุด:
+  //   - ดัชนีของ search engine ยังคืนที่อยู่ /DATA/PDF/... ที่ตายแล้วอยู่เรื่อย ๆ
+  //   - snippet ไม่มีเลข เล่ม/ตอน/หน้า ซึ่งเป็นสิ่งที่ผู้ตรวจ ISO ใช้อ้างอิง
+  // ค่าใช้จ่าย 0 คำขอ AI · เป็นการค้นในฐานข้อมูลของเราเอง ใช้เวลาระดับมิลลิวินาที
+  //
+  // ⚠ ผลจากดัชนีเป็นแค่ "รายชื่อผู้ต้องสงสัย" ไม่ใช่คำตอบ — มีแต่ชื่อเรื่อง ไม่มีเนื้อหา
+  // โมเดลยังต้องเปิดไฟล์อ่านจริงและคัด source_excerpt มาให้ครบเหมือนเดิมทุกด่าน
+  // ที่ตัดออกไปคือ "รอบเดาว่าไฟล์อยู่ที่ไหน" ไม่ใช่ "รอบตรวจว่าตัวบทเขียนว่าอะไร"
+  let gazetteBlock = ''
+  try{
+    const parent = String(ref?.gazette_parent || '').trim() || lawHint
+    const { hits, narrowed, fromDiscovered } = await findChildAnnouncements(parent, topicMatchText(question), { limit: 6 })
+    if(hits.length) gazetteBlock = [
+      // ผลสองชนิดนี้เชื่อได้ไม่เท่ากัน จึงต้องพูดกับโมเดลคนละแบบ
+      // narrowed = ชื่อเรื่องมีทั้งชื่อกฎหมายแม่และเรื่องที่ถาม → ตรงคำถามค่อนข้างแน่
+      // fromDiscovered = แค่ "ออกตามกฎหมายแม่เดียวกัน" เท่านั้น เรื่องไม่ได้อยู่ในชื่อ
+      //   ชื่อกฎหมายไทยแทบไม่บอกเรื่องไว้ในชื่อ กลุ่มนี้จึงมีทั้งฉบับที่ใช่และไม่ใช่ปนกัน
+      //   บอกว่า "ยืนยันแล้ว ให้ใช้ก่อน" กับกลุ่มนี้ = ชวนให้โมเดลยึดไฟล์ผิดฉบับด้วยความมั่นใจ
+      fromDiscovered
+        ? 'ฉบับที่ออกตามกฎหมายแม่เดียวกัน ซึ่งระบบเคยเปิดอ่านสำเร็จมาก่อน — อาจไม่ใช่ฉบับที่ตอบคำถามนี้:'
+        : narrowed
+          ? 'ฉบับที่พบในดัชนีราชกิจจานุเบกษา ตรงทั้งชื่อกฎหมายแม่และเรื่องที่ถาม (ลิงก์ยืนยันแล้วว่าเปิดได้ ให้ใช้ก่อนลิงก์จากการค้นเว็บ):'
+          : 'ฉบับที่พบในดัชนีราชกิจจานุเบกษา (ลิงก์ยืนยันแล้วว่าเปิดได้ ให้ใช้ก่อนลิงก์จากการค้นเว็บ):',
+      formatGazetteHits(hits),
+      'รายการนี้เป็นเพียงชื่อเรื่อง ไม่ใช่เนื้อหา — ต้องเปิดไฟล์อ่านจริงก่อนตอบเสมอ',
+      'ถ้าไม่มีฉบับใดในรายการตอบคำถามได้ ให้ค้นเว็บต่อตามปกติ ห้ามเอาฉบับที่ไม่เกี่ยวมาตอบ',
+    ].join('\n')
+  }catch{ /* ดัชนีล่มไม่ใช่เหตุให้ทั้งเส้นล้ม — ถอยไปใช้ web_search ตามเดิม */ }
+
+  // 3) รอบ 1 · ค้นด้วยคำถาม ไม่ใช่ด้วยชื่อกฎหมาย
   const ctx = [
     `คำถามที่ต้องตอบ: ${question}`,
     lawHint ? `ตัวบทฉบับหลักบอกให้ไปดู: ${lawHint}` : '',
     ref?.for_section ? `คำถามนี้มาจาก: ${ref.for_section} ของกฎหมายฉบับที่ผู้ใช้กำลังอ่าน` : '',
     ref?.why_needed ? `ทำไมต้องรู้: ${ref.why_needed}` : '',
     ref?.appears_in ? `ข้อความในตัวบทฉบับหลักที่อ้างถึง: "${ref.appears_in}"` : '',
+    gazetteBlock,
   ].filter(Boolean).join('\n')
 
   let out = await askClaude({
@@ -310,7 +347,7 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
   })
   if(!out) return fail('ค้นไม่สำเร็จ — เรียก AI ไม่ได้หรือผลลัพธ์อ่านไม่ออก')
 
-  // 3) รอบ 2 · ได้ลิงก์ไฟล์ตัวบทมา → อ่านไฟล์จริงเพื่อยืนยันและเก็บ source_excerpt
+  // 4) รอบ 2 · ได้ลิงก์ไฟล์ตัวบทมา → อ่านไฟล์จริงเพื่อยืนยันและเก็บ source_excerpt
   //    web_search เห็นแค่ snippet จึงมักไม่มี excerpt ทำให้ตกด่านหลักฐานจนเหลือศูนย์
   let pdfB64 = ''
   let url = String(out.source_url || '').trim()
@@ -347,7 +384,7 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
     }
   }
 
-  // 4) รอบ 3 · ตัวบทชี้ต่อไปยังตารางท้ายกฎหมาย = ยังไม่ได้คำตอบ ต้องตามเข้าไปถอดตาราง
+  // 5) รอบ 3 · ตัวบทชี้ต่อไปยังตารางท้ายกฎหมาย = ยังไม่ได้คำตอบ ต้องตามเข้าไปถอดตาราง
   //    ตารางมักอยู่ในไฟล์เดียวกัน ("ท้ายกฎกระทรวงนี้") จึงใช้ไฟล์ที่ดึงมาแล้วได้เลย ไม่ต้องค้นซ้ำ
   let fromTable = false
   if(pointsToTable(out) && timeLeft() > 45_000){
@@ -377,7 +414,7 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
     }
   }
 
-  // 5) ด่านตรวจ — ตัดสินจากหลักฐาน ไม่ใช่จากป้ายที่โมเดลติดมา
+  // 6) ด่านตรวจ — ตัดสินจากหลักฐาน ไม่ใช่จากป้ายที่โมเดลติดมา
   url = String(out.source_url || '').trim()
   const excerpt = String(out.source_excerpt || '').trim()
   const plain = String(out.answer_plain || '').trim()
@@ -447,5 +484,13 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
     source_excerpt: excerpt, source_url: url, status: 'answered',
     confidence: result.confidence, note: result.note,
   })
+
+  // เก็บฉบับนี้เข้าดัชนีราชกิจจาฯ ด้วย — มาถึงตรงนี้แปลว่าผ่านด่านตรวจครบทุกด่านแล้ว
+  // (โดเมนเชื่อถือได้ · มีข้อความจากตัวบทรองรับ · ไม่ใช่ "ตามที่กฎหมายกำหนด" · ตัวเลขตรวจแล้ว)
+  // จึงเป็นคู่ (ชื่อกฎหมาย, URL) ที่ยืนยันแล้วว่าเปิดได้จริง ซึ่งคือสิ่งที่ดัชนีต้องการพอดี
+  // นี่คือทางเดียวที่ดัชนีจะครอบคลุมฉบับก่อน มิ.ย. 2566 ได้โดยไม่ต้องพึ่ง dump หรือ Token
+  // ไม่ await ผลลัพธ์แบบมีเงื่อนไข — ล้มเหลวก็แค่ไม่ได้เก็บ คำตอบที่จ่ายเงินมาแล้วยังส่งกลับครบ
+  await rememberGazetteDoc({ title: result.law_name, url })
+
   return result
 }

@@ -131,6 +131,18 @@ const TOPICS = [
   ['distance',    /ระยะห่าง|สถานที่ตั้ง|ห่างจากศาสนสถาน/],
 ]
 
+// ข้อความไทย "ตัวจริง" ของเรื่องที่คำถามพูดถึง — ต่างจาก normalizeTopicKey ที่คืนสลัก
+// ภาษาอังกฤษไว้ทำ cache key · ตัวนี้เอาไปเป็นเข็มค้นในดัชนีราชกิจจาฯ ซึ่งเก็บชื่อเรื่องเป็นไทย
+// คืนคำที่ match จริงในคำถาม ไม่ใช่คำตัวแทน เพราะชื่อเรื่องในราชกิจจาฯ ใช้สำนวนเดียวกับตัวบท
+// เข้าเรื่องเดียวเท่านั้นจึงคืนค่า — เกณฑ์เดียวกับ normalizeTopicKey ด้วยเหตุผลเดียวกัน
+export function topicMatchText(question){
+  const s = String(question || '')
+  const hit = TOPICS.filter(([, re]) => re.test(s))
+  if(hit.length !== 1) return ''
+  const m = s.match(hit[0][1])
+  return m ? String(m[0]).trim() : ''
+}
+
 export function normalizeTopicKey(lawName, question){
   const law = normalizeQuestionKey(lawName).slice(0, 120)
   if(law.length < 8) return ''            // ชื่อกฎหมายสั้นเกินกว่าจะระบุฉบับได้ชัด

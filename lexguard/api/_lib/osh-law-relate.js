@@ -11,6 +11,7 @@
 import { hostAllowed, deadSource, fetchPdfBase64, parseLoose, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
 import { classifyRefs } from './ref-classify.js'
 import { answerAnchoredQuestion, pendingAnswer, recheckPending } from './anchor-answer.js'
+import { rememberGazetteDoc } from './gazette-index.js'
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL
 const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
@@ -375,6 +376,11 @@ export async function fetchRelatedLaw(ref){
       })
     }
   }catch(e){ /* cache เขียนไม่ได้ไม่ใช่เหตุให้ล้ม — ผลที่ค้นได้ยังใช้ได้ */ }
+
+  // เก็บฉบับที่ดึงตัวบทมาอ่านได้จริงเข้าดัชนีราชกิจจาฯ ด้วย (เส้น specific)
+  // เงื่อนไข read_ok = เปิดไฟล์อ่านสำเร็จ ไม่ใช่แค่ค้นเจอชื่อ — คู่ (ชื่อ, URL) จึงยืนยันแล้ว
+  // ด่านโดเมนอยู่ใน rememberGazetteDoc() ชุดเดียวกับที่ Skill 3 ใช้ ไม่ได้ผ่อนอะไร
+  if(status === 'resolved' && readOk) await rememberGazetteDoc({ title: result.law_full_name, url: result.source_url })
 
   return result
 }

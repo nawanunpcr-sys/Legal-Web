@@ -302,11 +302,24 @@ function RelatedLawsPanel({ items = [] }) {
 function RepealsPanel({ repeals = [], laws = [], newLaw = {}, onReloadLaws }) {
   const { can } = useAuth()
   const [busyId, setBusyId] = useState(null)
+  // ผลจับคู่มาจาก API เป็นหลัก (api/_lib/repeal-match.js เทียบกับ lg_laws ให้แล้ว)
+  // ตัวเทียบฝั่งนี้เหลือไว้เป็นทางสำรองสำหรับผลรุ่นเก่าที่ยังไม่มี registry_checked
+  // กติกาสองฝั่งต้องตรงกันเป๊ะ ไม่งั้นผู้ใช้จะเห็นผลต่างกันในหน้าเดียวกัน
   const rows = useMemo(() => repeals.map(r => {
+    if (r.registry_checked) {
+      const inReg = r.in_registry && r.registry_id
+      return { ...r, match: inReg
+        ? { type: r.match_type || 'exact', sim: r.match_sim || 1,
+            law: laws.find(l => l.id === r.registry_id)
+              || { id: r.registry_id, code: r.registry_code, name: r.registry_name,
+                   status: r.already_repealed ? 'repealed' : 'active' } }
+        : null }
+    }
     const hit = findLawDuplicate(laws, r.law_name)
     return { ...r, match: hit && (hit.type === 'exact' || hit.sim >= 0.75) ? hit : null }
   }), [repeals, laws])
   if (!rows.length) return null
+  const matched = rows.filter(r => r.match).length
 
   // ตั้งฉบับเดิมเป็น "ยกเลิก" จากหน้านี้เลย — ใช้ repealLaw ตัวเดิมของระบบ
   //   (มันจัดการ log แจ้งเตือน + สถิติรายไตรมาสให้ครบอยู่แล้ว)
@@ -334,13 +347,24 @@ function RepealsPanel({ repeals = [], laws = [], newLaw = {}, onReloadLaws }) {
     <div style={{ marginTop: 12, padding: '10px 13px', borderRadius: 9, background: 'var(--warn-bg)', border: '1px solid var(--warn)' }}>
       <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--warn)' }}>
         ⚠ กฎหมายฉบับนี้ยกเลิกกฎหมายเดิม {rows.length} ฉบับ
+        {matched < rows.length && (
+          <span style={{ fontWeight: 400, color: 'var(--ink-soft)' }}>
+            {' '}· พบในทะเบียน {matched} ฉบับ
+          </span>
+        )}
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', margin: '3px 0 7px', lineHeight: 1.6 }}>
-        เพิ่มฉบับใหม่เข้าทะเบียนแล้ว อย่าลืมไปตั้งฉบับเดิมเป็น “ยกเลิก” ด้วย ไม่งั้นทะเบียนจะมี 2 ฉบับซ้อนกัน
+        {matched > 0
+          ? 'เพิ่มฉบับใหม่เข้าทะเบียนแล้ว อย่าลืมไปตั้งฉบับเดิมเป็น “ยกเลิก” ด้วย ไม่งั้นทะเบียนจะมี 2 ฉบับซ้อนกัน'
+          : 'ตัวบทระบุบทยกเลิกไว้ แต่ยังไม่พบฉบับที่ถูกยกเลิกในทะเบียน — บันทึกไว้เป็นข้อมูลว่าฉบับนี้ไปยกเลิกอะไร'}
       </div>
       {rows.map((r, i) => (
         <div key={i} style={{ padding: '5px 0', borderTop: i ? '1px solid var(--line)' : 'none' }}>
-          <div style={{ fontSize: 12.5 }}>{r.law_name}{r.clause ? ` · ${r.clause}` : ''}</div>
+          {/* บรรทัดนี้ต้องขึ้นเหมือนกันทั้งกรณีพบและไม่พบในทะเบียน —
+              บทยกเลิกเป็นสิ่งที่ตัวบทเขียนไว้ ไม่ได้ขึ้นกับว่าเราเคยบันทึกฉบับเก่าหรือเปล่า */}
+          <div style={{ fontSize: 12.5 }}>
+            <b style={{ color: 'var(--warn)' }}>ยกเลิก</b> {r.law_name}{r.clause ? ` · ${r.clause}` : ''}
+          </div>
           <div style={{ fontSize: 11.5, marginTop: 2, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             {r.match ? (<>
               <span style={{ color: 'var(--ok)' }}>
@@ -356,7 +380,17 @@ function RepealsPanel({ repeals = [], laws = [], newLaw = {}, onReloadLaws }) {
                     {busyId === r.match.law.id ? 'กำลังบันทึก…' : 'ตั้งเป็นยกเลิกเลย'}
                   </button>}
             </>) : (
-              <span style={{ color: 'var(--ink-faint)' }}>ไม่พบในทะเบียน — อาจยังไม่เคยบันทึก หรือชื่อต่างจากที่เก็บไว้</span>
+              <span style={{ color: 'var(--ink-faint)' }}>
+                {r.registry_checked === false
+                  ? 'ตรวจทะเบียนไม่สำเร็จรอบนี้ — ยังไม่ทราบว่าฉบับนี้อยู่ในทะเบียนหรือไม่'
+                  : r.near_miss_year
+                    /* ชื่อคล้ายมากแต่เป็นคนละปี = คนละฉบับ · บอกให้เห็นแต่ห้ามมีปุ่มกด
+                       ไม่งั้นจะไปตั้ง "ฉบับปัจจุบัน" เป็นยกเลิกแทนฉบับเก่า */
+                    ? `ไม่พบฉบับนี้ในทะเบียน — ที่ชื่อใกล้เคียงคือ ${r.near_miss_year.slice(0, 60)} ซึ่งเป็นคนละปี จึงเป็นคนละฉบับ`
+                    : r.match_sim > 0
+                      ? `ไม่พบในทะเบียน — ที่ใกล้เคียงที่สุดตรงกัน ${Math.round(r.match_sim * 100)}% ซึ่งยังไม่พอชี้ว่าเป็นฉบับเดียวกัน`
+                      : 'ไม่พบในทะเบียน — อาจยังไม่เคยบันทึก หรือชื่อต่างจากที่เก็บไว้'}
+              </span>
             )}
           </div>
         </div>

@@ -5,6 +5,7 @@
 import { relateAndMerge, inlineSectionRefs } from './_lib/osh-law-relate.js'
 import { flagUnverifiedNumbers } from './_lib/verify-numbers.js'
 import { resolveEffectiveDate } from './_lib/effective-date.js'
+import { matchRepeals } from './_lib/repeal-match.js'
 import { sameOrigin, clientIp, rateLimited } from './_lib/guard.js'
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL
@@ -496,12 +497,16 @@ export default async function handler(req,res){
         body:JSON.stringify(rows)})
       if(!sr.ok) return res.status(502).json({error:'บันทึกลง staging ไม่สำเร็จ: '+(await sr.text()).slice(0,200)})
     }
-    // repeals · ส่งชื่อกฎหมายที่ถูกยกเลิกกลับไปให้หน้าเว็บจับคู่กับทะเบียนเอง
-    // (หน้าสรุปมีรายการกฎหมายทั้งทะเบียนอยู่แล้ว จับคู่ฝั่ง client ได้ ไม่ต้องยิง DB ซ้ำ)
-    const repeals = Array.isArray(parsed.repeals)
-      ? parsed.repeals.filter(x => x && String(x.law_name||'').trim())
-          .map(x => ({ law_name: String(x.law_name).trim(), clause: String(x.clause||'').trim() }))
-      : []
+    // repeals · อ่านบทยกเลิกจากตัวบท แล้ว "ไปเช็คกับทะเบียนของเราเอง" ว่ายกเลิกฉบับไหน
+    //
+    // เดิมส่งแต่ชื่อกลับไปให้หน้าเว็บจับคู่เอง ซึ่งแปลว่าผลจับคู่ไม่ติดไปกับคำตอบของ API
+    // หน้าอื่นหรือ staging ที่กินผลเดียวกันจึงไม่รู้เรื่องด้วย และถ้ารายการกฎหมายในหน้า
+    // ยังโหลดไม่เสร็จ จะกลายเป็น "ไม่พบในทะเบียน" ทั้งที่มีอยู่จริง
+    //
+    // ⚠ จับคู่ไม่ได้ไม่ใช่เหตุให้บทยกเลิกหายไป — บทยกเลิกเป็นข้อเท็จจริงที่เขียนอยู่ในตัวบท
+    // ไม่ได้ขึ้นกับว่าเราเคยบันทึกฉบับเก่าไว้หรือเปล่า · matchRepeals() คืนครบทุกฉบับเสมอ
+    // ต่างกันแค่ฟิลด์ in_registry ซึ่งเป็นตัวบอกว่ามีปุ่มให้กดต่อได้หรือต้องบันทึกเองก่อน
+    const repeals = await matchRepeals(parsed.repeals)
     // ฉบับที่ถูกด่านตัดก่อนดึง ต่อท้ายรายการเดียวกัน เพื่อให้ จป. เห็นว่า AI อ้างถึงอะไรบ้างแล้วทำไมไม่ดึง
     const rejectedRows = rejectedRefs.map(r => ({
       law_name: String(r.law_name||'').trim(), clause: String(r.clause||'').trim() || 'ทั้งฉบับ',
