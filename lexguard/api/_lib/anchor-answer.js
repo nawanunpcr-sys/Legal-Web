@@ -18,7 +18,7 @@
 import { hostAllowed, isSecondarySource, deadSource, fetchPdfBase64, pdfPagesAround, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
 import { normalizeQuestionKey, normalizeTopicKey, questionUsable, topicMatchText } from './ref-classify.js'
 import { flagUnverifiedNumbers } from './verify-numbers.js'
-import { findChildAnnouncements, formatGazetteHits, rememberGazetteDoc } from './gazette-index.js'
+import { findChildAnnouncements, formatGazetteHits, rememberGazetteDoc, resolveGazetteLink } from './gazette-index.js'
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL
 const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
@@ -484,6 +484,21 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
     source_excerpt: excerpt, source_url: url, status: 'answered',
     confidence: result.confidence, note: result.note,
   })
+
+  // หา "ลิงก์ราชกิจจานุเบกษาต้นฉบับ" ของฉบับที่ให้คำตอบ แล้วแนบไปเป็นฟิลด์เพิ่ม
+  //
+  // คำตอบจำนวนมากอ่านมาจากเว็บหน่วยงานหรือฉบับรวมขององค์กรวิชาชีพ ซึ่งลิงก์คนละที่กับราชกิจจาฯ
+  // ผู้ตรวจ ISO ขอดูต้นฉบับ จึงควรมีลิงก์ราชกิจจาฯ ติดไปด้วยเมื่อพิสูจน์ได้ว่าเป็นฉบับเดียวกัน
+  //
+  // ⚠ ไม่แตะ source_url เด็ดขาด — ลิงก์ราชกิจจาฯ เป็นของแถม ไม่ใช่ของแทน
+  // ฉบับรวมมักรวมฉบับแก้ไขไว้แล้ว ส่วนต้นฉบับราชกิจจาฯ เป็นตัวก่อนแก้
+  // (ตารางที่ 2 ของกฎกระทรวง ฉบับที่ 39 ถูกยกเลิกโดยฉบับที่ 63 — อ่านตัวเลขจากฉบับรวม
+  //  แล้วอ้างลิงก์ราชกิจจาฯ ฉบับ 39 = อ้างเอกสารที่ไม่มีตัวเลขนั้นอยู่จริง)
+  // resolveGazetteLink() คืน null เมื่อพิสูจน์ไม่ได้ ซึ่งปลอดภัยกว่าเดา
+  try{
+    const gz = await resolveGazetteLink(result.law_name)
+    if(gz){ result.gazette_url = gz.gazette_url; result.gazette_ref = gz.gazette_ref }
+  }catch{ /* หาลิงก์ต้นฉบับไม่ได้ไม่ใช่เหตุให้คำตอบเสียไป */ }
 
   // เก็บฉบับนี้เข้าดัชนีราชกิจจาฯ ด้วย — มาถึงตรงนี้แปลว่าผ่านด่านตรวจครบทุกด่านแล้ว
   // (โดเมนเชื่อถือได้ · มีข้อความจากตัวบทรองรับ · ไม่ใช่ "ตามที่กฎหมายกำหนด" · ตัวเลขตรวจแล้ว)

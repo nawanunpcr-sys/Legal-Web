@@ -237,6 +237,16 @@ function RefAnswer({ a }) {
         {a.source_url && (
           <a href={a.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--brand)' }}>เปิดตัวบท ↗</a>
         )}
+        {/* ลิงก์ราชกิจจาฯ ต้นฉบับ — เป็นของเพิ่ม ไม่ใช่ของแทน "เปิดตัวบท"
+            คำตอบอ่านมาจากที่ไหนก็ต้องอ้างที่นั่น ส่วนอันนี้ไว้ให้ผู้ตรวจ ISO ที่ขอดูต้นฉบับ
+            ขึ้นเฉพาะเมื่อพิสูจน์ได้ว่าเป็นฉบับเดียวกัน (ปีตรง + เลขฉบับตรง + มาจากสารบัญทางการ) */}
+        {a.gazette_url && a.gazette_url !== a.source_url && (
+          <a href={a.gazette_url} target="_blank" rel="noreferrer"
+             title={a.gazette_ref ? `ราชกิจจานุเบกษา ${a.gazette_ref}` : 'ต้นฉบับราชกิจจานุเบกษา'}
+             style={{ color: 'var(--ink-soft)' }}>
+            ราชกิจจาฯ{a.gazette_ref ? ` ${a.gazette_ref}` : ''} ↗
+          </a>
+        )}
       </div>
       {srcNotes.map((n, k) => (
         <div key={k} style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--ink-faint)' }}>{n}</div>

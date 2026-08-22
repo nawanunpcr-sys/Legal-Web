@@ -235,6 +235,61 @@ export async function rememberGazetteDoc({ title, url, source = 'discovered' } =
   }catch{ return false }   // เก็บดัชนีไม่ได้ไม่ใช่เหตุให้คำตอบที่ได้มาแล้วเสียไป
 }
 
+// ── หา "ลิงก์ราชกิจจานุเบกษาต้นฉบับ" ของกฎหมายที่ตอบไป ─────────────────────
+//
+// ผู้ใช้อยากได้ลิงก์ราชกิจจาฯ ติดไปกับคำตอบเสมอ เพราะเป็นสิ่งที่ผู้ตรวจ ISO ยอมรับ
+// แต่คำตอบจำนวนมากอ่านมาจากเว็บหน่วยงานหรือฉบับรวมขององค์กรวิชาชีพ ซึ่งลิงก์คนละที่
+//
+// ⚠ ห้ามสลับลิงก์ที่ใช้เป็นหลักฐาน — ลิงก์ราชกิจจาฯ เป็น "ของแถม" ไม่ใช่ของแทน
+// เพราะฉบับรวมมักรวมฉบับแก้ไขไว้แล้ว ส่วนต้นฉบับราชกิจจาฯ เป็นตัวก่อนแก้
+// เคสจริงของระบบนี้: ตารางที่ 2 ของกฎกระทรวง ฉบับที่ 39 ถูกยกเลิกโดยฉบับที่ 63
+// อ่านตัวเลขจากฉบับรวมของ ASA แล้วอ้างลิงก์ราชกิจจาฯ ฉบับ 39 = อ้างเอกสารที่ไม่มีตัวเลขนั้น
+// `source_url` (หลักฐาน) จึงต้องอยู่ที่เดิมเสมอ · ตัวนี้เติมแค่ฟิลด์ใหม่ `gazette_url`
+//
+// ด่านตรวจ 3 ชั้น ก่อนยอมพิมพ์ลิงก์ราชกิจจาฯ ออกไป:
+//  (1) รับเฉพาะแถวจากสารบัญทางการ (gdcatalog/soc_api) — คู่ (ชื่อ, URL) ยืนยันแล้ว
+//      แถว discovered ห้ามใช้อ้างอิงเด็ดขาด เพราะชื่อเป็นสิ่งที่โมเดลตั้งให้ตอนตอบครั้งก่อน
+//      พิสูจน์แล้วว่าพลาดจริง: แถวชื่อ "ประกาศ กสธ. ค่ามาตรฐานมลพิษทางเสียงฯ พ.ศ. 2561"
+//      ชี้ไปที่ 142D051S0000000015700.pdf ซึ่งเปิดดูแล้วเป็น "ข้อบัญญัติ อบต.หาดส้มแป้น พ.ศ. 2565"
+//  (2) ปีต้องตรงกัน ถ้าทั้งสองฝั่งระบุปี
+//  (3) เลข "ฉบับที่ N" ต้องตรงกันเป๊ะ — เทียบด้วย substring ล้วนจะทำให้
+//      "ฉบับที่ 39" ไปตรงกับ "ฉบับที่ 399" (เจอจริง: กฎกระทรวง ฉบับที่ 399 ว่าด้วยการยกเว้นรัษฎากร)
+const ISSUE_RE = /ฉบับที่\s*([๐-๙\d]+)/
+function issueNo(s){
+  const m = String(s || '').match(ISSUE_RE)
+  if(!m) return 0
+  return Number(m[1].replace(/[๐-๙]/g, d => String(THAI_DIGITS.indexOf(d)))) || 0
+}
+
+export async function resolveGazetteLink(lawName){
+  const name = String(lawName || '').trim()
+  const norm = normalizeGazetteTitle(name)
+  if(norm.length < 14) return null            // สั้นเกินกว่าจะชี้ฉบับได้ชัด
+  const { yearsConflict } = await import('./repeal-match.js')
+
+  // ค้นด้วยแกนของชื่อฉบับนั้นเอง (ไม่ใช่ชื่อกฎหมายแม่)
+  for(const n of gazetteNeedles(name).concat([norm.slice(0, 40)])){
+    if(!n || n.length < 14) continue
+    const hits = await rows(
+      `title_norm=ilike.*${esc(n)}*&source=in.(gdcatalog,soc_api)` +
+      `&doc_url=like.*ratchakitcha.soc.go.th/documents*` +
+      `&select=title,doc_url,book_no,part,page_no,publish_date&order=publish_date.desc&limit=6`)
+    for(const h of hits){
+      if(yearsConflict(name, h.title)) continue
+      const a = issueNo(name), b = issueNo(h.title)
+      if(a && b && a !== b) continue
+      return {
+        gazette_url: h.doc_url,
+        gazette_ref: [h.book_no ? `เล่ม ${h.book_no}` : '', h.part ? `ตอนที่ ${h.part}` : '',
+          h.page_no ? `หน้า ${h.page_no}` : ''].filter(Boolean).join(' '),
+        gazette_title: h.title,
+        gazette_date: h.publish_date || '',
+      }
+    }
+  }
+  return null
+}
+
 // สรุปผลค้นเป็นข้อความสั้นสำหรับใส่ใน prompt
 // ใส่ทั้ง เล่ม/ตอน/หน้า/วันที่ เพราะเป็นสิ่งที่ผู้ตรวจ ISO ใช้อ้างอิง และเป็นตัวช่วยให้โมเดล
 // แยกออกว่าฉบับไหนใหม่กว่า (ฉบับหลังมักแทนที่ฉบับก่อน)
