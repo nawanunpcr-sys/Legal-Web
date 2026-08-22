@@ -8,7 +8,7 @@
 
 // ด่านตรวจโดเมน ตัวดึงไฟล์ PDF และตัวเรียก Claude ย้ายไป _lib/law-source.js แล้ว (P17)
 // เพราะโฟลว์คำถาม (anchor-answer) ต้องใช้ชุดเดียวกัน — ก๊อปไว้สองที่แล้วมันจะค่อยๆ ต่างกัน
-import { hostAllowed, deadSource, fetchPdfBase64, parseLoose, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
+import { hostAllowed, deadSource, sourceTier, fetchPdfBase64, parseLoose, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
 import { classifyRefs } from './ref-classify.js'
 import { answerAnchoredQuestion, pendingAnswer, recheckPending } from './anchor-answer.js'
 import { rememberGazetteDoc } from './gazette-index.js'

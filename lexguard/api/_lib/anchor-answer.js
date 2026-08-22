@@ -15,7 +15,7 @@
 // ระบบที่ดึงเฉพาะข้อความของมาตราจะได้คำตอบว่า "ให้เป็นไปตามตารางที่ 2" ซึ่งไม่ใช่คำตอบ
 // → จึงต้องมีรอบที่ 3 ที่ตามเข้าไปถอดเนื้อหาตารางออกมา
 
-import { hostAllowed, isSecondarySource, deadSource, fetchPdfBase64, pdfPagesAround, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
+import { hostAllowed, isSecondarySource, deadSource, sourceTier, fetchPdfBase64, pdfPagesAround, askClaude, WEB_SEARCH_TOOL, SOURCE_URL_RULES } from './law-source.js'
 import { normalizeQuestionKey, normalizeTopicKey, questionUsable, topicMatchText } from './ref-classify.js'
 import { flagUnverifiedNumbers } from './verify-numbers.js'
 import { findChildAnnouncements, formatGazetteHits, rememberGazetteDoc, resolveGazetteLink, searchGazette, gazetteNeedles } from './gazette-index.js'
@@ -542,11 +542,17 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
     note: [
       fromTable ? 'มาจากตารางท้ายกฎหมาย' : '',
       skippedRead ? 'ใช้ผลจากการค้นโดยตรง (ผ่านด่านตรวจครบ)' : '',
+      // บอกชั้นของแหล่งเสมอ — จป. ต้องรู้ว่าคำตอบนี้เอาไปยันกับผู้ตรวจได้แค่ไหน
+      // 'official' คือ .go.th/.or.th ที่ผ่านกฎแต่เราไม่ได้ตรวจคุณภาพรายเว็บ
+      // เว็บหน่วยงานบางแห่งเก็บฉบับก่อนแก้ไขไว้โดยไม่บอก และเทศบาล/อบต. มักคัดของกลางมาวาง
       isSecondarySource(url)
         ? 'อ่านจากฉบับรวมขององค์กรวิชาชีพ ไม่ใช่ต้นฉบับราชกิจจาฯ — ฉบับรวมมักมีเชิงอรรถบอกว่าข้อไหนถูกแก้แล้ว แต่ควรตรวจกับต้นฉบับก่อนใช้อ้างอิง'
-        : '',
+        : sourceTier(url) === 'official'
+          ? 'อ่านจากเว็บหน่วยงานราชการ/องค์กรวิชาชีพไทยที่ไม่ได้อยู่ในรายชื่อแหล่งหลัก — ตัวบทที่ได้ผ่านด่านหลักฐานครบ แต่บางเว็บเก็บฉบับก่อนแก้ไขไว้โดยไม่บอก ควรเทียบกับราชกิจจาฯ ก่อนใช้อ้างอิง'
+          : '',
     ].filter(Boolean).join(' · '),
     from_secondary_source: isSecondarySource(url),
+    source_tier: sourceTier(url),
   }
 
   await writeCache({
