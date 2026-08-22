@@ -180,23 +180,34 @@ function RefAnswer({ a }) {
   const rows = Array.isArray(a.answer_detail?.['เกณฑ์']) ? a.answer_detail['เกณฑ์'] : []
   const warn = a.answer_detail?.['ข้อควรระวัง']
 
-  // ข้อความที่เขียนต่อในเนื้อข้อ — ต่างกันตามสถานะ แต่รูปแบบการแสดงเหมือนกันหมด
+  // ข้อความที่เขียนต่อในเนื้อข้อ — "เฉพาะสิ่งที่ตัวบทบอก" เท่านั้น
+  //
+  // 2026-08-22 · ตัดคำบรรยายกระบวนการออกทั้งหมดตามที่ผู้ใช้สั่ง
+  // เดิมข้อที่ตอบไม่ได้จะพ่นเป็นพืด: เหตุผลที่เปิดไม่ได้ · เบาะแสจากเว็บนอก ("เขาว่ากันว่า…")
+  // · "เปิดไปเจอ:…" · คำแนะนำให้ตั้งเป็นรอประเมิน — ยาวกว่าเนื้อกฎหมายเอง และไม่มีอันไหน
+  // ที่ผู้อ่านทะเบียนเอาไปใช้ได้ เพราะทุกบรรทัดลงท้ายว่า "ยังไม่ยืนยัน"
+  // ตอนนี้เหลือ: สาระที่ตัวบทบอก · ชื่อฉบับ · ลิงก์ "เปิดตัวบท ↗" ให้ไปอ่านเอง
+  // เหตุผลเก็บไว้ใน title ของบรรทัดที่มา (hover ดูได้) ไม่ได้ทิ้ง แค่ไม่เกะกะ
+  //
   // answered: เนื้อความถูกรวมเข้า req_text ตั้งแต่ฝั่ง server แล้ว (mergeAnswerText)
-  // พิมพ์ซ้ำตรงนี้จะเห็นสองรอบ · เหลือแค่ตารางเกณฑ์ · ปุ่มกางตัวบท · บรรทัดที่มา
-  const body = a.status === 'answered' ? ''
-    : a.status === 'pending_issuance'
-      ? [a.answer_plain,
-         a.interim_rule ? `ถ้าตรวจแล้วยังไม่มีประกาศ ตัวบทบอกให้ ${a.interim_rule}` : '',
-         'ตั้งเป็น “รอผู้เกี่ยวข้องประเมิน” ไว้ก่อน — ประเมินได้เมื่อรู้แล้วว่าประกาศออกหรือยัง'].filter(Boolean).join(' · ')
-      : [a.note || 'ค้นแล้วยังไม่พบเกณฑ์ของข้อนี้', a.found_instead ? `เปิดไปเจอ: ${a.found_instead}` : ''].filter(Boolean).join(' · ')
+  // not_answered: ไม่มีสาระจากตัวบทให้แสดง จึงว่างเปล่า เหลือแค่ชื่อฉบับ + ลิงก์
+  const body = a.status === 'pending_issuance'
+    ? [a.answer_plain,
+       a.interim_rule ? `ถ้าตรวจแล้วยังไม่มีประกาศ ตัวบทบอกให้ ${a.interim_rule}` : ''].filter(Boolean).join(' · ')
+    : ''
 
-  // หมายเหตุใต้บรรทัดที่มา — เหลือเฉพาะสิ่งที่ "เปลี่ยนวิธีใช้ตัวเลข" เท่านั้น
+  // เหตุผลที่ระบบตอบไม่ได้ · เบาะแสจากรอบกู้ · ที่มารอง — ไม่แสดงเป็นข้อความแล้ว
+  // แต่ยังพกไว้ใน tooltip ของบรรทัดที่มา เพราะตอนตรวจงานจริงยังต้องรู้ว่าทำไมถึงเปิดไม่ได้
+  const why = [
+    a.note || '',
+    a.found_instead ? `เปิดไปเจอ: ${a.found_instead}` : '',
+    a.from_secondary_source ? 'อ่านจากฉบับรวมขององค์กรวิชาชีพ — ตรวจกับต้นฉบับราชกิจจาฯ ก่อนใช้อ้างอิง' : '',
+  ].filter(Boolean).join(' · ')
+
+  // หมายเหตุใต้บรรทัดที่มา — เหลือเฉพาะ "ข้อควรระวัง" ที่คัดมาจากตัวบทเอง
   // ตัดออก: หลักฐานที่ต้องเก็บ (ซ้ำกับช่องเอกสารของข้อ) · ป้ายตรวจตัวเลข (ขึ้นเป็นชิปด้านบนแล้ว)
   // · ประเด็นที่ค้นไม่เจอ (เป็นภาษาภายในระบบ ผู้อ่านทะเบียนไม่ได้ใช้)
-  const srcNotes = [
-    warn || '',
-    a.from_secondary_source ? 'อ่านจากฉบับรวมขององค์กรวิชาชีพ — ตรวจกับต้นฉบับราชกิจจาฯ ก่อนใช้อ้างอิง' : '',
-  ].filter(Boolean)
+  const srcNotes = [warn || ''].filter(Boolean)
 
   return (
     <div style={{ marginLeft: 30, marginTop: 5, fontSize: 13.5, lineHeight: 1.7 }}>
@@ -231,7 +242,7 @@ function RefAnswer({ a }) {
           section_ref แสดงเฉพาะเมื่อเป็นเลขข้อจริง ๆ · โมเดลบางครั้งเขียนคำอธิบายลงช่องนี้
           ("ไม่ระบุข้อ (ตัวบทระบุค่าไม่เกิน 10 เดซิเบลเอ)") ซึ่งซ้ำกับเนื้อความข้างบนและรกตา */}
       <div style={{ marginTop: 3, display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12 }}>
-        <span style={{ color: 'var(--ink-soft)' }}>
+        <span title={why || undefined} style={{ color: 'var(--ink-soft)', cursor: why ? 'help' : undefined }}>
           {a.law_name || '—'}{CLAUSE_RE.test(a.section_ref || '') ? ` · ${a.section_ref}` : ''}
         </span>
         {a.source_url && (
@@ -280,7 +291,12 @@ function RelatedLawsPanel({ items = [] }) {
           return (
             <div key={i} style={{ padding: '7px 0', borderBottom: '1px solid var(--line)' }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: DONE.has(x.status) ? 400 : 600 }}>
+                {/* เหตุผล/เบาะแสของฉบับนี้ย้ายเข้า tooltip 2026-08-22 — แผงนี้เคยพ่นคำบรรยาย
+                    ชุดเดียวกับใต้ข้อ ("ยังเปิดตัวบทจริงไม่ได้ แต่ค้นจากเว็บทั่วไป…") ยาวจนอ่านไม่ไหว
+                    เหลือแค่ ชื่อฉบับ · สถานะ · เปิดตัวบท ↗ ให้เหมือนกันทั้งหน้า */}
+                <span title={x.note || undefined}
+                  style={{ fontSize: 12.5, color: 'var(--ink)', fontWeight: DONE.has(x.status) ? 400 : 600,
+                    cursor: x.note ? 'help' : undefined }}>
                   {x.law_name || '—'}{x.clause && x.clause !== 'ทั้งฉบับ' ? ` · ${x.clause}` : ''}
                 </span>
                 <span style={{ fontSize: 11.5, color: st.color, whiteSpace: 'nowrap' }}>{st.label(x.req_count || 0)}</span>
@@ -292,7 +308,6 @@ function RelatedLawsPanel({ items = [] }) {
                   <a href={x.source_url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: 'var(--brand)', marginLeft: 'auto' }}>เปิดตัวบท ↗</a>
                 )}
               </div>
-              {x.note && <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 2, lineHeight: 1.5 }}>{x.note}</div>}
             </div>
           )
         })}
@@ -435,16 +450,10 @@ function ReqRow({ r, i, onChange, onRemove, suggest }) {
           </span>
         </div>
       )}
-      {/* ข้อที่ยังอ้างเลขมาตราของกฎหมายที่ดึงตัวบทไม่ได้ — อ่านข้อนี้จบแล้วยังไม่รู้ว่าต้องทำอะไร */}
-      {r.needs_manual_ref && (
-        <div style={{ marginLeft: 30, marginTop: 4 }}>
-          <span title="ข้อนี้อ้างถึงมาตราของกฎหมายฉบับอื่นที่ระบบดึงตัวบทมาไม่ได้ — ต้องเปิดฉบับนั้นอ่านเอง แล้วเขียนสาระลงในข้อนี้แทนเลขมาตรา"
-            style={{ display: 'inline-block', fontSize: 11, lineHeight: 1.5, padding: '1px 7px', borderRadius: 999,
-              background: 'var(--warn-bg)', color: 'var(--warn)', cursor: 'help' }}>
-            ⚠ ยังอ้างเลขมาตรา — ต้องเปิดตัวบทเติมเอง
-          </span>
-        </div>
-      )}
+      {/* ป้าย "⚠ ยังอ้างเลขมาตรา — ต้องเปิดตัวบทเติมเอง" ถูกถอดออก 2026-08-22 ตามที่ผู้ใช้สั่ง
+          มันไม่ได้บอกอะไรที่ทำต่อได้ — ข้อที่อ้างเลขมาตราก็เห็นอยู่แล้วจากตัวข้อความเอง
+          และฉบับที่ต้องไปเปิด อยู่ในบรรทัดที่มาใต้ข้อพร้อมลิงก์ "เปิดตัวบท ↗" แล้ว
+          ธง needs_manual_ref ยังคงอยู่ฝั่ง API (ใช้นับ manual_ref_count) แค่ไม่ขึ้นเป็นป้าย */}
       {/* Skill 3 · ข้อที่ดึงมาจากกฎหมายที่ถูกอ้างถึง — เปิดตัวบทตรวจเองได้ + เตือนข้อที่ยังไม่ยืนยัน */}
       {r.from_related_law && (
         <div style={{ marginLeft: 30, marginTop: 4, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>

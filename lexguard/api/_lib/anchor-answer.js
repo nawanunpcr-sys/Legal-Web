@@ -427,6 +427,10 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
   // เปิดไม่ได้ = ยังตอบ not_answered เหมือนเดิม แต่แนบเบาะแสไปด้วย
   // ซึ่งเปลี่ยน "ไม่พบ" เป็น "คำตอบอยู่ในฉบับนี้ ข้อนี้ ไปเปิดต่อ" — จป. ทำต่อเองได้ใน 2 นาที
   let webLead = null
+  // URL ของฉบับที่เบาะแสชี้ไป ซึ่งผ่านด่านโดเมนแล้ว — ยกออกมานอก try เพราะเส้นทาง
+  // not_answered ต้องใช้ต่อ: ตอนนี้หน้าจอไม่พ่นคำอธิบายแล้ว เหลือแค่ "ชื่อฉบับ + เปิดตัวบท ↗"
+  // ถ้าไม่ส่ง URL นี้กลับไป ผู้ใช้จะเห็นแค่ชื่อฉบับลอย ๆ กดอะไรต่อไม่ได้เลย
+  let leadUrl = ''
   const primaryUnusable = out.status !== 'answered'
     || !hostAllowed(String(out.source_url || '').trim())
     || String(out.source_excerpt || '').trim().length < 20
@@ -477,6 +481,9 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
             if(rescued && String(rescued.source_excerpt || '').trim()) out = { ...rescued, source_url: openUrl }
           }
         }
+        // เก็บไว้ให้เส้นทาง not_answered ใช้เป็นลิงก์ "เปิดตัวบท ↗"
+        // ผ่าน hostAllowed แล้วเท่านั้น — ห้ามส่งลิงก์นอกโดเมนที่เชื่อถือได้ออกไปในชื่อ "ตัวบท"
+        if(openUrl && hostAllowed(openUrl)) leadUrl = openUrl
       }
     }catch{ /* รอบกู้ล้มเหลวไม่ใช่เหตุให้ทั้งเส้นล้ม — ตกไปตอบ not_answered ตามเดิม */ }
   }
@@ -491,26 +498,32 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
   //     แยกข้อความ 2 กรณีให้ชัด — "โดเมนไม่น่าเชื่อถือ" กับ "ที่อยู่นี้ตายแล้ว" ต้องแก้คนละแบบ
   //     กรณีหลังตัวบทเปิดได้อยู่ แค่ต้องไปที่อยู่ใหม่ ผู้ใช้จึงตามต่อเองได้ทันที
   const deadWhy = deadSource(url)
-  // เบาะแสจากรอบกู้ต่อท้ายเหตุผลเสมอ — ผู้ใช้จะได้ไม่ตันแม้ระบบเปิดตัวบทไม่ได้
+  // เบาะแสจากรอบกู้ต่อท้ายเหตุผลเสมอ — เก็บไว้ใน note ซึ่งหน้าจอย้ายไปไว้ใน tooltip แล้ว
+  // (2026-08-22 · ผู้ใช้ขอให้บนหน้าจอเหลือแค่ "ชื่อฉบับ + เปิดตัวบท ↗" ไม่ใช่คำบรรยายยาว ๆ)
   const lead = leadNote(webLead)
+  // ชื่อฉบับที่เบาะแสระบุได้ ดีกว่าชื่อลอย ๆ ที่ข้ออ้างถึง ("กฎหมายว่าด้วยคุณภาพน้ำ")
+  // นี่คือสิทธิ์เดียวที่เว็บนอกรายการมี — ชี้ตัวฉบับ · ห้ามแตะ answer_plain / source_excerpt
+  const leadName = String(webLead?.law_name || '').trim()
   if(!hostAllowed(url)) return cacheFail({ ...fail([deadWhy
     ? 'ที่อยู่ตัวบทที่ค้นเจอเปิดไม่ได้แล้ว — ' + deadWhy
     : url
       ? 'แหล่งที่ค้นเจอไม่อยู่ในโดเมนที่เชื่อถือได้ — เปิดตรวจเองก่อนใช้'
       : 'ค้นไม่เจอตัวบทที่ระบุเกณฑ์ของข้อนี้', lead].filter(Boolean).join(' · ')),
-    source_url: url, found_instead: foundInstead })
+    // url ตรงนี้ไม่ผ่านด่านโดเมน จึงส่งออกไปเป็นลิงก์ "เปิดตัวบท" ไม่ได้ — ใช้ของรอบกู้แทน
+    // เก็บ url เดิมไว้ใน note ข้างบนแล้วผ่านคำอธิบายเหตุผล
+    source_url: leadUrl, law_name: leadName || lawHint, found_instead: foundInstead })
 
   // (ข) ไม่มีข้อความจากตัวบทรองรับ = แต่งจากความจำ
   if(!excerpt || !plain) return cacheFail({
     ...fail(['เปิดตัวบทแล้วแต่ไม่มีข้อความจากตัวบทรองรับ', lead].filter(Boolean).join(' · ')),
-    source_url: url, law_name: out.law_name || lawHint, section_ref: out.section_ref || '',
-    found_instead: foundInstead })
+    source_url: url || leadUrl, law_name: out.law_name || leadName || lawHint,
+    section_ref: out.section_ref || '', found_instead: foundInstead })
 
   // (ค) เขียนว่า "ตามที่กฎหมายกำหนด" = ยังไม่ได้ตอบคำถาม (สเปกข้อ 4)
   if(NON_ANSWER_RE.test(plain)) return cacheFail({
     ...fail(['เปิดตัวบทแล้วแต่ยังไม่พบเกณฑ์ที่เป็นรูปธรรม', lead].filter(Boolean).join(' · ')),
-    source_url: url, law_name: out.law_name || lawHint, section_ref: out.section_ref || '',
-    found_instead: foundInstead || plain })
+    source_url: url || leadUrl, law_name: out.law_name || leadName || lawHint,
+    section_ref: out.section_ref || '', found_instead: foundInstead || plain })
 
   // (ง) ยังชี้ไปตารางอยู่หลังรอบ 3 = ตัวเลขจริงยังไม่ได้ออกมา
   //     "ให้เป็นไปตามตารางที่ 2" ไม่ใช่คำตอบ — แต่บอกที่อยู่ของคำตอบได้ ซึ่งมีประโยชน์กว่าไม่บอกอะไร
