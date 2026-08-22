@@ -726,5 +726,8 @@ prompt กับด่านตรวจอยู่ไฟล์เดียว�
 
 ---
 
+> **ผลตรวจสอบทั้งชุด P20–P26 (ยิงจริง 2026-08-22):** [`docs/gazette-index-verification.md`](docs/gazette-index-verification.md)
+> — กราฟการเรียกของ API · ความถูกต้องของข้อมูลในดัชนี · บั๊กที่จับได้ก่อนขึ้น · สิ่งที่ยังพิสูจน์ไม่ได้
+
 > ทุก Skill ทำงานบน Vercel เท่านั้น (ต้อง deploy + ตั้ง `ANTHROPIC_API_KEY`)
 > รัน `npm run dev` เฉยๆ ปุ่มจะเรียก API ไม่ได้
