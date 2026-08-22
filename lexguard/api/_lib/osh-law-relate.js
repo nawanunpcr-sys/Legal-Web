@@ -380,7 +380,7 @@ export async function fetchRelatedLaw(ref){
   // เก็บฉบับที่ดึงตัวบทมาอ่านได้จริงเข้าดัชนีราชกิจจาฯ ด้วย (เส้น specific)
   // เงื่อนไข read_ok = เปิดไฟล์อ่านสำเร็จ ไม่ใช่แค่ค้นเจอชื่อ — คู่ (ชื่อ, URL) จึงยืนยันแล้ว
   // ด่านโดเมนอยู่ใน rememberGazetteDoc() ชุดเดียวกับที่ Skill 3 ใช้ ไม่ได้ผ่อนอะไร
-  if(status === 'resolved' && readOk) await rememberGazetteDoc({ title: result.law_full_name, url: result.source_url })
+  if(status === 'resolved' && readOk) await rememberGazetteDoc({ title: result.law_full_name, url: result.source_url, opened: true })
 
   return result
 }

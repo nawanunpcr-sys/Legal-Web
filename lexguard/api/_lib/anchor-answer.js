@@ -505,7 +505,10 @@ export async function answerAnchoredQuestion(ref, deadlineAt = Infinity){
   // จึงเป็นคู่ (ชื่อกฎหมาย, URL) ที่ยืนยันแล้วว่าเปิดได้จริง ซึ่งคือสิ่งที่ดัชนีต้องการพอดี
   // นี่คือทางเดียวที่ดัชนีจะครอบคลุมฉบับก่อน มิ.ย. 2566 ได้โดยไม่ต้องพึ่ง dump หรือ Token
   // ไม่ await ผลลัพธ์แบบมีเงื่อนไข — ล้มเหลวก็แค่ไม่ได้เก็บ คำตอบที่จ่ายเงินมาแล้วยังส่งกลับครบ
-  await rememberGazetteDoc({ title: result.law_name, url })
+  // opened = เปิดไฟล์อ่านจริงในรอบนี้ · ไม่ใช่ตอบจาก snippet ของผลค้น
+  // skippedRead เป็นจริงเมื่อรอบแรกผ่านด่านครบจนข้ามการอ่านไฟล์ไป ซึ่งประหยัดคำขอก็จริง
+  // แต่แปลว่าชื่อกฎหมายกับ URL มาจากคนละแหล่ง ยืนยันไม่ได้ว่าคู่กันถูก จึงห้ามเก็บเข้าดัชนี
+  await rememberGazetteDoc({ title: result.law_name, url, opened: !skippedRead && !!pdfB64 })
 
   return result
 }

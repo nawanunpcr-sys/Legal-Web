@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "seed:refs": "node --env-file=.env scripts/seed-ref-answers.mjs",
     "load:gazette": "node --env-file=.env scripts/load-gazette-index.mjs",
-    "backfill:gazette": "node --env-file=.env scripts/backfill-gazette-discovered.mjs"
+    "backfill:gazette": "node --env-file=.env scripts/backfill-gazette-discovered.mjs",
+    "verify:gazette": "node --env-file=.env scripts/verify-gazette-index.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

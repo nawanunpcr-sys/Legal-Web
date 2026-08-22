@@ -217,9 +217,18 @@ export function looksLikeDocumentUrl(raw){
   return hasExt || hasId || hasDownload
 }
 
-export async function rememberGazetteDoc({ title, url, source = 'discovered' } = {}){
+export async function rememberGazetteDoc({ title, url, source = 'discovered', opened = false } = {}){
   try{
     if(!SUPA_URL || !SUPA_KEY) return false
+    // ⚠ บันทึกได้เฉพาะฉบับที่ "เปิดไฟล์อ่านจริงในรอบนี้" เท่านั้น
+    //
+    // เส้นทางที่ข้ามการอ่านไฟล์ (firstRoundComplete) ตอบจาก snippet ของผลค้นล้วน ๆ
+    // ชื่อกฎหมายกับ URL จึงเป็นคนละแหล่งกัน และไม่มีอะไรยืนยันว่าคู่กันถูก
+    // ตรวจของจริงในดัชนีแล้วพบว่าคู่ที่ผิดมาจากเส้นทางนี้:
+    //   ไฟล์ mr35-33-upd69.pdf (กฎกระทรวง ฉบับที่ 33) ถูกเก็บด้วยชื่อ "ฉบับที่ 39"
+    // ดัชนีที่มีคู่ผิดอันตรายกว่าดัชนีที่เล็ก เพราะระบบเอาไปเสนอโมเดลพร้อมป้ายว่า
+    // "เคยเปิดอ่านไฟล์นี้สำเร็จ" ซึ่งน่าเชื่อจนไม่มีใครตรวจซ้ำ
+    if(!opened) return false
     const u = String(url || '').trim()
     const t = String(title || '').trim()
     if(!u || !hostAllowed(u) || !looksLikeDocumentUrl(u)) return false
