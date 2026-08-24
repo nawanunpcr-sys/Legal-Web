@@ -184,36 +184,36 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
   ]
 
   return <div className="view">
-    <div className="dash-hero">
-      <div className="dash-hero-top">
-        <div className="dash-hero-main">
-          <div className="dash-hero-lab">ความสอดคล้องตามข้อกำหนด</div>
-          <div className="dash-hero-val">{pctText}</div>
-          <div className="dash-hero-sub">{pctSub}</div>
+    <div className="dash-summary">
+      <div className="dash-summary-top">
+        <div className="dash-summary-main">
+          <div className="dash-summary-lab">ความสอดคล้องตามข้อกำหนด</div>
+          <div className="dash-summary-val">{pctText}</div>
+          <div className="dash-summary-sub">{pctSub}</div>
           {/* แถบนี้แทนสัดส่วน C ต่อฐาน C+NC เท่านั้น — ไม่ใช่สัดส่วนของข้อทั้งหมด */}
           {stats.assessed>0 && (
-            <div className="dash-hero-bar" role="presentation">
+            <div className="dash-summary-bar" role="presentation">
               <span style={{width:pctNum+'%'}}/>
             </div>
           )}
         </div>
-        <div className="dash-hero-side">
-          <div className="dash-hero-mini">
+        <div className="dash-summary-side">
+          <div className="dash-summary-mini">
             <b>{(active.length+inactive.length).toLocaleString('en-US')}</b>
             <span>กฎหมายในทะเบียน (ฉบับ)</span>
           </div>
-          <div className="dash-hero-mini">
+          <div className="dash-summary-mini">
             <b>{stats.total.toLocaleString('en-US')}</b>
             <span>ข้อปฏิบัติรายข้อ</span>
           </div>
-          <div className="dash-hero-mini">
+          <div className="dash-summary-mini">
             <b>{String(cats.length)}</b>
             <span>หมวด (LA–LG)</span>
           </div>
         </div>
       </div>
 
-      <div className="dash-hero-split">
+      <div className="dash-summary-split">
         {breakdown.map(b=>(
           <div key={b.k}
             className={'dash-chip'+(b.val===0?' is-zero':'')+(b.go&&b.val>0?' is-link':'')}
