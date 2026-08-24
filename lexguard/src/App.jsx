@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useRef } from 'react'
 import { supabase, hasSupabase, fetchAll,
          setRequirementStatus, recomputeLawStatus, addRequirement, bulkSetCompliance, setLawActive,
          repealLaw, restoreLaw, createLaw, createLawFull, deleteLaw,
-         markCommSent, updateCommSchedule, addComm, deleteComm,
+         markCommSent, updateCommSchedule, addComm, updateComm, deleteComm,
          fetchComplianceMonths, toggleMonthCheck, setMonthReviewStatus,
          logActivity, fetchActivity, fetchQuarterStats, suggestionLists, listDepartments,
          fetchReports, setReportEvent, markReportSubmitted, saveReport, fetchTasks,
@@ -440,6 +440,13 @@ export default function App(){
     try{ const row=await addComm(comm); if(row) setComms(prev=>[...prev,row]); toast('เพิ่มหัวข้อเรียบร้อย') }
     catch(e){ toast('เพิ่มหัวข้อไม่สำเร็จ: '+e.message) }
   }
+  async function handleCommEdit(commId, patch){
+    try{
+      await updateComm(commId, patch)
+      setComms(prev=>prev.map(c=>c.id===commId?{...c,...patch}:c))
+      toast('บันทึกการแก้ไขแล้ว','success')
+    }catch(e){ toast('แก้ไขไม่สำเร็จ: '+e.message,'error'); throw e }   // โยนต่อเพื่อไม่ให้ modal ปิด (ข้อมูลที่พิมพ์ไม่หาย)
+  }
   async function handleCommDelete(commId){
     try{ await deleteComm(commId); setComms(prev=>prev.filter(c=>c.id!==commId)); toast('ลบหัวข้อเรียบร้อย') }
     catch(e){ toast('ลบไม่สำเร็จ: '+e.message) }
@@ -649,7 +656,7 @@ export default function App(){
               <button className={'seg-btn'+(commTab==='comm'?' active':'')} onClick={()=>setCommTab('comm')}>ตารางการสื่อสาร</button>
               <button className={'seg-btn'+(commTab==='reports'?' active':'')} onClick={()=>setCommTab('reports')}>ส่งรายงานราชการ</button>
             </div>
-            {commTab==='comm'    && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate} onAdd={handleCommAdd} onDelete={handleCommDelete}/>}
+            {commTab==='comm'    && <Communication comms={comms} onMarkSent={handleMarkSent} onScheduleUpdate={handleCommScheduleUpdate} onAdd={handleCommAdd} onEdit={handleCommEdit} onDelete={handleCommDelete}/>}
             {commTab==='reports' && <Reports reports={reports} onSetEvent={handleReportSetEvent} onSubmit={handleReportSubmit} onAdd={handleReportAdd}/>}
           </div>)}
           {view==='notifications' && <NotificationsPage notifs={bellNotifications} onOpenLaw={setOpenLaw} onGoToView={goView}/>}
