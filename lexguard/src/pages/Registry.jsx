@@ -197,7 +197,15 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   const setCat=v=>setF('cat',v), setAct=v=>setF('act',v), setLawSt=v=>setF('lawSt',v)
   const [reviewCheck,setReviewCheck]=useState(null)   // ผลตรวจที่กำลังเปิดยืนยัน
   const lawStatusOf=l=>l.law_status||'in_force'
+  // countLawSt นับจากรายการเต็มโดยตั้งใจ — ป้ายกรองสถานะต้องบอกว่ามีอยู่กี่ฉบับจริง
+  // รวมฉบับที่ยกเลิกแล้ว ไม่งั้นป้าย "ยกเลิกแล้ว (10)" จะขึ้นเป็น (0) ตอนสวิตช์ปิด แล้วกดไม่ได้
   const countLawSt=k=>laws.filter(l=>lawStatusOf(l)===k).length
+  // ── ฐานของ "ป้ายนับจำนวน" อื่นทั้งหมด ต้องเป็นชุดเดียวกับที่ตารางแสดงจริง ──
+  // หน้านี้รับรายการเต็ม (รวมฉบับที่ยกเลิก) เพื่อให้สวิตช์แสดง/ซ่อนทำงานได้
+  // แต่ป้ายจำนวนต้องนับตามที่เห็น ไม่ใช่ตามที่ได้รับมา
+  // ปล่อยไว้ = ป้ายขึ้น "160 ฉบับ" ทั้งที่ตารางมี 150 แถว ซึ่งผู้ใช้จับได้ทันทีว่าเลขไม่ตรง
+  // (ทั้งระบบแสดง 150 มาตลอด เพราะทุกหน้ากรองฉบับที่ยกเลิกออกก่อนนับ)
+  const visible=useMemo(()=>laws.filter(l=>showRepealed||lawSt!=='all'||lawInForce(l)),[laws,showRepealed,lawSt])
   // ฉบับที่มีผลตรวจรอยืนยันอยู่ — ใช้ทำป้าย "รอตรวจสอบ" บนแถว
   const checkByLaw=useMemo(()=>{ const m={}; (repealChecks||[]).forEach(c=>{ if(!m[c.law_id]) m[c.law_id]=c }); return m },[repealChecks])
   const [flashId,setFlashId]=useState(null)       // P14·T1 · แถวที่เพิ่งเพิ่ม (ไฮไลต์ 2 วิ)
@@ -224,7 +232,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   const clearSel=()=>setSel(new Set())
   async function bulk(met){ await onBulk([...sel],met); clearSel() }
   function exportSel(){ const m=Object.fromEntries(cats.map(c=>[c.code,c])); exportLawsToExcel(laws.filter(l=>sel.has(l.id)),m); }
-  const catsList=[...new Set(laws.map(l=>l.cat))].sort(catOrder)
+  const catsList=[...new Set(visible.map(l=>l.cat))].sort(catOrder)
   const q=search.toLowerCase()
   // ค้นหา (item 7): รหัส · ชื่อกฎหมาย · กระทรวง (ตรงกับชื่อ/รหัส) — Task 3.3 แยกกรณี match จากข้อปฏิบัติ
   const nameHit=l=>l.code.toLowerCase().includes(q)||l.name.toLowerCase().includes(q)||(l.ministry||'').toLowerCase().includes(q)
@@ -253,8 +261,8 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   return <div className="view">
     <div className="filterbar">
       <span className={'chip'+(act==='all'?' active':'')} onClick={()=>setAct('all')}>ทั้งหมด</span>
-      <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({laws.filter(l=>l.active!==false).length})</span>
-      <span className={'chip'+(act==='inactive'?' active':'')} onClick={()=>setAct('inactive')}>ไม่ใช้แล้ว ({laws.filter(l=>l.active===false).length})</span>
+      <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({visible.filter(l=>l.active!==false).length})</span>
+      <span className={'chip'+(act==='inactive'?' active':'')} onClick={()=>setAct('inactive')}>ไม่ใช้แล้ว ({visible.filter(l=>l.active===false).length})</span>
       <span style={{margin:'0 6px',color:'var(--line)'}}>|</span>
       {/* P21 ส่วนที่ 2 · กรองตามสถานะการบังคับใช้ */}
       <span className={'chip'+(lawSt==='all'?' active':'')} onClick={()=>setLawSt('all')}>ทุกสถานะการบังคับใช้</span>
@@ -273,13 +281,13 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
     <div className="cat-cards">
       <button type="button" className={'cat-card'+(cat==='all'?' active':'')} onClick={()=>setCat('all')}>
         <div className="cc-top"><span className="cc-dot" style={{background:'var(--ink-faint)'}}/><span className="cc-code">ทั้งหมด</span></div>
-        <span className="cc-count">{laws.length} ฉบับ</span>
+        <span className="cc-count">{visible.length} ฉบับ</span>
       </button>
       {catsList.map(c=>(
         <button type="button" key={c} className={'cat-card'+(cat===c?' active':'')} onClick={()=>setCat(c)}>
           <div className="cc-top"><span className="cc-dot" style={{background:catMap[c]?.color||'var(--ink-faint)'}}/><span className="cc-code">{c}</span></div>
           <span className="cc-name">{catMap[c]?.name}</span>
-          <span className="cc-count">{laws.filter(l=>l.cat===c).length} ฉบับ</span>
+          <span className="cc-count">{visible.filter(l=>l.cat===c).length} ฉบับ</span>
         </button>
       ))}
     </div>
