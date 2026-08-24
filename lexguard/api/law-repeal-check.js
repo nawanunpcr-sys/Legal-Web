@@ -105,7 +105,14 @@ export async function askWithSearch(userText, signalTimeoutMs) {
         messages: [{ role: 'user', content: userText }],
       }),
     })
-    if (!r.ok) return { error: `Anthropic API ตอบ ${r.status}` }
+    if (!r.ok) {
+      // ต้องคืนข้อความจริงจาก Anthropic ออกมาด้วย — เดิมกลืนทิ้งเหลือแค่เลขสถานะ
+      // เจอจริงตอนรันชุดแรก: ได้ 400 แล้วไล่สาเหตุต่อไม่ได้เลยเพราะไม่รู้ว่าอะไรผิด
+      let detail = ''
+      try { const b = await r.json(); detail = b?.error?.message || JSON.stringify(b).slice(0, 300) }
+      catch { detail = (await r.text().catch(() => '')).slice(0, 300) }
+      return { error: `Anthropic API ตอบ ${r.status}${detail ? ' — ' + detail : ''}` }
+    }
     const data = await r.json()
     const blocks = Array.isArray(data.content) ? data.content : []
 
