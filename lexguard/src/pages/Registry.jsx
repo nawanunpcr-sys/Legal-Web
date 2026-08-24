@@ -3,7 +3,8 @@
 // Moved verbatim from App.jsx (pure refactor).
 // P19 · รับ History + Repealed เข้ามาเป็นแท็บในหน้าเดียว (ลดเมนูหลักเหลือ 4 อัน)
 import { useState, useMemo, useEffect } from 'react'
-import { LAW_TYPES, fetchStaging } from '../lib/supabase.js'
+import { LAW_TYPES, fetchStaging, LAW_STATUS, LAW_STATUS_ORDER, REPEAL_CONFIDENCE, lawInForce } from '../lib/supabase.js'
+import RepealReviewModal from '../components/RepealReviewModal.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import AssessForm from '../components/AssessForm.jsx'
@@ -93,7 +94,9 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
     workflow=[],suggest={},onAssess,focus,onDelete,
     monthsData=[],monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws,
     // P19 · props ใหม่สำหรับแท็บ ประวัติ/ยกเลิก
-    activity=[],settings={},searchLog=[],repealedLaws=[],onRestore}){
+    activity=[],settings={},searchLog=[],repealedLaws=[],onRestore,
+    // P21 ส่วนที่ 2 · ตรวจสถานะการบังคับใช้
+    repealChecks=[],repealBusy=false,onRepealCheck,onRepealApply,onRepealDismiss}){
   // จำแท็บที่เลือกไว้ (namespace แยกจาก 'registry' ที่ Register() ใช้อยู่แล้ว
   // เพื่อกัน state ชนกันเวลาสอง component เขียน localStorage.lg_filters.registry พร้อมกัน)
   const [tabF,setTabF]=usePageFilters('registryTabs',{tab:'register'})
@@ -130,9 +133,15 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
           onToggle={onToggleMonth} onMarkNoNewLaws={onMarkNoNewLaws} onMarkHasNewLaws={onMarkHasNewLaws}/>
       </div>}
 
-      <Register laws={regLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
+      <Register
+        /* P21 ส่วนที่ 2 · ส่งรายการเต็ม (รวมฉบับที่ยกเลิกแล้ว) เพราะตารางมีสวิตช์
+           "แสดงกฎหมายที่ยกเลิกแล้ว" และตัวกรองสถานะการบังคับใช้เป็นของตัวเองแล้ว
+           ค่าเริ่มต้นของสวิตช์คือปิด ผลที่ผู้ใช้เห็นจึงเหมือนเดิมทุกประการ */
+        laws={allLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
         round={round} onExportF259={onExportF259} onAddLaw={onAddLaw} onImported={onImported}
-        workflow={workflow} suggest={suggest} onAssess={onAssess} focus={focus} onDelete={onDelete}/>
+        workflow={workflow} suggest={suggest} onAssess={onAssess} focus={focus} onDelete={onDelete}
+        repealChecks={repealChecks} repealBusy={repealBusy} onRepealCheck={onRepealCheck}
+        onRepealApply={onRepealApply} onRepealDismiss={onRepealDismiss}/>
     </>}
 
     {tab==='history' && <History activity={activity} laws={allLaws} catMap={catMap} settings={settings}
@@ -173,7 +182,8 @@ function StagingModal({ laws=[], catMap={}, onClose }){
 }
 
 function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259,onAddLaw,onImported,
-    workflow=[],suggest={},onAssess,focus,onDelete}){
+    workflow=[],suggest={},onAssess,focus,onDelete,
+    repealChecks=[],repealBusy=false,onRepealCheck,onRepealApply,onRepealDismiss}){
   const { can }=useAuth()
   // P20d · รายการรออนุมัติใน lg_import_staging (badge ข้างปุ่มเพิ่มกฎหมาย)
   const [staging,setStaging]=useState([])
@@ -181,9 +191,15 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   useEffect(()=>{ let live=true; fetchStaging().then(r=>{ if(live) setStaging(r) }).catch(()=>{}); return ()=>{ live=false } },[])
   const stagingLaws=useMemo(()=>{ const m={}; staging.forEach(r=>{ const k=(r.cat||'')+'|'+r.law_code; (m[k]=m[k]||{cat:r.cat,law_code:r.law_code,law_name:r.law_name,ministry:r.ministry,created_at:r.created_at,reqs:0}).reqs++ }); return Object.values(m) },[staging])
   // Task 6.1 · จำ filter ต่อหน้า (lg_filters.registry)
-  const [f,setF,resetF,filterActive]=usePageFilters('registry',{cat:'all',act:'all',sortKey:'code',sortDir:1})
-  const {cat,act,sortKey,sortDir}=f
-  const setCat=v=>setF('cat',v), setAct=v=>setF('act',v)
+  // P21 ส่วนที่ 2 · showRepealed ค่าเริ่มต้น false = ซ่อนฉบับที่ยกเลิกแล้ว (ข้อ 2.8)
+  const [f,setF,resetF,filterActive]=usePageFilters('registry',{cat:'all',act:'all',lawSt:'all',showRepealed:false,sortKey:'code',sortDir:1})
+  const {cat,act,lawSt,showRepealed,sortKey,sortDir}=f
+  const setCat=v=>setF('cat',v), setAct=v=>setF('act',v), setLawSt=v=>setF('lawSt',v)
+  const [reviewCheck,setReviewCheck]=useState(null)   // ผลตรวจที่กำลังเปิดยืนยัน
+  const lawStatusOf=l=>l.law_status||'in_force'
+  const countLawSt=k=>laws.filter(l=>lawStatusOf(l)===k).length
+  // ฉบับที่มีผลตรวจรอยืนยันอยู่ — ใช้ทำป้าย "รอตรวจสอบ" บนแถว
+  const checkByLaw=useMemo(()=>{ const m={}; (repealChecks||[]).forEach(c=>{ if(!m[c.law_id]) m[c.law_id]=c }); return m },[repealChecks])
   const [flashId,setFlashId]=useState(null)       // P14·T1 · แถวที่เพิ่งเพิ่ม (ไฮไลต์ 2 วิ)
   const [assessTarget,setAssessTarget]=useState(null)   // P14·T2 · { law, wf } เปิด popup ประเมิน
   const [deleteTarget,setDeleteTarget]=useState(null)   // ลบกฎหมายจากแถวทะเบียน (admin)
@@ -218,6 +234,9 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   const reqMatchText=l=>{ if(!q||nameHit(l)) return null; const r=reqHit(l); return r?(r.text||r.responsible||''):null }
   const rows=laws.filter(l=>(cat==='all'||l.cat===cat)
     &&(act==='all'||(act==='active'?l.active!==false:l.active===false))
+    &&(lawSt==='all'||lawStatusOf(l)===lawSt)
+    // ซ่อนฉบับที่ยกเลิกแล้วโดยค่าเริ่มต้น เว้นแต่ผู้ใช้เปิดสวิตช์ หรือกำลังกรองสถานะนั้นอยู่โดยตรง
+    &&(showRepealed||lawSt!=='all'||lawInForce(l))
     &&matchQ(l))
   // Task 3.1 · comparator ตาม sortKey/sortDir (ใช้ภายในแต่ละกลุ่มหมวด/ชั้น)
   const sortCmp=(a,b)=>{
@@ -236,6 +255,19 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
       <span className={'chip'+(act==='all'?' active':'')} onClick={()=>setAct('all')}>ทั้งหมด</span>
       <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({laws.filter(l=>l.active!==false).length})</span>
       <span className={'chip'+(act==='inactive'?' active':'')} onClick={()=>setAct('inactive')}>ไม่ใช้แล้ว ({laws.filter(l=>l.active===false).length})</span>
+      <span style={{margin:'0 6px',color:'var(--line)'}}>|</span>
+      {/* P21 ส่วนที่ 2 · กรองตามสถานะการบังคับใช้ */}
+      <span className={'chip'+(lawSt==='all'?' active':'')} onClick={()=>setLawSt('all')}>ทุกสถานะการบังคับใช้</span>
+      {LAW_STATUS_ORDER.filter(k=>countLawSt(k)>0).map(k=>(
+        <span key={k} className={'chip'+(lawSt===k?' active':'')} onClick={()=>setLawSt(k)}>
+          {LAW_STATUS[k].label} ({countLawSt(k)})
+        </span>
+      ))}
+      <label className="chip" style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:6}}
+        title="ค่าเริ่มต้นคือซ่อนฉบับที่ยกเลิกแล้ว เพราะไม่ถูกนำมาคิดอัตราความสอดคล้อง">
+        <input type="checkbox" checked={!!showRepealed} onChange={e=>setF('showRepealed',e.target.checked)}/>
+        แสดงกฎหมายที่ยกเลิกแล้ว
+      </label>
       {filterActive && <span className="chip" style={{marginLeft:'auto',cursor:'pointer'}} onClick={resetF} title="ล้างตัวกรองทั้งหมด">✕ ล้างตัวกรอง</span>}
     </div>
     <div className="cat-cards">
@@ -264,12 +296,54 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
       </div>
     </div>
     {showStaging && <StagingModal laws={stagingLaws} catMap={catMap} onClose={()=>setShowStaging(false)}/>}
+    {reviewCheck && (
+      <RepealReviewModal check={reviewCheck} law={laws.find(l=>l.id===reviewCheck.law_id)}
+        onApply={onRepealApply} onDismiss={async c=>{ await onRepealDismiss(c); setReviewCheck(null) }}
+        onClose={()=>setReviewCheck(null)}/>
+    )}
+    {/* P21 ส่วนที่ 2 · คิวผลตรวจที่ยังไม่มีใครยืนยัน — ต้องเด่นพอให้ไม่มีใครมองข้าม
+        เพราะตราบใดที่ยังไม่ยืนยัน ทะเบียนยังถือว่ากฎหมายฉบับนั้นบังคับใช้อยู่ตามเดิม */}
+    {repealChecks.length>0 && (
+      <div className="panel" style={{marginBottom:16,borderLeft:'4px solid var(--accent)'}}>
+        <div className="panel-h" style={{gap:10}}>
+          <span style={{fontWeight:700,fontSize:13.5}}>ผลตรวจสถานะกฎหมายรอการยืนยัน ({repealChecks.length})</span>
+          <span style={{fontSize:12,color:'var(--ink-faint)',marginLeft:'auto'}}>ยังไม่ถูกบันทึกลงทะเบียน จนกว่าเจ้าหน้าที่จะยืนยัน</span>
+        </div>
+        <div style={{padding:'4px 16px 14px',display:'flex',flexDirection:'column',gap:8}}>
+          {repealChecks.map(c=>{
+            const l=laws.find(x=>x.id===c.law_id)
+            const st=LAW_STATUS[c.law_status]||{label:c.law_status,cls:'p-uncertain'}
+            const risky=c.confidence==='low'||c.law_status==='uncertain'
+            return (
+              <div key={c.id} style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
+                padding:'9px 12px',borderRadius:8,border:'1px solid var(--line)',background:'var(--surface)'}}>
+                <span className="num" style={{fontSize:12,fontWeight:700,color:'var(--brand)'}}>{l?.code||('#'+c.law_id)}</span>
+                <span style={{flex:1,minWidth:160,fontSize:12.5,lineHeight:1.45}}>{(l?.name||'').slice(0,90)}</span>
+                <span className={'pill '+st.cls}>{st.label}</span>
+                <span style={{fontSize:11.5,color:risky?'var(--bad)':'var(--ink-faint)',fontWeight:risky?700:400}}>
+                  ความมั่นใจ {REPEAL_CONFIDENCE[c.confidence]||c.confidence}{risky?' — ต้องตรวจเอง':''}
+                </span>
+                <button className="btn btn-primary" style={{padding:'4px 12px',fontSize:11.5}}
+                  onClick={()=>setReviewCheck(c)}>ตรวจสอบ / ยืนยัน</button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )}
     {sel.size>0 && (
       <div className="bulkbar">
         <b>เลือก {sel.size} ฉบับ</b>
         <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>bulk(true)}>ทำเครื่องหมายสอดคล้องทั้งหมด</button>
         <button className="btn btn-ghost" disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>bulk(false)}>ทำเครื่องหมายยังไม่สอดคล้อง</button>
         <button className="btn btn-ghost" onClick={exportSel}>Export ที่เลือก ({sel.size})</button>
+        {onRepealCheck && (
+          <button className="btn btn-ghost" disabled={!can('edit')||repealBusy}
+            title={can('edit')?'ค้นเว็บว่าฉบับที่เลือกยังบังคับใช้อยู่หรือถูกยกเลิกแล้ว — ผลจะเข้าคิวรอยืนยัน ไม่บันทึกลงทะเบียนทันที':NO_PERM}
+            onClick={async()=>{ await onRepealCheck([...sel]); clearSel() }}>
+            {repealBusy?'กำลังตรวจ…':`ตรวจสอบสถานะกฎหมาย (${sel.size})`}
+          </button>
+        )}
         <button className="btn btn-ghost" style={{marginLeft:'auto'}} onClick={clearSel}>ล้างที่เลือก</button>
       </div>
     )}
@@ -319,7 +393,19 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
                     <td data-lb="วันที่ประกาศ" onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',lineHeight:1.5}}>{d.announce||'—'}</td>
                     <td data-lb="วันที่บังคับใช้" onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',lineHeight:1.5}}>{d.effective||'—'}</td>
                     </> })()}
-                    <td data-lb="สถานะ"><div style={{display:'flex',alignItems:'center',gap:8}}><span onClick={()=>onOpen(l)}>{pending?<span className="pill pill-pending" title="ยังไม่ได้ประเมิน — รอผู้ประเมิน">รอประเมิน</span>:<Pill s={l.status}/>}</span>{pending&&can('edit')&&onAssess&&<button className="btn btn-primary" style={{padding:'3px 10px',fontSize:11}} title="ประเมินความสอดคล้อง" onClick={e=>{e.stopPropagation();setAssessTarget({law:l,wf:openWf})}}>ประเมิน</button>}{onDelete&&can('delete')&&<button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11,color:'var(--bad)'}} title="ลบกฎหมายถาวร" onClick={e=>{e.stopPropagation();setDeleteTarget(l)}}><I n="ban"/></button>}</div></td>
+                    <td data-lb="สถานะ"><div style={{display:'flex',alignItems:'center',gap:8}}><span onClick={()=>onOpen(l)}>{pending?<span className="pill pill-pending" title="ยังไม่ได้ประเมิน — รอผู้ประเมิน">รอประเมิน</span>:<Pill s={l.status}/>}</span>{pending&&can('edit')&&onAssess&&<button className="btn btn-primary" style={{padding:'3px 10px',fontSize:11}} title="ประเมินความสอดคล้อง" onClick={e=>{e.stopPropagation();setAssessTarget({law:l,wf:openWf})}}>ประเมิน</button>}{(()=>{
+                      // P21 ส่วนที่ 2 · ป้ายสถานะการบังคับใช้ — แสดงเฉพาะเมื่อไม่ใช่ in_force
+                      // ฉบับปกติไม่ต้องมีป้าย ไม่งั้นทั้งตารางเต็มไปด้วยป้าย "ยังบังคับใช้" ที่ไม่ได้บอกอะไร
+                      const ls=lawStatusOf(l)
+                      const pend=checkByLaw[l.id]
+                      return <>
+                        {ls!=='in_force' && <span className={'pill '+(LAW_STATUS[ls]?.cls||'p-uncertain')} title={l.repeal_reason||LAW_STATUS[ls]?.label}>{LAW_STATUS[ls]?.label||ls}</span>}
+                        {pend && <span className="pill p-uncertain" title="มีผลตรวจรอการยืนยัน — ทะเบียนยังถือตามสถานะเดิมจนกว่าจะยืนยัน">รอตรวจสอบ</span>}
+                        {onRepealCheck&&can('edit')&&<button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11}}
+                          disabled={repealBusy} title="ตรวจสอบสถานะกฎหมายฉบับนี้จากอินเทอร์เน็ต"
+                          onClick={e=>{e.stopPropagation();onRepealCheck([l.id])}}>ตรวจสถานะ</button>}
+                      </>
+                    })()}{onDelete&&can('delete')&&<button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11,color:'var(--bad)'}} title="ลบกฎหมายถาวร" onClick={e=>{e.stopPropagation();setDeleteTarget(l)}}><I n="ban"/></button>}</div></td>
                   </tr>
                 )})}</tbody>
               </table></div>

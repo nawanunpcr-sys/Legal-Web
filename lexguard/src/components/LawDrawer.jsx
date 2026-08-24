@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { STATUS, uploadEvidence, updateRequirementField, fetchReviewLog, addReviewLog, updateLawField } from '../lib/supabase.js'
+import { STATUS, LAW_STATUS, REPEAL_CONFIDENCE, uploadEvidence, updateRequirementField, fetchReviewLog, addReviewLog, updateLawField } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 import { daysTo, reqStats, reqKind, reqEvalTitle } from '../lib/ui.jsx'
@@ -113,7 +113,11 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
   const [reviewDate, setReviewDate] = useState(law.review_date)
   const [reportDue, setReportDue] = useState(law.report_due_date || '')
   const [uploadingReq, setUploadingReq] = useState(null)
-  const isRepealed = law.status === 'repealed'
+  const isRepealed = law.status === 'repealed' || law.law_status === 'repealed'
+  // P21 ส่วนที่ 2 · กล่องข้อมูลการยกเลิก แสดงเมื่อสถานะการบังคับใช้ไม่ใช่ "ยังบังคับใช้"
+  const lawSt = law.law_status || 'in_force'
+  const showRepealBox = lawSt !== 'in_force'
+  const repealVerified = !!law.repeal_verified_by
   const cat = catMap?.[law.cat]
   const summary = law.reqs.slice(0,3).map(r=>r.text).join(' ').slice(0,280)
 
@@ -240,16 +244,60 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
           )}
         </div>
         <div className="dr-body">
-          {isRepealed && (
+          {/* P21 ส่วนที่ 2 · กล่องข้อมูลการยกเลิก
+              แสดงทุกสถานะที่ไม่ใช่ "ยังบังคับใช้" ไม่ใช่เฉพาะที่ยกเลิกทั้งฉบับ
+              เพราะ "ยกเลิกบางส่วน" และ "แก้ไขเพิ่มเติม" คือกรณีที่ผู้ใช้ต้องรู้รายละเอียดมากที่สุด
+              (ส่วนที่เหลือยังต้องปฏิบัติอยู่ ต่างจากยกเลิกทั้งฉบับที่จบไปเลย) */}
+          {showRepealBox && (
             <div className="sec">
-              <div className="sec-t">รายละเอียดการยกเลิก</div>
+              <div className="sec-t">สถานะการบังคับใช้</div>
               <div className="panel" style={{padding:18}}>
+                {!repealVerified && (
+                  <div style={{marginBottom:12,padding:'9px 12px',borderRadius:7,background:'var(--warn-bg)',
+                    color:'var(--warn)',fontSize:12.5,lineHeight:1.6}}>
+                    ข้อมูลนี้ยังไม่ผ่านการยืนยันโดยเจ้าหน้าที่ — ยังไม่ถือเป็นข้อมูลทางการของทะเบียน
+                  </div>
+                )}
                 <dl className="kv">
-                  <dt>วันที่ยกเลิก</dt><dd style={{color:'var(--bad)'}}>{law.repeal_date||'—'}</dd>
+                  <dt>สถานะ</dt>
+                  <dd><span className={'pill '+(LAW_STATUS[lawSt]?.cls||'p-uncertain')}>{LAW_STATUS[lawSt]?.label||lawSt}</span></dd>
+                  {law.repealed_by_title && <><dt>ฉบับที่ยกเลิก</dt><dd>{law.repealed_by_title}</dd></>}
+                  <dt>วันที่มีผล</dt><dd style={{color:'var(--bad)'}}>{law.repeal_date||'—'}</dd>
+                  {law.repeal_scope && <><dt>ขอบเขต</dt><dd>{law.repeal_scope}</dd></>}
                   <dt>เหตุผล</dt><dd>{law.repeal_reason||'—'}</dd>
-                  {law.replaced_by_code && <><dt>แทนที่ด้วย</dt><dd className="num">{law.replaced_by_code}</dd></>}
-                  {law.repealed_by_authority && <><dt>อ้างอิง</dt><dd style={{fontSize:12}}>{law.repealed_by_authority}</dd></>}
+                  {(law.replacement_law_title||law.replaced_by_code) && <>
+                    <dt>ฉบับใหม่ที่ใช้แทน</dt>
+                    <dd>{law.replacement_law_title||''}{law.replaced_by_code?<span className="num"> ({law.replaced_by_code})</span>:null}</dd>
+                  </>}
+                  {law.repealed_by_authority && <><dt>อ้างอิงราชกิจจาฯ</dt><dd style={{fontSize:12}}>{law.repealed_by_authority}</dd></>}
+                  {law.repeal_source_url && <>
+                    <dt>แหล่งอ้างอิง</dt>
+                    <dd><a href={law.repeal_source_url} target="_blank" rel="noreferrer"
+                      style={{color:'var(--brand)',fontSize:12,wordBreak:'break-all'}}>{law.repeal_source_url} ↗</a></dd>
+                  </>}
+                  {law.repeal_confidence && <>
+                    <dt>ความมั่นใจของผลค้น</dt>
+                    <dd style={{fontSize:12.5}}>{REPEAL_CONFIDENCE[law.repeal_confidence]||law.repeal_confidence}</dd>
+                  </>}
+                  {law.repeal_checked_at && <><dt>ตรวจสอบล่าสุด</dt><dd style={{fontSize:12.5}}>{thDate(law.repeal_checked_at)}</dd></>}
+                  {repealVerified && <>
+                    <dt>ยืนยันโดย</dt>
+                    <dd style={{fontSize:12.5}}>{law.repeal_verified_by}{law.repeal_verified_at?' · '+thDate(law.repeal_verified_at):''}</dd>
+                  </>}
                 </dl>
+                {/* แหล่งอ้างอิงทั้งหมดที่ระบบเปิดจริง — ผู้ตรวจ ISO ต้องกดตามได้ทุกลิงก์ */}
+                {Array.isArray(law.repeal_sources) && law.repeal_sources.length>0 && (
+                  <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid var(--line-soft)'}}>
+                    <div style={{fontSize:11.5,fontWeight:700,color:'var(--ink-faint)',marginBottom:5}}>แหล่งอ้างอิงที่ตรวจ</div>
+                    <ul style={{margin:0,paddingLeft:18}}>
+                      {law.repeal_sources.map((u,i)=>(
+                        <li key={i} style={{marginBottom:3}}>
+                          <a href={u} target="_blank" rel="noreferrer" style={{color:'var(--brand)',fontSize:12,wordBreak:'break-all'}}>{u} ↗</a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchAll } from '../lib/supabase.js'
+import { fetchAll, lawInForce } from '../lib/supabase.js'
 
 // ───────────────────────────────────────────────────────────────────────────
 // LexGuard — public Landing page (shown before login).
@@ -33,7 +33,8 @@ export default function Landing({ onEnter }) {
     const cats = data?.cats || []
     const laws = data?.laws || []
     const comms = data?.comms || []
-    const inForce = laws.filter(l => l.status !== 'repealed' && l.active !== false)
+    // P21 ส่วนที่ 2 · lawInForce() ดู law_status เป็นหลัก (รองรับ status='repealed' เดิมด้วย)
+    const inForce = laws.filter(l => lawInForce(l) && l.active !== false)
     // P18 · % นับเฉพาะข้อที่ประเมินแล้ว — waiting (รอผู้เกี่ยวข้องประเมิน) ไม่รวม
     const isWaiting = r => r.status === 'unmet' && !r.evaluated_at && /รอผู้เกี่ยวข้องประเมิน/.test(r.note || '')
     let met = 0, unmet = 0, waiting = 0

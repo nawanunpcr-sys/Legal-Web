@@ -885,6 +885,12 @@ tbody tr:last-child td { border-bottom: none }
 .p-bad::before    { background: var(--bad) }
 .p-repealed { background: var(--surface-3); color: var(--ink-faint) }
 .p-repealed::before { background: var(--faint) }
+/* P21 ส่วนที่ 2 · สถานะการบังคับใช้ที่ยังไม่มีคลาสของตัวเอง
+   ยกเลิกบางส่วน = เหลือง · รอตรวจสอบ = ฟ้า (ยังไม่มีใครยืนยัน จึงไม่ใช้สีเขียว/แดง) */
+.p-partial   { background: var(--warn-bg); color: var(--warn) }
+.p-partial::before   { background: var(--warn) }
+.p-uncertain { background: var(--accent-tint); color: var(--accent) }
+.p-uncertain::before { background: var(--accent) }
 .p-warn     { background: var(--warn-bg);   color: var(--warn) }
 .p-warn::before   { background: var(--warn) }
 .p-wait     { background: var(--surface-3); color: var(--ink-faint) }

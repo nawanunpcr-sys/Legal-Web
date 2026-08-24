@@ -3,8 +3,24 @@
 // source-data/F-259 workbook: form no. top-right, per-category pages, C/NC
 // evaluation and an end-of-report signature block.
 import { thDate, reqStats, reqKind } from '../lib/ui.jsx'
+import { LAW_STATUS } from '../lib/supabase.js'
 
 const ESC = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+// P21 ส่วนที่ 2 · บรรทัดสถานะการบังคับใช้ใต้ชื่อกฎหมาย
+// เลือกวิธีนี้แทนการเพิ่มคอลัมน์ เพราะตาราง F-259 มี 13 คอลัมน์แล้วและต้องพอดี A4 แนวนอน
+// ฉบับที่ยังบังคับใช้ปกติไม่พิมพ์อะไรเลย — บรรทัดนี้จึงโผล่เฉพาะตอนที่มีเรื่องต้องบอก
+const enforceLine = l => {
+  const k = l.law_status || 'in_force'
+  if (k === 'in_force') return ''
+  const bits = [LAW_STATUS[k]?.label || k]
+  if (l.repeal_date) bits.push('มีผล ' + thDate(l.repeal_date))
+  if (l.repealed_by_title) bits.push('โดย ' + l.repealed_by_title)
+  const repl = l.replacement_law_title || l.replaced_by_code
+  if (repl) bits.push('ใช้แทนด้วย ' + repl)
+  if (!l.repeal_verified_by) bits.push('(ยังไม่ผ่านการยืนยัน)')
+  return `<div class="enforce">${ESC(bits.join(' · '))}</div>`
+}
 
 // F-259 form metadata (from the source workbook header)
 const FORM = { no: 'F-259', rev: 'Rev.1', effective: '10/01/66' }
@@ -164,7 +180,7 @@ export function buildReport({ laws, catName = {}, catColor = {}, settings = {}, 
           <td rowspan="${span}" class="ctr num">${n}</td>
           <td rowspan="${span}" class="num">${ESC(l.code)}</td>
           <td rowspan="${span}">${ESC(l.ministry || '')}</td>
-          <td rowspan="${span}" class="law">${ESC(l.name || '')}</td>` : ''
+          <td rowspan="${span}" class="law">${ESC(l.name || '')}${enforceLine(l)}</td>` : ''
         const dateCell = i === 0 ? `<td rowspan="${span}" class="ctr">${ESC(l.issue_date || l.effective_date || '—')}</td>` : ''
         const met = r.status === 'met', nc = r.status === 'unmet'
         const evidence = [r.documents, r.evidence_label].filter(Boolean).join(' · ')
@@ -226,6 +242,7 @@ export function buildReport({ laws, catName = {}, catColor = {}, settings = {}, 
     #print-report .badge.ok  { color:#0a7a32; background:#e3f5e8 }
     #print-report .badge.bad { color:#c4271d; background:#fbe6e4 }
     #print-report .badge.wait{ color:#777; background:#eee }
+    #print-report .enforce { margin-top:3px; font-size:10.5px; color:#8a5a12; background:#fdf6e6; border-left:2px solid #c9a227; padding:2px 5px; line-height:1.35 }
     #print-report .reg .law { font-weight:700; color:#1c2431 }
     #print-report .reg .req { white-space:pre-wrap }
     #print-report .reg .src { font-size:9.5px; color:#0a58ca; word-break:break-all; margin-top:2px }
