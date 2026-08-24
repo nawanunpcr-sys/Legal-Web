@@ -598,6 +598,24 @@ export async function addComm(comm) {
   return data
 }
 
+// แก้ไขหัวข้อการสื่อสารที่บันทึกไว้แล้ว
+// เดิมแก้ได้แค่ "ตารางเวลา" (วันที่/ความถี่/แจ้งเตือน/ผู้รับผิดชอบ) ผ่าน updateCommSchedule
+// ส่วนเนื้อหาหลัก — หัวข้อ ผู้สื่อสาร ผู้รับสาร ขอบเขต — ตั้งได้ครั้งเดียวตอนสร้าง
+// พิมพ์ผิดทีต้องลบทิ้งแล้วสร้างใหม่ ซึ่งทำให้ไฟล์แนบและประวัติการส่งของแถวนั้นหายไปด้วย
+// ฟังก์ชันนี้จึงรับทุกช่อง และคัดเฉพาะคีย์ที่อนุญาตก่อนเขียน (กันฟิลด์ระบบถูกทับจากฝั่งหน้าจอ)
+const COMM_EDITABLE = ['scope', 'topic', 'sender', 'receiver', 'recurrence_type',
+                       'scheduled_date', 'next_scheduled_date', 'notify_days_before', 'assigned_to']
+export async function updateComm(commId, patch) {
+  const topic = String(patch?.topic ?? '').trim()
+  if ('topic' in (patch || {}) && !topic) throw new Error('หัวข้อการสื่อสารห้ามว่าง')
+  const clean = {}
+  for (const k of COMM_EDITABLE) if (k in (patch || {})) clean[k] = patch[k]
+  if ('topic' in clean) clean.topic = topic
+  if (!Object.keys(clean).length) return
+  const { error } = await supabase.from('lg_communications').update(clean).eq('id', commId)
+  if (error) throw error
+}
+
 export async function deleteComm(commId) {
   const { error } = await supabase.from('lg_communications').delete().eq('id', commId)
   if (error) throw error
