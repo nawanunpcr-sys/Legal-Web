@@ -55,7 +55,10 @@ export const prog = l => { const s = reqStats(l); if (!s.total) return 100; retu
 export const reqEvalTitle = r => {
   if (isWaitingReq(r)) return r?.note || 'ยังไม่ประเมิน'
   const parts = [reqStatusLabel(reqKind(r))]
-  if (r?.evaluated_by || r?.evaluated_at) parts.push(`ประเมินโดย ${r?.evaluated_by || '—'}${r?.evaluated_at ? ' · ' + formatThaiDate(r.evaluated_at) : ''}`)
+  // ข้อมูลที่นำเข้าจาก F-259 ครั้งแรกมีวันที่ประเมินแต่ไม่มีชื่อผู้ประเมิน (ยุคนั้นไม่ได้เก็บ)
+  // เขียน "ประเมินโดย —" จะอ่านเหมือนระบบพัง · มีแค่วันที่ก็บอกแค่วันที่
+  if (r?.evaluated_by) parts.push(`ประเมินโดย ${r.evaluated_by}${r?.evaluated_at ? ' · ' + formatThaiDate(r.evaluated_at) : ''}`)
+  else if (r?.evaluated_at) parts.push(`ประเมินเมื่อ ${formatThaiDate(r.evaluated_at)}`)
   if (r?.status_reason) parts.push('เหตุผล: ' + r.status_reason)
   return parts.join(' · ')
 }

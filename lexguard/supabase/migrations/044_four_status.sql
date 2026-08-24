@@ -23,19 +23,25 @@ comment on table lg_requirements_bak_20260824 is
 -- ผลประเมินจริงมาตลอด (ค่ามาจากไฟล์ F-259 ที่นำเข้าครั้งแรก ซึ่งไม่ได้บันทึกเวลาไว้)
 -- กฎใหม่ "evaluated_at IS NULL = ยังไม่ประเมิน" จึงจะทำให้ผลเดิมหายไปทั้งหมด
 -- และฐาน KPI เหลือ 3 ข้อ · ตีตราเวลาให้เท่ากับวันที่บันทึกกฎหมายฉบับนั้นเข้าทะเบียน
--- ซึ่งเป็นเวลาที่ใกล้ความจริงที่สุดเท่าที่ข้อมูลมี และทำเครื่องหมายผู้ประเมินไว้ให้สอบกลับได้
+-- ซึ่งเป็นเวลาที่ใกล้ความจริงที่สุดเท่าที่ข้อมูลมี
 -- lg_requirements ไม่มีคอลัมน์ created_at/updated_at จึงต้องอ้างจากกฎหมายแม่
+--
+-- ⚠ แตะเฉพาะ evaluated_at เท่านั้น — ห้ามเขียน evaluated_by
+-- เคยเติมข้อความ 'ข้อมูลเดิมก่อนปรับระบบ (P21)' ลง evaluated_by ด้วย เพื่อให้สอบกลับได้ว่า
+-- เวลานี้มาจาก migration ไม่ใช่คนกดจริง · แต่หน้ารายละเอียดกฎหมายอ่านคอลัมน์นี้เป็น
+-- "ประเมินโดย <ชื่อ>" ผลคือทั้งทะเบียนขึ้นชื่อผู้ประเมินปลอม 573 รายการ
+-- ซึ่งอ่านแล้วเข้าใจผิดยิ่งกว่าไม่มีข้อมูล — ผู้ตรวจ ISO จะเห็นว่ามีคนประเมินไว้ทั้งที่ไม่มี
+-- ปล่อยเป็น NULL ตามเดิม หน้าจอจะขึ้น "ยังไม่ได้ประเมิน" เหมือนก่อน migration ทุกประการ
+-- (รันบน production ไปแล้วเมื่อ 2026-08-24 แล้วล้างค่าคืนภายหลัง — ไฟล์นี้คือสถานะสุทธิ)
 update lg_requirements r
-   set evaluated_at = l.created_at,
-       evaluated_by = coalesce(nullif(btrim(r.evaluated_by), ''), 'ข้อมูลเดิมก่อนปรับระบบ (P21)')
+   set evaluated_at = l.created_at
   from lg_laws l
  where r.law_id = l.id
    and r.evaluated_at is null;
 
 -- แถวกำพร้า (law_id เป็น NULL หรือชี้ไปกฎหมายที่ไม่มีแล้ว) — ไม่มีวันที่ให้อ้างเลย
 update lg_requirements
-   set evaluated_at = timestamptz '2026-08-24 00:00:00+07',
-       evaluated_by = coalesce(nullif(btrim(evaluated_by), ''), 'ข้อมูลเดิมก่อนปรับระบบ (P21)')
+   set evaluated_at = timestamptz '2026-08-24 00:00:00+07'
  where evaluated_at is null;
 
 -- ── ขั้น 2 · เหตุผลประกอบสถานะ ───────────────────────────────────────────────
@@ -66,5 +72,5 @@ comment on column lg_requirements.status_reason is
 -- alter table lg_requirements drop constraint if exists lg_requirements_status_reason_check;
 -- alter table lg_requirements drop constraint if exists lg_requirements_status_check;
 -- alter table lg_requirements drop column if exists status_reason;
--- update lg_requirements set evaluated_at = null, evaluated_by = null
---  where evaluated_by = 'ข้อมูลเดิมก่อนปรับระบบ (P21)';
+-- (ไม่มีทางย้อน evaluated_at แบบแม่นยำ เพราะไม่ได้เก็บว่าแถวไหนเคยเป็น NULL
+--  ต้องกู้จากตารางสำรอง lg_requirements_bak_20260824 แทน)
