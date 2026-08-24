@@ -361,6 +361,7 @@ function RepealsPanel({ repeals = [], laws = [], newLaw = {}, onReloadLaws }) {
         repeal_reason: `ถูกยกเลิกโดย ${newLaw.name || '(กฎหมายฉบับใหม่)'}`,
         replaced_by_code: null,   // ฉบับใหม่ยังไม่เข้าทะเบียน ยังไม่มีรหัส
         repealed_by_authority: newLaw.name || null,
+        repealed_by_title: newLaw.name || null,   // P21 · ชื่อฉบับที่ยกเลิก ลงช่องของตัวเอง
       })
       toast(`ตั้ง ${old.code} เป็นยกเลิกแล้ว`, 'success')
       onReloadLaws && onReloadLaws()

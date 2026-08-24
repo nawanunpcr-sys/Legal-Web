@@ -231,13 +231,23 @@ export async function bumpQuarterStat(cat, field, delta, atDate) {
   } catch (e) { console.warn('bumpQuarterStat failed', e) }
 }
 
-export async function repealLaw(lawId, { repeal_date, repeal_reason, replaced_by_code, repealed_by_authority }) {
+// ยกเลิกด้วยมือ — ใช้จากหน้ารายละเอียด และจากบทยกเลิกที่ AI อ่านเจอตอนเพิ่มกฎหมายใหม่
+// P21 ส่วนที่ 2 · ต้องตั้ง law_status ให้ตรงกันด้วย ไม่งั้นฉบับที่ยกเลิกทางนี้จะไม่ขึ้นป้าย
+// และไม่ถูกนับในตัวกรองสถานะการบังคับใช้ ทั้งที่ทะเบียนถือว่ายกเลิกแล้ว
+// ไม่ตั้ง repeal_detected_by โดยตั้งใจ — นี่คือการกระทำของคน ไม่ใช่ผลจาก AI
+// (CHECK ที่บังคับต้องมี source_url ผูกกับ repeal_detected_by จึงไม่บังคับกับทางนี้)
+export async function repealLaw(lawId, { repeal_date, repeal_reason, replaced_by_code, repealed_by_authority, repealed_by_title, law_status = 'repealed' }) {
+  if (!LAW_STATUS[law_status]) throw new Error('สถานะการบังคับใช้ไม่ถูกต้อง: ' + law_status)
   const { data: law, error } = await supabase.from('lg_laws').update({
     status: 'repealed',
+    law_status,
     repeal_date,
     repeal_reason,
     replaced_by_code: replaced_by_code || null,
     repealed_by_authority: repealed_by_authority || null,
+    repealed_by_title: repealed_by_title || null,
+    repeal_verified_by: currentUserName() || null,   // คนกดเอง = ยืนยันแล้วในตัว
+    repeal_verified_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }).eq('id', lawId).select('cat').single()
   if (error) throw error
@@ -532,12 +542,27 @@ export async function listDepartments() {
 
 export async function restoreLaw(lawId) {
   const { data: before } = await supabase.from('lg_laws').select('cat,repeal_date').eq('id', lawId).maybeSingle()
+  // กู้คืน — ต้องล้างข้อมูลการยกเลิกให้หมดทั้งชุดเก่าและชุดใหม่ (P21)
+  // เหลือค้างไว้แม้ช่องเดียว หน้ารายละเอียดจะยังโชว์กล่อง "สถานะการบังคับใช้" ของฉบับที่กู้คืนแล้ว
   const { error } = await supabase.from('lg_laws').update({
     status: 'ok',
+    law_status: 'in_force',
     repeal_date: null,
     repeal_reason: null,
     replaced_by_code: null,
     repealed_by_authority: null,
+    repealed_by_title: null,
+    repealed_by_law_id: null,
+    repeal_scope: null,
+    replacement_law_title: null,
+    replacement_law_id: null,
+    repeal_source_url: null,
+    repeal_sources: [],
+    repeal_confidence: null,
+    repeal_detected_by: null,
+    repeal_checked_at: null,
+    repeal_verified_by: null,
+    repeal_verified_at: null,
     updated_at: new Date().toISOString(),
   }).eq('id', lawId)
   if (error) throw error
