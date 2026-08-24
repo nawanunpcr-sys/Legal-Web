@@ -20,10 +20,15 @@ const r = await fetch(`${SUPA_URL}/rest/v1/lg_laws?select=id,code,name,issue_dat
 const laws = await r.json()
 console.log(`พบกฎหมายที่ทำเครื่องหมายยกเลิกไว้ ${laws.length} ฉบับ\n`)
 
+const pend = await (await fetch(`${SUPA_URL}/rest/v1/lg_repeal_checks?select=law_id&status=eq.pending`, { headers: H })).json()
+const done = new Set((Array.isArray(pend) ? pend : []).map(x => x.law_id))
+if (done.size) console.log(`ข้าม ${done.size} ฉบับที่มีผลค้างคิวอยู่แล้ว\n`)
+
 const searchDate = new Date().toISOString().slice(0, 10)
 const rows = []
 for (let i = 0; i < laws.length; i++) {
   const law = laws[i]
+  if (done.has(law.id)) continue
   if (i) await sleep(1500)
   const t0 = Date.now()
   process.stdout.write(`[${i + 1}/${laws.length}] ${law.code} … `)
@@ -47,12 +52,16 @@ for (let i = 0; i < laws.length; i++) {
   const rec = sanitize(out.json, law, searchDate, out.foundUrls)
   console.log(`${rec.law_status} · ความมั่นใจ ${rec.confidence} · แหล่งอ้างอิง ${rec.sources.length} · ${((Date.now() - t0) / 1000).toFixed(0)} วิ`)
   if (rec.repealed_by?.law_title) console.log(`        ยกเลิกโดย: ${rec.repealed_by.law_title}`)
-  rows.push({ ...rec, raw: out.json, elapsed_ms: Date.now() - t0, status: 'pending' })
+  // บันทึกทีละฉบับทันทีที่ได้ผล — ไม่รอจบทั้งชุด
+  // ถ้ารันขาดกลางคัน (หมดเวลา/เน็ตหลุด) ฉบับที่ค้นไปแล้วต้องไม่สูญเปล่า
+  // และรันซ้ำได้โดยข้ามฉบับที่มีผลค้างคิวอยู่แล้ว
+  const row = { ...rec, raw: out.json, elapsed_ms: Date.now() - t0, status: 'pending' }
+  delete row.code; delete row.name; delete row.registry_match
+  const ir = await fetch(`${SUPA_URL}/rest/v1/lg_repeal_checks`, {
+    method: 'POST', headers: H, body: JSON.stringify(row) })
+  if (!ir.ok) console.log(`        ลงคิวไม่สำเร็จ: ${(await ir.text()).slice(0, 200)}`)
+  else rows.push(row)
 }
 
-if (rows.length) {
-  const ir = await fetch(`${SUPA_URL}/rest/v1/lg_repeal_checks`, {
-    method: 'POST', headers: { ...H, Prefer: 'return=representation' },
-    body: JSON.stringify(rows.map(({ code, name, registry_match, ...x }) => x)) })
-  console.log(ir.ok ? `\nลงคิวรอยืนยัน ${rows.length} รายการ` : `\nลงคิวไม่สำเร็จ: ${(await ir.text()).slice(0, 300)}`)
-}
+console.log(`\nลงคิวรอยืนยันแล้ว ${rows.length} จาก ${laws.length} ฉบับ`)
+console.log('ทั้งหมดยังไม่ถูกบันทึกลงทะเบียน — เปิดหน้าทะเบียนแล้วกด "ตรวจสอบ / ยืนยัน" ทีละรายการ')
