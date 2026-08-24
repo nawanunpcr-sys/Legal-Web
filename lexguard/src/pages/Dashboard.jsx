@@ -26,21 +26,27 @@ function CatBars({laws,cats}){
   const byCat={}; laws.forEach(l=>{(byCat[l.cat]=byCat[l.cat]||[]).push(l)})
   return <div className="catbars-grid">
     {cats.filter(c=>byCat[c.code]).map(c=>{
-      // P18 · แบ่งแถบ 3 สี: met(เขียว) / unmet(แดง) / waiting(เทา) — % นับเฉพาะข้อที่ประเมินแล้ว
+      // P21 · แบ่งแถบ 5 สี: C(เขียว) / NC(แดง) / Ack(น้ำเงิน) / ไม่เกี่ยวข้อง(เทาอ่อน) / ยังไม่ประเมิน(เทา)
+      // ตัวเลข % ยังคิดจาก C/(C+NC) เท่านั้น — แถบแสดง "สัดส่วนของข้อทั้งหมด" ซึ่งเป็นคนละเรื่องกัน
       const s=sumReqStats(byCat[c.code]); const t=s.total||1
       return <div className="catbar" key={c.code}>
         <div className="top">
           <span className="nm">{c.code} · {c.name}</span>
           <span className="cat-meta">
             {s.unmet>0 && <span className="cat-remain">NC {s.unmet} ข้อ</span>}
-            {s.waiting>0 && <span style={{fontSize:10.5,fontWeight:600,color:'var(--ink-faint)'}}>รอประเมิน {s.waiting}</span>}
-            {s.unmet===0 && s.waiting===0 && s.total>0 && <span className="cat-done">ครบ {s.met} ข้อ ✓</span>}
-            <b className="num" style={{color:c.color}}>{s.pct==null?'—':s.pct+'%'}</b>
+            {s.ack>0 && <span style={{fontSize:10.5,fontWeight:600,color:'var(--accent)'}}>Ack {s.ack}</span>}
+            {s.na>0 && <span style={{fontSize:10.5,fontWeight:600,color:'var(--ink-faint)'}}>ไม่เกี่ยวข้อง {s.na}</span>}
+            {s.waiting>0 && <span style={{fontSize:10.5,fontWeight:600,color:'var(--ink-faint)'}}>ยังไม่ประเมิน {s.waiting}</span>}
+            {s.unmet===0 && s.waiting===0 && s.met>0 && <span className="cat-done">ครบ {s.met} ข้อ</span>}
+            {/* ฐานเป็นศูนย์ (มีแต่ Ack/ไม่เกี่ยวข้อง) ต้องเป็น N/A ไม่ใช่ 0% หรือขีด */}
+            <b className="num" style={{color:c.color}}>{s.pct==null?(s.ack+s.na>0?'N/A':'—'):s.pct+'%'}</b>
           </span>
         </div>
-        <div className="track" title={`สอดคล้อง ${s.met} · ไม่สอดคล้อง ${s.unmet} · รอผู้เกี่ยวข้องประเมิน ${s.waiting}`} style={{display:'flex',overflow:'hidden'}}>
+        <div className="track" title={`สอดคล้อง ${s.met} · ไม่สอดคล้อง ${s.unmet} · เพื่อทราบ ${s.ack} · ไม่เกี่ยวข้อง ${s.na} · ยังไม่ประเมิน ${s.waiting}`} style={{display:'flex',overflow:'hidden'}}>
           <div style={{width:(s.met/t*100)+'%',background:'var(--ok)'}}/>
           <div style={{width:(s.unmet/t*100)+'%',background:'var(--bad)'}}/>
+          <div style={{width:(s.ack/t*100)+'%',background:'var(--accent)'}}/>
+          <div style={{width:(s.na/t*100)+'%',background:'var(--line)'}}/>
           <div style={{width:(s.waiting/t*100)+'%',background:'var(--ink-faint)'}}/>
         </div>
       </div>
@@ -151,7 +157,7 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
 
   const goRegistry = mode => { try{ localStorage.setItem('cr_registry_mode', JSON.stringify(mode)) }catch{} ; onGoView&&onGoView('registry') }
 
-  // P18 · % นับเฉพาะข้อที่ประเมินแล้ว (met+unmet) — waiting แยกแสดงต่างหาก
+  // P21 · % คิดจาก C/(C+NC) — Ack / ไม่เกี่ยวข้อง / ยังไม่ประเมิน แยกแสดงต่างหาก ไม่อยู่ในตัวหาร
   const stats = useMemo(()=>sumReqStats(fLaws),[fLaws])
 
   const bad=fLaws.filter(l=>l.status==='bad')
@@ -161,7 +167,17 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
     {val:stats.total.toLocaleString('en-US'), lab:'ข้อปฏิบัติรายข้อ'},
     {val:stats.met.toLocaleString('en-US'),   lab:'สอดคล้องแล้ว (ข้อ)', ok:true},
     {val:stats.unmet.toLocaleString('en-US'), lab:'ยังไม่สอดคล้อง (ข้อ)', bad:true, go:()=>goRegistry('compliance')},
-    {val:stats.assessed?((stats.met/stats.assessed*100).toFixed(1)+'%'):'ยังไม่ประเมิน', lab:stats.assessed?('ความสอดคล้อง ('+stats.met+'/'+stats.assessed+')'):'ยังไม่มีข้อที่ประเมิน', accent:true},
+    {val:stats.ack.toLocaleString('en-US'),   lab:'เพื่อทราบ (ข้อ)'},
+    {val:stats.na.toLocaleString('en-US'),    lab:'ไม่เกี่ยวข้อง (ข้อ)'},
+    {val:stats.waiting.toLocaleString('en-US'), lab:'ยังไม่ประเมิน (ข้อ)'},
+    // ฐาน = C + NC เท่านั้น · ฐานเป็นศูนย์แต่มี Ack/ไม่เกี่ยวข้องอยู่ = N/A (ไม่ใช่ 0% และไม่ใช่ "ยังไม่ประเมิน")
+    {val:stats.assessed
+        ? (stats.met/stats.assessed*100).toFixed(1)+'%'
+        : (stats.ack+stats.na>0 ? 'N/A' : 'ยังไม่ประเมิน'),
+     lab:stats.assessed
+        ? 'ความสอดคล้อง ('+stats.met+'/'+stats.assessed+')'
+        : (stats.ack+stats.na>0 ? 'ไม่มีข้อที่เข้าฐานคำนวณ' : 'ยังไม่มีข้อที่ประเมิน'),
+     accent:true},
   ]
 
   return <div className="view">

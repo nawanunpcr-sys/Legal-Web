@@ -4,7 +4,8 @@
 //      → Submit สร้างกฎหมายเข้าทะเบียน (status รอประเมิน) + เปิด tracker case
 //   2) แนบไฟล์กฎหมาย/เอกสารที่เกี่ยวข้อง → เสร็จสิ้น
 import { useState, useEffect, useMemo } from 'react'
-import { LAW_TYPES, fetchDiscoveredLaws, deleteDiscoveredLaw, logActivity } from '../lib/supabase.js'
+import { LAW_TYPES, fetchDiscoveredLaws, deleteDiscoveredLaw, logActivity, reasonRequired } from '../lib/supabase.js'
+import ReqStatusPicker from './ReqStatusPicker.jsx'
 import Attachments from './Attachments.jsx'
 import { I } from './icons.jsx'
 import { nextCode, thDate, findLawDuplicate, beToISO, isoToBE, isFreeformDate } from '../lib/ui.jsx'
@@ -71,7 +72,9 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const [effective, setEffective] = useState(il.effective_date || '')
   const [docList, setDocList] = useState(il.documents || '')
   const [gazetteRef, setGazetteRef] = useState(il.gazette_ref || '')   // mig 037 · เล่ม/ตอน/หน้า ราชกิจจาฯ
-  // P18 · แต่ละข้อปฏิบัติเก็บโครงสร้าง + ผลประเมิน inline (choice: null|'met'|'unmet'|'waiting')
+  // P21 · แต่ละข้อปฏิบัติเก็บโครงสร้าง + ผลประเมิน inline
+  //   choice: null | 'met' | 'unmet' | 'acknowledged' | 'not_applicable' | 'waiting'
+  //   statusReason: บังคับกรอกเมื่อ choice เป็น acknowledged / not_applicable
   // Skill 3 · ที่มา (from_*) ต้องพกต่อจากหน้าสรุปกฎหมายจนถึงตอนบันทึกลง lg_requirements
   //   ไม่งั้นผู้ตรวจ ISO เปิด F-259 แล้วเจอข้อที่ไม่มีในตัวบทของกฎหมายฉบับนั้น โดยหาที่มาไม่ได้
   // P17 · ข้อที่อ้างถึงตัวบทซึ่ง "ยังไม่ถูกออกมา" ประเมินความสอดคล้องไม่ได้
@@ -81,6 +84,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const [reqRows, setReqRows] = useState(() => (initialData?.requirements || []).map(q => ({
     text: `${q.section_ref ? q.section_ref + ': ' : ''}${q.req_text || ''}`.trim(),
     choice: pendingIssuance(q) ? 'waiting' : null,
+    statusReason: '',
     responsible: q.responsible || '', waitDate: '',
     frequency: q.frequency || '', documents: q.documents || '',
     from_related_law: q.from_related_law || null,
@@ -108,7 +112,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   function changeName(v) { setName(v); setDup(null); setDupConfirmed(false) }
 
   // ── P18 · จัดการรายการข้อปฏิบัติ + ผลประเมิน inline ──────────────────────────
-  const emptyRow = () => ({ text: '', choice: null, responsible: '', waitDate: '', frequency: '', documents: '',
+  const emptyRow = () => ({ text: '', choice: null, statusReason: '', responsible: '', waitDate: '', frequency: '', documents: '',
     from_related_law: null, from_law_url: '', from_law_confidence: '', from_law_note: '' })
   const textToRows = texts => texts.map(t => ({ ...emptyRow(), text: t }))
   const setRow = (i, patch) => setReqRows(rs => rs.map((r, j) => j === i ? { ...r, ...patch } : r))
@@ -118,6 +122,10 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   const activeRows = reqRows.filter(r => r.text.trim())
   const chosenCount = activeRows.filter(r => r.choice).length
   const allChosen = activeRows.every(r => r.choice)
+  // P21 · Ack / ไม่เกี่ยวข้อง ต้องมีเหตุผลครบทุกข้อก่อนบันทึก
+  // (CHECK ในฐานข้อมูลจะปฏิเสธอยู่แล้ว แต่ปล่อยให้ไปตายที่ฐานคือผู้ใช้กรอกมาทั้งฟอร์มแล้วเสียเปล่า)
+  const reasonsOk = activeRows.every(r => !reasonRequired(r.choice) || (r.statusReason || '').trim())
+  const missingReasonCount = activeRows.filter(r => reasonRequired(r.choice) && !(r.statusReason || '').trim()).length
   const waitingOk = activeRows.filter(r => r.choice === 'waiting').every(r => r.responsible.trim())
   // P20c · datalist ผู้รับผิดชอบ = แผนกจาก lg_departments (มาก่อน) + ชื่อที่ทีมเคยพิมพ์ไว้ (ไม่ให้หาย) — dedupe คงลำดับ
   const respOptions = [...new Set([...(suggest.departments || []), ...(suggest.responsibles || [])].filter(Boolean))]
@@ -154,7 +162,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
   }
 
   // P15·T1 · prefill ต้องติ๊กยืนยันตรวจทานก่อน · P18 · ทุกข้อต้องเลือกผลประเมิน + ข้อที่ "รอ" ต้องมีผู้รับผิดชอบ
-  const valid = owner.trim() && selId && cat && name.trim() && (!isPrefill || verified) && allChosen && waitingOk
+  const valid = owner.trim() && selId && cat && name.trim() && (!isPrefill || verified) && allChosen && waitingOk && reasonsOk
 
   async function submit(force = false) {
     if (!valid || saving) return
@@ -173,7 +181,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
     try {
       // P18 · ส่งผลประเมินรายข้อที่ผู้ใช้เลือก (choice) ให้ createLawFull แปลงเป็น met/unmet + evaluated_at
       const reqs = activeRows.map(r => ({
-        text: r.text.trim(), choice: r.choice,
+        text: r.text.trim(), choice: r.choice, statusReason: (r.statusReason || '').trim(),
         responsible: r.responsible.trim(), waitDate: r.waitDate || '',
         frequency: r.frequency || '', documents: r.documents || '',
         // Skill 3 · ที่มาของข้อ — ส่งต่อให้ createLawFull เขียนลง lg_requirements (mig 036)
@@ -330,6 +338,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
                 <div style={{display:'flex',gap:8,margin:'2px 0 8px',fontSize:11.5}}>
                   <span style={{color:'var(--ink-faint)'}}>ตั้งทั้งหมด:</span>
                   <button type="button" className="req-bulk" onClick={()=>setAllChoice('met')}>สอดคล้องทั้งหมด</button>
+                  <button type="button" className="req-bulk" onClick={()=>setAllChoice('acknowledged')}>เพื่อทราบทั้งหมด</button>
                   <button type="button" className="req-bulk" onClick={()=>setAllChoice('waiting')}>รอผู้เกี่ยวข้องทั้งหมด</button>
                 </div>
               )}
@@ -363,12 +372,11 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
                     </div>
                   )}
                   {r.text.trim() && (
-                    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:8,paddingLeft:26}}>
-                      <button type="button" className={'req-choice met'+(r.choice==='met'?' on':'')} title="ประเมินแล้ว: สอดคล้อง" onClick={()=>setRow(i,{choice:'met'})}>สอดคล้อง</button>
-                      <button type="button" className={'req-choice unmet'+(r.choice==='unmet'?' on':'')} title="ประเมินแล้ว: ไม่สอดคล้อง (NC)" onClick={()=>setRow(i,{choice:'unmet'})}>ไม่สอดคล้อง</button>
-                      <button type="button" className={'req-choice wait'+(r.choice==='waiting'?' on':'')} title="รอผู้เกี่ยวข้องประเมิน (ยังไม่ตัดสินความสอดคล้อง)" onClick={()=>setRow(i,{choice:'waiting'})}>
-                        <span className="req-choice-full">รอผู้เกี่ยวข้องประเมิน</span><span className="req-choice-short">รอผู้เกี่ยวข้อง</span>
-                      </button>
+                    <div style={{marginTop:8,paddingLeft:26}}>
+                      <ReqStatusPicker allowWaiting showDesc={false}
+                        value={r.choice} reason={r.statusReason}
+                        onChange={c=>setRow(i,{choice:c})}
+                        onReasonChange={v=>setRow(i,{statusReason:v})}/>
                     </div>
                   )}
                   {r.text.trim() && r.choice==='waiting' && (
@@ -408,6 +416,7 @@ export default function AddLawFlow({ cats, allLaws, suggest = {}, initialData = 
             )}
             <div className="modal-foot" style={{marginTop:14,alignItems:'center'}}>
               {selId && !allChosen && <span style={{fontSize:11.5,color:'var(--ink-faint)',marginRight:'auto'}}>เลือกผลประเมินให้ครบทุกข้อก่อนบันทึก ({chosenCount}/{activeRows.length})</span>}
+              {selId && allChosen && !reasonsOk && <span style={{fontSize:11.5,color:'var(--bad)',marginRight:'auto'}}>ยังขาดเหตุผลประกอบสถานะ {missingReasonCount} ข้อ (เพื่อทราบ / ไม่เกี่ยวข้อง ต้องระบุเหตุผล)</span>}
               <button className="btn btn-ghost" onClick={onClose}>ยกเลิก</button>
               <button className="btn btn-primary" disabled={!valid||saving||!!dup} onClick={()=>submit(false)}>
                 {saving ? 'กำลังบันทึก…' : <><I n="check"/>เพิ่มเข้าทะเบียน ({previewCode})</>}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchAll } from '../lib/supabase.js'
+import { sumReqStats } from '../lib/ui.jsx'
 
 // ───────────────────────────────────────────────────────────────────────────
 // LexGuard — public Landing page (shown before login).
@@ -34,14 +35,13 @@ export default function Landing({ onEnter }) {
     const laws = data?.laws || []
     const comms = data?.comms || []
     const inForce = laws.filter(l => l.status !== 'repealed' && l.active !== false)
-    // P18 · % นับเฉพาะข้อที่ประเมินแล้ว — waiting (รอผู้เกี่ยวข้องประเมิน) ไม่รวม
-    const isWaiting = r => r.status === 'unmet' && !r.evaluated_at && /รอผู้เกี่ยวข้องประเมิน/.test(r.note || '')
-    let met = 0, unmet = 0, waiting = 0
-    inForce.forEach(l => (l.reqs || []).forEach(r => { if (r.status === 'met') met++; else if (isWaiting(r)) waiting++; else unmet++ }))
-    const req = met + unmet + waiting
-    const nc = unmet
-    const assessed = met + unmet
-    const pct = assessed ? (met / assessed * 100) : 100
+    // P21 · เคยนับเองซ้ำที่นี่ ทำให้ตัวเลขหน้าแรกเพี้ยนจาก Dashboard ได้เงียบๆ
+    // ตอนนี้เรียก helper กลางตัวเดียวกับทุกหน้า — สูตรเปลี่ยนที่เดียวแล้วตรงกันหมด
+    const s = sumReqStats(inForce)
+    const { met, unmet: nc, ack, na, waiting, assessed } = s
+    const req = s.total
+    // ฐาน = C + NC · ฐานเป็นศูนย์ให้ pct เป็น null แล้วให้หน้าจอแสดง N/A แทนการหารด้วยศูนย์
+    const pct = s.pct
     // per-category NC (in-force laws whose status is bad)
     const catRows = cats.map(c => {
       const ncCount = inForce.filter(l => l.cat === c.code && l.status === 'bad').length
@@ -52,7 +52,7 @@ export default function Landing({ onEnter }) {
       cats, comms,
       total: inForce.length,
       catCount: cats.length,
-      req, met, nc, pct,
+      req, met, nc, ack, na, waiting, assessed, pct,
       catRows,
       ncItems,
       loaded: !!data,
@@ -79,22 +79,26 @@ export default function Landing({ onEnter }) {
 
   const nav = ['ภาพรวม', 'ทะเบียนกฎหมาย', 'ความสอดคล้อง', 'การสื่อสาร', 'วิเคราะห์ & AI']
 
+  // P21 · pct เป็น null ได้เมื่อไม่มีข้อที่เข้าฐาน C+NC เลย (เช่นมีแต่ Ack/ไม่เกี่ยวข้อง)
+  // ทุกจุดที่แสดงเปอร์เซ็นต์ต้องผ่านตัวนี้ ไม่งั้น .toFixed() จะพังทั้งหน้า
+  const pctText = m.pct == null ? (m.ack + m.na > 0 ? 'N/A' : '—') : m.pct.toFixed(1) + '%'
+  const baseText = m.assessed ? `${m.met}/${m.assessed} ข้อที่เข้าฐานคำนวณ` : 'ไม่มีข้อที่เข้าฐานคำนวณ'
   const stats = [
     { val: fmt(m.total), lab: 'กฎหมายในทะเบียน (ฉบับ)', color: INK },
     { val: String(m.catCount), lab: 'หมวด (LA–LG)', color: INK },
     { val: fmt(m.req), lab: 'ข้อปฏิบัติรายข้อ', color: INK },
-    { val: m.pct.toFixed(1) + '%', lab: `ความสอดคล้อง (${m.met}/${m.req})`, color: ACCENT },
+    { val: pctText, lab: m.assessed ? `ความสอดคล้อง (${m.met}/${m.assessed})` : 'ความสอดคล้อง', color: ACCENT },
   ]
   const kpis = [
     { lab: 'กฎหมายทั้งหมด', val: fmt(m.total), unit: 'ฉบับ', delta: m.catCount + ' หมวด', accent: '#1C2431' },
     { lab: 'ยังไม่สอดคล้อง', val: String(m.nc), unit: 'ข้อ', delta: 'จาก ' + m.req + ' ข้อปฏิบัติ', accent: '#B4553F' },
     { lab: 'การสื่อสาร ISD-86', val: String(m.comms.length), unit: 'รายการ', delta: 'ภายใน / ภายนอกองค์กร', accent: '#B58A3C' },
-    { lab: 'สอดคล้อง', val: m.pct.toFixed(1) + '%', unit: '', delta: m.met + ' / ' + m.req + ' ข้อ', accent: '#5F7A61' },
+    { lab: 'สอดคล้อง', val: pctText, unit: '', delta: baseText, accent: '#5F7A61' },
   ]
 
   // ring geometry (r=72 → circumference ≈ 452.4)
   const CIRC = 452.4
-  const dashOffset = CIRC * (1 - m.pct / 100)
+  const dashOffset = CIRC * (1 - (m.pct ?? 0) / 100)
 
   return (
     <div className="lg-landing">
@@ -141,7 +145,7 @@ export default function Landing({ onEnter }) {
                   strokeDasharray={CIRC} strokeDashoffset={dashOffset} style={{ transition: 'stroke-dashoffset .9s cubic-bezier(.4,0,.2,1)' }} />
               </svg>
               <div className="lgl-ring-center">
-                <div className="lgl-ring-pct">{m.pct.toFixed(1)}<span>%</span></div>
+                <div className="lgl-ring-pct">{m.pct == null ? 'N/A' : <>{m.pct.toFixed(1)}<span>%</span></>}</div>
                 <div className="lgl-ring-sub">สอดคล้อง</div>
               </div>
             </div>

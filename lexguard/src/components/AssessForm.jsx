@@ -1,25 +1,39 @@
 // Shared Process 2 form (ผู้ประเมิน) — reused by BOTH Workflow A and Workflow B.
-// Result สอดคล้อง/ไม่สอดคล้อง (+ หลักฐานแนบ); ถ้า ไม่สอดคล้อง ต้องกรอกแผนปรับปรุง /
-// มาตรการจัดการ / วันกำหนดทวนสอบ.
+// P21 · ผลการประเมินมี 4 สถานะ (C / NC / Ack / -) แทนที่จะมีแค่ 2
+//   ไม่สอดคล้อง (NC)          → ต้องกรอกแผนปรับปรุง / มาตรการจัดการ / วันกำหนดทวนสอบ
+//   เพื่อทราบ / ไม่เกี่ยวข้อง  → ต้องกรอกเหตุผล (บังคับทั้งฝั่งนี้และ CHECK ในฐานข้อมูล)
+//   สอดคล้อง (C)              → เหตุผลเป็นทางเลือก
 import { useState } from 'react'
 import Attachments from './Attachments.jsx'
 import { I } from './icons.jsx'
+import { REQ_STATUS, REQ_STATUS_ORDER, ASSESS_RESULT_BY_STATUS, reasonRequired } from '../lib/supabase.js'
 
 export default function AssessForm({ law, suggest = {}, onSubmit, onCancel }) {
   const [assessor, setAssessor] = useState('')
-  const [result, setResult]     = useState('')      // 'สอดคล้อง' | 'ไม่สอดคล้อง'
+  const [status, setStatus]     = useState('')      // met | unmet | acknowledged | not_applicable
+  const [reason, setReason]     = useState('')
   const [plan, setPlan]         = useState('')
   const [measure, setMeasure]   = useState('')
   const [reverify, setReverify] = useState('')
   const [saving, setSaving]     = useState(false)
 
-  const nc = result === 'ไม่สอดคล้อง'
-  const valid = assessor.trim() && result && (!nc || (plan.trim() && reverify))
+  const nc = status === 'unmet'
+  const needReason = reasonRequired(status)
+  const valid = assessor.trim() && status
+    && (!nc || (plan.trim() && reverify))
+    && (!needReason || reason.trim())
 
   async function submit() {
     if (!valid || saving) return
     setSaving(true)
-    try { await onSubmit({ assessorName: assessor.trim(), result, plan: plan.trim(), measure: measure.trim(), reverifyDate: reverify }) }
+    try {
+      await onSubmit({
+        assessorName: assessor.trim(),
+        result: ASSESS_RESULT_BY_STATUS[status],
+        reason: reason.trim(),
+        plan: plan.trim(), measure: measure.trim(), reverifyDate: reverify,
+      })
+    }
     finally { setSaving(false) }
   }
 
@@ -41,15 +55,33 @@ export default function AssessForm({ law, suggest = {}, onSubmit, onCancel }) {
       </div>
 
       <label className="form-label" style={{marginTop:10}}>ผลการทวนสอบต่อข้อปฏิบัติ <span style={{color:'var(--bad)'}}>*</span></label>
-      <div style={{display:'flex',gap:10}}>
-        {['สอดคล้อง','ไม่สอดคล้อง'].map(r=>(
-          <button key={r} type="button" onClick={()=>setResult(r)}
-            className={'btn '+(result===r?(r==='สอดคล้อง'?'btn-primary':'btn-danger'):'btn-ghost')}
-            style={{flex:1, ...(result===r&&r==='ไม่สอดคล้อง'?{background:'var(--bad)',color:'#fff',borderColor:'var(--bad)'}:{})}}>
-            {r==='สอดคล้อง'?'✓ สอดคล้อง (C)':'● ไม่สอดคล้อง (NC)'}
-          </button>
-        ))}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10}}>
+        {REQ_STATUS_ORDER.map(k=>{
+          const st=REQ_STATUS[k], on=status===k
+          return (
+            <button key={k} type="button" onClick={()=>setStatus(k)} title={st.desc}
+              className="btn"
+              style={{textAlign:'left',lineHeight:1.35,padding:'9px 12px',
+                background:on?st.color:'transparent', color:on?'#fff':'var(--ink)',
+                borderColor:on?st.color:'var(--line)'}}>
+              <b style={{fontVariantNumeric:'tabular-nums'}}>{st.code}</b> — {st.label}
+            </button>
+          )
+        })}
       </div>
+      {status && <p style={{fontSize:12,color:'var(--ink-faint)',margin:'6px 0 0',lineHeight:1.5}}>{REQ_STATUS[status].desc}</p>}
+
+      <label className="form-label" style={{marginTop:12}}>
+        เหตุผลประกอบสถานะ {needReason
+          ? <span style={{color:'var(--bad)'}}>*</span>
+          : <span style={{color:'var(--ink-faint)',fontWeight:400}}>(ไม่บังคับ)</span>}
+      </label>
+      <textarea className="form-input" rows={2} value={reason} onChange={e=>setReason(e.target.value)}
+        placeholder={needReason
+          ? 'ระบุเหตุผลที่จัดเป็นสถานะนี้ เช่น เป็นบทนิยาม ไม่มีหน้าที่ต้องปฏิบัติ / องค์กรไม่มีกิจกรรมที่เข้าข่าย'
+          : 'บันทึกเพิ่มเติมประกอบผลการประเมิน (ถ้ามี)'}/>
+      {needReason && !reason.trim() &&
+        <p style={{fontSize:12,color:'var(--bad)',margin:'4px 0 0'}}>สถานะนี้ต้องระบุเหตุผลประกอบก่อนจึงจะบันทึกได้</p>}
 
       {nc && (
         <div style={{marginTop:12,padding:'12px 14px',background:'var(--bad-bg,rgba(180,85,63,.06))',border:'1px solid color-mix(in srgb,var(--bad) 25%,transparent)',borderRadius:9}}>
