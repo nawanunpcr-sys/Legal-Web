@@ -36,7 +36,7 @@ export const REQ_STATUS = {
   met:            { code: 'C',   label: 'สอดคล้อง',      inKpi: true,  reasonRequired: false,
                     desc: 'ปฏิบัติครบถ้วนตามข้อกำหนด',
                     color: 'var(--ok)',   bg: 'var(--ok-bg)',   cls: 'p-ok'   },
-  unmet:          { code: 'NC',  label: 'ไม่สอดคล้อง',    inKpi: true,  reasonRequired: false,
+  unmet:          { code: 'NC',  label: 'ไม่สอดคล้อง',    inKpi: true,  reasonRequired: true,
                     desc: 'ยังปฏิบัติไม่ครบถ้วน ต้องแก้ไข',
                     color: 'var(--bad)',  bg: 'var(--bad-bg)',  cls: 'p-bad'  },
   acknowledged:   { code: 'Ack', label: 'เพื่อทราบ',      inKpi: false, reasonRequired: true,
@@ -72,6 +72,13 @@ export const REQ_STATUS_VALUES = REQ_STATUS_ORDER
 // ด่านฝั่ง client · คู่กับ CHECK constraint ฝั่ง server (migration 044)
 // สองด่านนี้ต้องพูดตรงกันเสมอ — ด่านนี้มีไว้ให้ผู้ใช้เห็นข้อความไทยที่อ่านรู้เรื่อง
 // แทนที่จะเห็น error ดิบของ Postgres · ไม่ใช่มีไว้แทนกัน
+// หมายเหตุ · ทำไม 'unmet' บังคับเหตุผลที่ชั้นนี้ แต่ไม่มี CHECK ในฐานข้อมูล
+// (ต่างจาก acknowledged/not_applicable ที่มี CHECK คุมอีกชั้น)
+// ทะเบียนมีข้อ NC เดิมอยู่ 13 ข้อที่ไม่มีเหตุผลบันทึกไว้ (นำเข้าจาก F-259 ครั้งแรก)
+// ใส่ CHECK แบบไม่มีเงื่อนไข = ทุกการแก้ไข 13 แถวนั้นจะถูกปฏิเสธไปตลอด รวมถึงการแก้
+// เรื่องที่ไม่เกี่ยวกับสถานะเลย · และการไปเติมเหตุผลย้อนหลังให้ผ่านด่าน คือการแต่งข้อมูล
+// ที่เราไม่รู้จริง · ด่านนี้จึงคุมทุก "การเขียนใหม่" ซึ่งเป็นสิ่งที่ข้อกำหนดต้องการ
+// โดยไม่ไปล็อกข้อมูลเก่าที่แก้อะไรไม่ได้แล้ว
 export function assertReqStatus(status, statusReason) {
   if (!REQ_STATUS[status]) throw new Error('สถานะการประเมินไม่ถูกต้อง: ' + status)
   if (reasonRequired(status) && !String(statusReason || '').trim())
@@ -279,11 +286,15 @@ export async function bulkSetReqStatus(lawIds, status, statusReason = '') {
 // P21 · แตะเฉพาะข้อที่เป็น C/NC หรือยังไม่ประเมินเท่านั้น
 // ข้อที่ถูกตัดสินเป็น "เพื่อทราบ" หรือ "ไม่เกี่ยวข้อง" มาพร้อมเหตุผลที่คนกรอกไว้
 // การกดปุ่มเหมารวมทีเดียวแล้วล้างทิ้งทั้งสถานะและเหตุผล คือการทำลายบันทึกที่ผู้ตรวจต้องเห็น
-export async function bulkSetCompliance(lawIds, met = true) {
+export async function bulkSetCompliance(lawIds, met = true, statusReason = '') {
   if (!lawIds.length) return
   const status = met ? 'met' : 'unmet'
+  // ทางนี้เคยเขียนสถานะตรงเข้าฐานโดยไม่ผ่านด่านใดเลย — กลายเป็นทางลัดที่เลี่ยงกติกา
+  // "NC ต้องมีเหตุผล" ได้ทั้งที่ทางอื่นบังคับหมด · ให้ผ่านด่านเดียวกับทุกทาง
+  assertReqStatus(status, statusReason)
   const { error } = await supabase.from('lg_requirements')
-    .update({ status, evaluated_at: new Date().toISOString(), evaluated_by: currentUserName() })
+    .update({ status, status_reason: String(statusReason || '').trim() || null,
+              evaluated_at: new Date().toISOString(), evaluated_by: currentUserName() })
     .in('law_id', lawIds)
     .in('status', ['met', 'unmet'])
   if (error) throw error

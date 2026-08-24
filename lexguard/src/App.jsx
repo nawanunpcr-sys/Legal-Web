@@ -22,7 +22,7 @@ import Toaster from './components/Toaster.jsx'
 import ConfirmHost from './components/ConfirmHost.jsx'
 import Clawdmeter from './components/Clawdmeter.jsx'
 import { toast } from './lib/toast.js'
-import { confirmDialog } from './lib/confirm.js'
+import { confirmDialog, promptDialog } from './lib/confirm.js'
 import { buildReport } from './components/PdfExport.jsx'
 import { exportLawsToExcel } from './lib/integrations.js'
 import { usePersist, prog, thDate, daysTo, TH_MONTHS, withCatColors, nextCode, currentRound,
@@ -330,8 +330,18 @@ export default function App(){
 
   async function handleBulkCompliance(ids, met){
     if(!ids.length) return
+    // P21 · "ไม่สอดคล้อง" ต้องมีเหตุผลกำกับเสมอ รวมถึงตอนกดเหมารวมหลายฉบับ
+    // ถามครั้งเดียวแล้วใช้เหตุผลเดียวกันทุกข้อ — ตรงกับเจตนาของปุ่มนี้ที่ตัดสินทั้งชุดพร้อมกัน
+    let reason = ''
+    if(!met){
+      reason = await promptDialog(
+        `ทำเครื่องหมาย "ยังไม่สอดคล้อง" ให้ข้อปฏิบัติของกฎหมาย ${ids.length} ฉบับ`,
+        { label:'เหตุผลที่ยังไม่สอดคล้อง', placeholder:'เช่น ยังไม่ได้จัดทำเอกสารตามที่กฎหมายกำหนด…',
+          okLabel:'บันทึก', danger:true })
+      if(reason===null) return          // กดยกเลิก
+    }
     try{
-      await bulkSetCompliance(ids, met)
+      await bulkSetCompliance(ids, met, reason)
       const d=await fetchAll(); setLaws(d.laws)
       toast(`อัปเดต ${ids.length} ฉบับเป็น${met?'สอดคล้อง':'ยังไม่สอดคล้อง'}แล้ว`,'success')
     }catch(e){ toast('อัปเดตไม่สำเร็จ: '+e.message) }
