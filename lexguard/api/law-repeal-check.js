@@ -88,7 +88,7 @@ const SYSTEM = `คุณคือผู้ช่วยตรวจสอบ "�
 // ── เรียก Claude พร้อม web_search แล้วเก็บ "หน้าที่ค้นเจอจริง" ไว้ตรวจสอบ ─────
 // ต้องเขียนเองแทนที่จะใช้ askClaude() เพราะ askClaude ทิ้ง block ของ web_search ไปหมด
 // แต่ด่านกันข้อมูลคลาดเคลื่อน (ข้อ 2.5.2) ต้องเทียบ URL ที่โมเดลอ้าง กับ URL ที่ค้นเจอจริง
-async function askWithSearch(userText, signalTimeoutMs) {
+export async function askWithSearch(userText, signalTimeoutMs) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), signalTimeoutMs)
   try {
