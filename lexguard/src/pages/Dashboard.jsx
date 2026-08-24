@@ -161,35 +161,73 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
   const stats = useMemo(()=>sumReqStats(fLaws),[fLaws])
 
   const bad=fLaws.filter(l=>l.status==='bad')
-  const strip=[
-    {val:(active.length+inactive.length).toLocaleString('en-US'), lab:'กฎหมายในทะเบียน (ฉบับ)'},
-    {val:String(cats.length),                 lab:'หมวด (LA–LG)'},
-    {val:stats.total.toLocaleString('en-US'), lab:'ข้อปฏิบัติรายข้อ'},
-    {val:stats.met.toLocaleString('en-US'),   lab:'สอดคล้องแล้ว (ข้อ)', ok:true},
-    {val:stats.unmet.toLocaleString('en-US'), lab:'ยังไม่สอดคล้อง (ข้อ)', bad:true, go:()=>goRegistry('compliance')},
-    {val:stats.ack.toLocaleString('en-US'),   lab:'เพื่อทราบ (ข้อ)'},
-    {val:stats.na.toLocaleString('en-US'),    lab:'ไม่เกี่ยวข้อง (ข้อ)'},
-    {val:stats.waiting.toLocaleString('en-US'), lab:'ยังไม่ประเมิน (ข้อ)'},
-    // ฐาน = C + NC เท่านั้น · ฐานเป็นศูนย์แต่มี Ack/ไม่เกี่ยวข้องอยู่ = N/A (ไม่ใช่ 0% และไม่ใช่ "ยังไม่ประเมิน")
-    {val:stats.assessed
-        ? (stats.met/stats.assessed*100).toFixed(1)+'%'
-        : (stats.ack+stats.na>0 ? 'N/A' : 'ยังไม่ประเมิน'),
-     lab:stats.assessed
-        ? 'ความสอดคล้อง ('+stats.met+'/'+stats.assessed+')'
-        : (stats.ack+stats.na>0 ? 'ไม่มีข้อที่เข้าฐานคำนวณ' : 'ยังไม่มีข้อที่ประเมิน'),
-     accent:true},
+
+  // ── P21 · แถบสรุปด้านบน ──────────────────────────────────────────────────
+  // เดิมเป็นช่องเท่ากัน 8 ช่องเรียงกันรวด พอเพิ่ม 3 สถานะใหม่เข้าไปเลยล้นเป็นสองแถว
+  // และ "% ความสอดคล้อง" ซึ่งเป็นตัวเลขที่คนเปิดหน้านี้มาดูจริง ๆ ไปตกอยู่แถวล่างโดดเดี่ยว
+  // จัดใหม่เป็น 2 ชั้นตามน้ำหนักความสำคัญ แทนที่จะให้ทุกตัวเลขเท่ากันหมด:
+  //   ชั้นบน = % ความสอดคล้อง (ตัวเอก) + จำนวนกฎหมาย/ข้อปฏิบัติ
+  //   ชั้นล่าง = แจกแจง 5 สถานะเป็นชิป · ค่าที่เป็น 0 จางลงเพื่อไม่ให้แย่งสายตา
+  const pctText = stats.assessed
+    ? (stats.met/stats.assessed*100).toFixed(1)+'%'
+    : (stats.ack+stats.na>0 ? 'N/A' : '—')
+  const pctSub = stats.assessed
+    ? `${stats.met.toLocaleString('en-US')} จาก ${stats.assessed.toLocaleString('en-US')} ข้อที่เข้าฐานคำนวณ`
+    : (stats.ack+stats.na>0 ? 'ไม่มีข้อที่เข้าฐานคำนวณ (มีแต่เพื่อทราบ / ไม่เกี่ยวข้อง)' : 'ยังไม่มีข้อที่ประเมิน')
+  const pctNum = stats.assessed ? (stats.met/stats.assessed*100) : 0
+  const breakdown=[
+    {k:'met',   lab:'สอดคล้อง',     val:stats.met,     color:'var(--ok)'},
+    {k:'unmet', lab:'ไม่สอดคล้อง',  val:stats.unmet,   color:'var(--bad)', go:()=>goRegistry('compliance')},
+    {k:'ack',   lab:'เพื่อทราบ',    val:stats.ack,     color:'var(--accent)'},
+    {k:'na',    lab:'ไม่เกี่ยวข้อง', val:stats.na,      color:'var(--ink-faint)'},
+    {k:'wait',  lab:'ยังไม่ประเมิน', val:stats.waiting, color:'var(--ink-faint)', hollow:true},
   ]
 
   return <div className="view">
-    {/* P20e · ตัวเลขภาพรวมขึ้นบนสุด แล้วค่อยการ์ด "ต้องทำตอนนี้" */}
-    <div className="dash-strip">
-      {strip.map((s,i)=>(<div className={'dash-strip-cell'+(s.go?' stat-link':'')} key={i}
-        role={s.go?'button':undefined} tabIndex={s.go?0:undefined} onClick={s.go||undefined}
-        onKeyDown={s.go?(e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); s.go() } }):undefined}
-        style={s.go?{cursor:'pointer'}:undefined}>
-        <div className={'dash-strip-val'+(s.accent?' is-accent':'')} style={s.bad?{color:'var(--bad)'}:s.ok?{color:'var(--ok)'}:undefined}>{s.val}</div>
-        <div className="dash-strip-lab">{s.lab}</div>
-      </div>))}
+    <div className="dash-hero">
+      <div className="dash-hero-top">
+        <div className="dash-hero-main">
+          <div className="dash-hero-lab">ความสอดคล้องตามข้อกำหนด</div>
+          <div className="dash-hero-val">{pctText}</div>
+          <div className="dash-hero-sub">{pctSub}</div>
+          {/* แถบนี้แทนสัดส่วน C ต่อฐาน C+NC เท่านั้น — ไม่ใช่สัดส่วนของข้อทั้งหมด */}
+          {stats.assessed>0 && (
+            <div className="dash-hero-bar" role="presentation">
+              <span style={{width:pctNum+'%'}}/>
+            </div>
+          )}
+        </div>
+        <div className="dash-hero-side">
+          <div className="dash-hero-mini">
+            <b>{(active.length+inactive.length).toLocaleString('en-US')}</b>
+            <span>กฎหมายในทะเบียน (ฉบับ)</span>
+          </div>
+          <div className="dash-hero-mini">
+            <b>{stats.total.toLocaleString('en-US')}</b>
+            <span>ข้อปฏิบัติรายข้อ</span>
+          </div>
+          <div className="dash-hero-mini">
+            <b>{String(cats.length)}</b>
+            <span>หมวด (LA–LG)</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="dash-hero-split">
+        {breakdown.map(b=>(
+          <div key={b.k}
+            className={'dash-chip'+(b.val===0?' is-zero':'')+(b.go&&b.val>0?' is-link':'')}
+            role={b.go&&b.val>0?'button':undefined} tabIndex={b.go&&b.val>0?0:undefined}
+            onClick={b.go&&b.val>0?b.go:undefined}
+            onKeyDown={b.go&&b.val>0?(e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); b.go() } }):undefined}>
+            <i style={b.hollow
+              ? {borderColor:b.color,background:'transparent'}
+              : {background:b.color,borderColor:b.color}}/>
+            <b style={b.val>0?{color:b.color}:undefined}>{b.val.toLocaleString('en-US')}</b>
+            <span>{b.lab}</span>
+          </div>
+        ))}
+      </div>
     </div>
 
     {/* พับเก็บได้ — ค่าเริ่มต้น = พับ (จำสถานะใน localStorage) */}
