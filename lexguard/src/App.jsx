@@ -9,7 +9,8 @@ import { supabase, hasSupabase, fetchAll,
          fetchWorkflow, subscribeWorkflow, subscribeLaws, createAddWorkflow, createMonitorWorkflow,
          submitWorkflowAssessment, closeWorkflowPlan, fetchDiscoveredLaws, fetchSearchLog,
          fetchSettings, saveSettings, DEFAULT_SETTINGS,
-         computeLawStatus, reqStatusLabel, reqKind } from './lib/supabase.js'
+         computeLawStatus, reqStatusLabel, reqKind,
+         lawInForce, runRepealCheck, fetchRepealChecks, applyRepealCheck, dismissRepealCheck } from './lib/supabase.js'
 import { AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
          getSession as getAuthSession, signOut as authSignOut, onAuthChange } from './lib/auth.js'
 import LawDrawer from './components/LawDrawer.jsx'
@@ -105,6 +106,8 @@ export default function App(){
   const [taskRows,setTaskRows] = useState([])           // view lg_tasks — หน้า "รายการที่ต้องทำ" (P16/P17)
   const [discovered,setDiscovered] = useState([])        // lg_ai_discovered_laws (หน้าค้นหากฎหมาย AI)
   const [searchLog,setSearchLog] = useState([])          // lg_search_log (หลักฐานการติดตามกฎหมาย)
+  const [repealChecks,setRepealChecks] = useState([])    // P21 · คิวผลตรวจสถานะการบังคับใช้ที่รอยืนยัน
+  const [repealBusy,setRepealBusy] = useState(false)
   const [departments,setDepartments] = useState([])      // lg_departments — ช่วยเติมช่อง "ผู้รับผิดชอบ" (P20c)
   const [showAddLaw,setShowAddLaw] = useState(false)     // Workflow A · Process 1 wizard
   const [addLawInit,setAddLawInit] = useState(null)      // P12: prefill AddLawFlow จากหน้าสรุปกฎหมาย
@@ -157,9 +160,9 @@ export default function App(){
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, a, rp, st, wf, disc, slog, tk, dept] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchReports(), fetchSettings(), fetchWorkflow(), fetchDiscoveredLaws(), fetchSearchLog(), fetchTasks(), listDepartments()])
+      const [d, mData, a, rp, st, wf, disc, slog, tk, dept, rc] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchReports(), fetchSettings(), fetchWorkflow(), fetchDiscoveredLaws(), fetchSearchLog(), fetchTasks(), listDepartments(), fetchRepealChecks('pending')])
       setCats(withCatColors(d.cats)); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setCurMonthRows(mData); setActivity(a); setReports(rp); setSettings(st); setWorkflowRows(wf); setDiscovered(disc); setSearchLog(slog); setTaskRows(tk); setDepartments(dept)
+      setMonths(mData); setCurMonthRows(mData); setActivity(a); setReports(rp); setSettings(st); setWorkflowRows(wf); setDiscovered(disc); setSearchLog(slog); setTaskRows(tk); setDepartments(dept); setRepealChecks(rc)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -188,8 +191,10 @@ export default function App(){
   })() },[monthYear])
 
   const catMap      = useMemo(()=>Object.fromEntries(cats.map(c=>[c.code,c])),[cats])
-  const activeLaws  = useMemo(()=>laws.filter(l=>l.status!=='repealed'),[laws])
-  const repealedLaws= useMemo(()=>laws.filter(l=>l.status==='repealed'),[laws])
+  // P21 ส่วนที่ 2 · "ยกเลิกแล้ว" ตัดสินจาก lawInForce() ซึ่งดู law_status เป็นหลัก
+  // และยังรองรับ status='repealed' แบบเดิมไว้ด้วย (ข้อมูลก่อน migration 046)
+  const activeLaws  = useMemo(()=>laws.filter(lawInForce),[laws])
+  const repealedLaws= useMemo(()=>laws.filter(l=>!lawInForce(l)),[laws])
   const lawMap      = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
   // P20c · แนบรายชื่อแผนก (lg_departments) เข้าไปกับ suggest เพื่อช่วยเติมช่องผู้รับผิดชอบ
   const suggest     = useMemo(()=>({ ...suggestionLists(laws), departments: departments.map(dp=>dp.name) }),[laws,departments])
@@ -403,6 +408,34 @@ export default function App(){
       toast('เปิดรายการทวนสอบแล้ว — รอประเมิน','success')
     }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
   }
+  // ── P21 ส่วนที่ 2 · ตรวจสถานะการบังคับใช้ ─────────────────────────────────
+  // ผลจาก endpoint ลงคิว lg_repeal_checks ฝั่ง server แล้ว · ที่นี่แค่ดึงคิวมาแสดง
+  // ไม่มีทางไหนในไฟล์นี้ที่เขียน law_status ลงทะเบียนได้เอง — ต้องผ่าน applyRepealCheck
+  // ซึ่งบังคับ confirmed:true เท่านั้น
+  const loadRepealChecks = async () => { try{ setRepealChecks(await fetchRepealChecks('pending')) }catch{} }
+  async function handleRepealCheck(lawIds){
+    const ids = Array.isArray(lawIds) ? lawIds : [lawIds]
+    setRepealBusy(true)
+    try{
+      const out = await runRepealCheck(ids)
+      await loadRepealChecks()
+      const parts = [`ตรวจแล้ว ${out.checked} ฉบับ`]
+      if(out.failures?.length) parts.push(`ตรวจไม่สำเร็จ ${out.failures.length} ฉบับ`)
+      toast(parts.join(' · ')+' — ผลรอการยืนยันในรายการตรวจสอบ', out.failures?.length?'error':'success')
+      return out
+    }catch(e){ toast('ตรวจสอบไม่สำเร็จ: '+e.message,'error'); throw e }
+    finally{ setRepealBusy(false) }
+  }
+  async function handleRepealApply(check, edits, opts){
+    await applyRepealCheck(check, edits, opts)
+    await loadLaws(); await loadRepealChecks(); fetchActivity().then(setActivity)
+    toast('บันทึกสถานะการบังคับใช้ลงทะเบียนแล้ว','success')
+  }
+  async function handleRepealDismiss(check){
+    try{ await dismissRepealCheck(check.id); await loadRepealChecks(); toast('ปัดผลตรวจนี้ทิ้งแล้ว') }
+    catch(e){ toast('ทำรายการไม่สำเร็จ: '+e.message,'error') }
+  }
+
   // Process 2 · ผู้ประเมิน (ใช้ร่วมทั้ง A และ B)
   async function handleWorkflowAssess(wf, law, payload){
     try{
@@ -647,7 +680,9 @@ export default function App(){
             onImported={async()=>{ await loadLaws(); fetchQuarterStats().then(setQuarterStats); fetchActivity().then(setActivity) }}
             monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}
-            activity={activity} settings={settings} searchLog={searchLog} repealedLaws={repealedLaws} onRestore={handleRestore}/>}
+            activity={activity} settings={settings} searchLog={searchLog} repealedLaws={repealedLaws} onRestore={handleRestore}
+            repealChecks={repealChecks} repealBusy={repealBusy} onRepealCheck={handleRepealCheck}
+            onRepealApply={handleRepealApply} onRepealDismiss={handleRepealDismiss}/>}
           {view==='summary'       && <LawSummary laws={activeLaws} allLaws={laws} cats={cats} catMap={catMap} discovered={discovered} suggest={suggest}
             onReloadDiscovered={loadDiscovered} onReloadLaws={loadLaws} onOpenLaw={setOpenLaw} onAddToRegistry={init=>openAddLaw(init)}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}

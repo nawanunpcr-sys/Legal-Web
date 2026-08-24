@@ -353,13 +353,23 @@ export async function bumpQuarterStat(cat, field, delta, atDate) {
   } catch (e) { console.warn('bumpQuarterStat failed', e) }
 }
 
-export async function repealLaw(lawId, { repeal_date, repeal_reason, replaced_by_code, repealed_by_authority }) {
+// ยกเลิกด้วยมือ — ใช้จากหน้ารายละเอียด และจากบทยกเลิกที่ AI อ่านเจอตอนเพิ่มกฎหมายใหม่
+// P21 ส่วนที่ 2 · ต้องตั้ง law_status ให้ตรงกันด้วย ไม่งั้นฉบับที่ยกเลิกทางนี้จะไม่ขึ้นป้าย
+// และไม่ถูกนับในตัวกรองสถานะการบังคับใช้ ทั้งที่ทะเบียนถือว่ายกเลิกแล้ว
+// ไม่ตั้ง repeal_detected_by โดยตั้งใจ — นี่คือการกระทำของคน ไม่ใช่ผลจาก AI
+// (CHECK ที่บังคับต้องมี source_url ผูกกับ repeal_detected_by จึงไม่บังคับกับทางนี้)
+export async function repealLaw(lawId, { repeal_date, repeal_reason, replaced_by_code, repealed_by_authority, repealed_by_title, law_status = 'repealed' }) {
+  if (!LAW_STATUS[law_status]) throw new Error('สถานะการบังคับใช้ไม่ถูกต้อง: ' + law_status)
   const { data: law, error } = await supabase.from('lg_laws').update({
     status: 'repealed',
+    law_status,
     repeal_date,
     repeal_reason,
     replaced_by_code: replaced_by_code || null,
     repealed_by_authority: repealed_by_authority || null,
+    repealed_by_title: repealed_by_title || null,
+    repeal_verified_by: currentUserName() || null,   // คนกดเอง = ยืนยันแล้วในตัว
+    repeal_verified_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }).eq('id', lawId).select('cat').single()
   if (error) throw error
@@ -659,12 +669,27 @@ export async function listDepartments() {
 
 export async function restoreLaw(lawId) {
   const { data: before } = await supabase.from('lg_laws').select('cat,repeal_date').eq('id', lawId).maybeSingle()
+  // กู้คืน — ต้องล้างข้อมูลการยกเลิกให้หมดทั้งชุดเก่าและชุดใหม่ (P21)
+  // เหลือค้างไว้แม้ช่องเดียว หน้ารายละเอียดจะยังโชว์กล่อง "สถานะการบังคับใช้" ของฉบับที่กู้คืนแล้ว
   const { error } = await supabase.from('lg_laws').update({
     status: 'ok',
+    law_status: 'in_force',
     repeal_date: null,
     repeal_reason: null,
     replaced_by_code: null,
     repealed_by_authority: null,
+    repealed_by_title: null,
+    repealed_by_law_id: null,
+    repeal_scope: null,
+    replacement_law_title: null,
+    replacement_law_id: null,
+    repeal_source_url: null,
+    repeal_sources: [],
+    repeal_confidence: null,
+    repeal_detected_by: null,
+    repeal_checked_at: null,
+    repeal_verified_by: null,
+    repeal_verified_at: null,
     updated_at: new Date().toISOString(),
   }).eq('id', lawId)
   if (error) throw error
@@ -745,6 +770,109 @@ export async function updateComm(commId, patch) {
 
 export async function deleteComm(commId) {
   const { error } = await supabase.from('lg_communications').delete().eq('id', commId)
+  if (error) throw error
+}
+
+// ══ P21 · สถานะการบังคับใช้ของกฎหมาย (ส่วนที่ 2) ═══════════════════════════
+//
+// แยกจาก STATUS (ok/bad/repealed) ซึ่งเป็นผลความสอดคล้องและถูกคำนวณทับตลอด
+// ตัวนี้คือข้อเท็จจริงทางกฎหมาย ไม่มีใครคำนวณทับ เปลี่ยนได้เฉพาะเมื่อคนยืนยัน
+export const LAW_STATUS = {
+  in_force:           { label: 'ยังบังคับใช้',      cls: 'p-ok',       inKpi: true  },
+  amended:            { label: 'แก้ไขเพิ่มเติมแล้ว', cls: 'p-warn',     inKpi: true  },
+  partially_repealed: { label: 'ยกเลิกบางส่วน',     cls: 'p-partial',  inKpi: true  },
+  repealed:           { label: 'ยกเลิกแล้ว',        cls: 'p-repealed', inKpi: false },
+  uncertain:          { label: 'รอตรวจสอบ',         cls: 'p-uncertain', inKpi: false },
+}
+export const LAW_STATUS_ORDER = ['in_force', 'amended', 'partially_repealed', 'repealed', 'uncertain']
+// ฉบับที่ยกเลิกแล้ว ไม่นำข้อปฏิบัติมาคิดอัตราความสอดคล้อง (ข้อ 2.8)
+// "ยกเลิกบางส่วน" และ "แก้ไขเพิ่มเติม" ยังนับ เพราะส่วนที่เหลือยังต้องปฏิบัติอยู่
+export const lawInForce = l => LAW_STATUS[l?.law_status || 'in_force']?.inKpi !== false && l?.status !== 'repealed'
+export const REPEAL_CONFIDENCE = { high: 'สูง', medium: 'ปานกลาง', low: 'ต่ำ' }
+
+// ── เรียก endpoint ตรวจสถานะ (รายฉบับหรือหลายฉบับ) ──────────────────────────
+// คืนผลดิบจาก API · ผลถูกลงคิว lg_repeal_checks ฝั่ง server แล้ว ยังไม่แตะ lg_laws
+export async function runRepealCheck(lawIds) {
+  const ids = (Array.isArray(lawIds) ? lawIds : [lawIds]).map(Number).filter(Number.isFinite)
+  if (!ids.length) throw new Error('ยังไม่ได้เลือกกฎหมายที่จะตรวจ')
+  const r = await fetch('/api/law-repeal-check', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lawIds: ids }) })
+  const out = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(out?.error || `ตรวจสอบไม่สำเร็จ (${r.status})`)
+  return out
+}
+
+export async function fetchRepealChecks(status = 'pending') {
+  if (!hasSupabase) return []
+  let q = supabase.from('lg_repeal_checks').select('*').order('created_at', { ascending: false })
+  if (status) q = q.eq('status', status)
+  const { data } = await q
+  return data || []
+}
+
+/**
+ * ยืนยันผลตรวจแล้วเขียนลงทะเบียนจริง — ทางเดียวที่ lg_laws.law_status เปลี่ยนได้จากผล AI
+ *
+ * ⚠ confirmed ต้องเป็น true เท่านั้น · พารามิเตอร์นี้มีไว้ให้เป็นไปไม่ได้ที่จะ "เผลอ" เรียก
+ * ผลจาก AI ห้ามลงทะเบียนทางการอัตโนมัติ (ข้อ 2.7) และทะเบียนนี้ใช้ตรวจ ISO
+ * edits = ค่าที่เจ้าหน้าที่แก้เอง ทับค่าที่ AI เสนอมาได้ทุกช่อง
+ */
+export async function applyRepealCheck(check, edits = {}, { confirmed = false, verifiedBy = '' } = {}) {
+  if (!confirmed) throw new Error('ต้องติ๊กยืนยันก่อนบันทึกลงทะเบียน')
+  const by = String(verifiedBy || '').trim() || currentUserName()
+  if (!by) throw new Error('ต้องระบุชื่อผู้ยืนยัน')
+
+  const v = { ...check, ...edits }
+  const lawStatus = v.law_status
+  if (!LAW_STATUS[lawStatus]) throw new Error('สถานะการบังคับใช้ไม่ถูกต้อง: ' + lawStatus)
+  const rb = v.repealed_by || {}
+  const rp = v.replacement || {}
+  const sourceUrl = String(v.repeal_source_url || rb.source_url || '').trim()
+  // ด่านเดียวกับ CHECK ในฐาน — ดักที่นี่ด้วยเพื่อให้ผู้ใช้เห็นข้อความไทยแทน error ของ Postgres
+  if ((lawStatus === 'repealed' || lawStatus === 'partially_repealed') && !sourceUrl)
+    throw new Error('สถานะนี้ต้องมีที่อยู่อ้างอิง (URL) ของฉบับที่ยกเลิก')
+
+  const now = new Date().toISOString()
+  const patch = {
+    law_status: lawStatus,
+    repealed_by_title:     rb.law_title || null,
+    repeal_date:           rb.effective_date || null,      // ใช้คอลัมน์เดิม ไม่สร้างซ้ำ
+    repeal_scope:          v.repeal_scope || null,
+    repeal_reason:         v.repeal_reason || null,
+    repealed_by_authority: rb.gazette_reference || null,
+    replacement_law_title: rp.exists ? (rp.law_title || null) : null,
+    repeal_source_url:     sourceUrl || null,
+    repeal_sources:        Array.isArray(v.sources) ? v.sources : [],
+    repeal_confidence:     v.confidence || null,
+    repeal_detected_by:    'ai:' + (check.model || 'unknown'),
+    repeal_checked_at:     check.created_at || now,
+    repeal_verified_by:    by,
+    repeal_verified_at:    now,
+    updated_at:            now,
+  }
+  // ฉบับที่ยกเลิกทั้งฉบับ ให้ธง active เดิมสอดคล้องกันด้วย (หน้าจอเก่าอ่านธงนี้อยู่)
+  // ห้ามแตะ status (ok/bad) — นั่นคือผลความสอดคล้อง คนละเรื่องกัน
+  if (lawStatus === 'repealed') patch.active = false
+
+  const { error } = await supabase.from('lg_laws').update(patch).eq('id', check.law_id)
+  if (error) throw error
+
+  await supabase.from('lg_repeal_checks')
+    .update({ status: 'applied', reviewed_by: by, reviewed_at: now, review_note: edits.review_note || null })
+    .eq('id', check.id)
+
+  await logActivity({ action: 'repeal_verify', law_id: check.law_id,
+    detail: `ยืนยันสถานะการบังคับใช้เป็น "${LAW_STATUS[lawStatus].label}" โดย ${by}` })
+  return patch
+}
+
+// ปัดผลตรวจทิ้ง (ไม่ตรง/ไม่เกี่ยว) — ไม่แตะทะเบียน แต่เก็บไว้ให้สอบย้อนได้
+export async function dismissRepealCheck(checkId, note = '') {
+  const by = currentUserName()
+  const { error } = await supabase.from('lg_repeal_checks').update({
+    status: 'dismissed', reviewed_by: by, reviewed_at: new Date().toISOString(),
+    review_note: String(note || '').trim() || null,
+  }).eq('id', checkId)
   if (error) throw error
 }
 

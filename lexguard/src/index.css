@@ -885,12 +885,18 @@ tbody tr:last-child td { border-bottom: none }
 .p-bad::before    { background: var(--bad) }
 .p-repealed { background: var(--surface-3); color: var(--ink-faint) }
 .p-repealed::before { background: var(--faint) }
-/* P21 · สองสถานะที่เพิ่มเข้ามา — Ack (น้ำเงิน) และ ไม่เกี่ยวข้อง (เทา)
+/* P21 ส่วนที่ 1 · สถานะการประเมิน — Ack (น้ำเงิน) และ ไม่เกี่ยวข้อง (เทา)
    ทั้งคู่มีข้อความกำกับเสมอ ไม่ให้ผู้ใช้ต้องแยกด้วยสีอย่างเดียว */
 .p-ack      { background: var(--accent-tint); color: var(--accent) }
 .p-ack::before    { background: var(--accent) }
 .p-na       { background: var(--surface-3); color: var(--ink-faint) }
 .p-na::before     { background: var(--ink-faint) }
+/* P21 ส่วนที่ 2 · สถานะการบังคับใช้ — คนละแกนกับสถานะการประเมินข้างบน
+   ยกเลิกบางส่วน = เหลือง · รอตรวจสอบ = ฟ้า (ยังไม่มีใครยืนยัน จึงไม่ใช้สีเขียว/แดง) */
+.p-partial   { background: var(--warn-bg); color: var(--warn) }
+.p-partial::before   { background: var(--warn) }
+.p-uncertain { background: var(--accent-tint); color: var(--accent) }
+.p-uncertain::before { background: var(--accent) }
 .p-warn     { background: var(--warn-bg);   color: var(--warn) }
 .p-warn::before   { background: var(--warn) }
 .p-wait     { background: var(--surface-3); color: var(--ink-faint) }

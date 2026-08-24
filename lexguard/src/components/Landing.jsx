@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchAll } from '../lib/supabase.js'
+import { fetchAll, lawInForce } from '../lib/supabase.js'
 import { sumReqStats } from '../lib/ui.jsx'
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -34,9 +34,9 @@ export default function Landing({ onEnter }) {
     const cats = data?.cats || []
     const laws = data?.laws || []
     const comms = data?.comms || []
-    const inForce = laws.filter(l => l.status !== 'repealed' && l.active !== false)
-    // P21 · เคยนับเองซ้ำที่นี่ ทำให้ตัวเลขหน้าแรกเพี้ยนจาก Dashboard ได้เงียบๆ
-    // ตอนนี้เรียก helper กลางตัวเดียวกับทุกหน้า — สูตรเปลี่ยนที่เดียวแล้วตรงกันหมด
+    // ตัวกรองจากส่วนที่ 2 (lawInForce ดู law_status เป็นหลัก รองรับ status='repealed' เดิมด้วย)
+    // + สูตรนับจากส่วนที่ 1 (helper กลางตัวเดียวกับทุกหน้า — สูตรเปลี่ยนที่เดียวแล้วตรงกันหมด)
+    const inForce = laws.filter(l => lawInForce(l) && l.active !== false)
     const s = sumReqStats(inForce)
     const { met, unmet: nc, ack, na, waiting, assessed } = s
     const req = s.total

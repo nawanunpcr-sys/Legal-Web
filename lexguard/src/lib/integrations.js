@@ -2,7 +2,7 @@
 // Integrations & export helpers
 // ───────────────────────────────────────────────────────────────
 
-import { REQ_STATUS, REQ_STATUS_ORDER, WAITING_STATUS, reqKind } from './supabase.js'
+import { REQ_STATUS, REQ_STATUS_ORDER, WAITING_STATUS, LAW_STATUS, reqKind } from './supabase.js'
 
 const TH_MONTHS_FULL = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 const xesc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
@@ -18,8 +18,11 @@ export function exportLawsToExcel(laws, catMap = {}) {
   // ถ้าไฟล์ส่งออกไม่มีช่องนี้ ผู้ตรวจ ISO จะเห็นแค่เครื่องหมายถูกโดยไม่รู้ว่าทำไม
   const HEAD = ['ลำดับ', 'เอกสารสนับสนุน', 'กระทรวง', 'ชื่อกฎหมายและข้อปฏิบัติ',
     'สรุปสาระสำคัญและหัวข้อควบคุมเอกสาร', 'วันที่ประกาศใช้', 'หน่วยงานรับผิดชอบ',
-    'C', 'NC', 'Ack', '-', 'เหตุผลประกอบสถานะ', 'การรายงานผล', 'ความถี่ของการตรวจสอบ', 'เอกสารที่เกี่ยวข้อง']
-  const WIDTHS = [42, 90, 110, 200, 320, 90, 110, 32, 32, 34, 32, 200, 110, 120, 140]
+    // ส่วนที่ 1 · ช่องติ๊ก 4 สถานะการประเมิน + เหตุผล
+    'C', 'NC', 'Ack', '-', 'เหตุผลประกอบสถานะ', 'การรายงานผล', 'ความถี่ของการตรวจสอบ', 'เอกสารที่เกี่ยวข้อง',
+    // ส่วนที่ 2 · สถานะการบังคับใช้ต่อท้าย — ผู้ตรวจต้องเห็นในไฟล์ ไม่ใช่เฉพาะบนหน้าจอ
+    'สถานะการบังคับใช้', 'ฉบับที่ยกเลิก', 'ฉบับใหม่ที่ใช้แทน']
+  const WIDTHS = [42, 90, 110, 200, 320, 90, 110, 32, 32, 34, 32, 200, 110, 120, 140, 110, 220, 220]
   const LAST_COL = HEAD.length - 1
 
   const byCat = {}
@@ -54,6 +57,10 @@ export function exportLawsToExcel(laws, catMap = {}) {
         cell(r.report_to || ''),
         cell(r.frequency || ''),
         cell(r.documents || ''),
+        // แถวแรกของกฎหมายเท่านั้น — สามคอลัมน์นี้เป็นข้อมูลระดับฉบับ ไม่ใช่ระดับข้อปฏิบัติ
+        cell(i === 0 ? (LAW_STATUS[l.law_status || 'in_force']?.label || '') : ''),
+        cell(i === 0 ? (l.repealed_by_title || '') : ''),
+        cell(i === 0 ? (l.replacement_law_title || l.replaced_by_code || '') : ''),
       ].join('') + '</Row>').join('')
     }).join('')
     const band = `<Row ss:Height="20"><Cell ss:StyleID="band" ss:MergeAcross="${LAST_COL}"><Data ss:Type="String">หมวด ${xesc(code)} : ${xesc(catMap[code]?.name || '')}</Data></Cell></Row>`
