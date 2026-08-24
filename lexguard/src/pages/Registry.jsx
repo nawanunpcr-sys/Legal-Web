@@ -3,7 +3,7 @@
 // Moved verbatim from App.jsx (pure refactor).
 // P19 · รับ History + Repealed เข้ามาเป็นแท็บในหน้าเดียว (ลดเมนูหลักเหลือ 4 อัน)
 import { useState, useMemo, useEffect } from 'react'
-import { LAW_TYPES, fetchStaging } from '../lib/supabase.js'
+import { LAW_TYPES, fetchStaging, REQ_STATUS, REQ_STATUS_ORDER, WAITING_STATUS } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { I } from '../components/icons.jsx'
 import AssessForm from '../components/AssessForm.jsx'
@@ -181,9 +181,14 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   useEffect(()=>{ let live=true; fetchStaging().then(r=>{ if(live) setStaging(r) }).catch(()=>{}); return ()=>{ live=false } },[])
   const stagingLaws=useMemo(()=>{ const m={}; staging.forEach(r=>{ const k=(r.cat||'')+'|'+r.law_code; (m[k]=m[k]||{cat:r.cat,law_code:r.law_code,law_name:r.law_name,ministry:r.ministry,created_at:r.created_at,reqs:0}).reqs++ }); return Object.values(m) },[staging])
   // Task 6.1 · จำ filter ต่อหน้า (lg_filters.registry)
-  const [f,setF,resetF,filterActive]=usePageFilters('registry',{cat:'all',act:'all',sortKey:'code',sortDir:1})
-  const {cat,act,sortKey,sortDir}=f
-  const setCat=v=>setF('cat',v), setAct=v=>setF('act',v)
+  // P21 · เพิ่มตัวกรองสถานะการประเมิน (st) — 'all' | 4 สถานะ | 'waiting'
+  const [f,setF,resetF,filterActive]=usePageFilters('registry',{cat:'all',act:'all',st:'all',sortKey:'code',sortDir:1})
+  const {cat,act,st,sortKey,sortDir}=f
+  const setCat=v=>setF('cat',v), setAct=v=>setF('act',v), setSt=v=>setF('st',v)
+  // นับจำนวน "ฉบับ" ที่มีข้อปฏิบัติสถานะนั้นอย่างน้อย 1 ข้อ (ไม่ใช่จำนวนข้อ)
+  // ตัวกรองทำงานระดับกฎหมาย จึงต้องนับระดับเดียวกัน ไม่งั้นตัวเลขบน chip จะไม่ตรงกับผลที่กรองได้
+  const hasKind=(l,k)=>(l.reqs||[]).some(r=>reqKind(r)===k)
+  const countKind=k=>laws.filter(l=>hasKind(l,k)).length
   const [flashId,setFlashId]=useState(null)       // P14·T1 · แถวที่เพิ่งเพิ่ม (ไฮไลต์ 2 วิ)
   const [assessTarget,setAssessTarget]=useState(null)   // P14·T2 · { law, wf } เปิด popup ประเมิน
   const [deleteTarget,setDeleteTarget]=useState(null)   // ลบกฎหมายจากแถวทะเบียน (admin)
@@ -218,6 +223,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   const reqMatchText=l=>{ if(!q||nameHit(l)) return null; const r=reqHit(l); return r?(r.text||r.responsible||''):null }
   const rows=laws.filter(l=>(cat==='all'||l.cat===cat)
     &&(act==='all'||(act==='active'?l.active!==false:l.active===false))
+    &&(st==='all'||hasKind(l,st))
     &&matchQ(l))
   // Task 3.1 · comparator ตาม sortKey/sortDir (ใช้ภายในแต่ละกลุ่มหมวด/ชั้น)
   const sortCmp=(a,b)=>{
@@ -236,6 +242,17 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
       <span className={'chip'+(act==='all'?' active':'')} onClick={()=>setAct('all')}>ทั้งหมด</span>
       <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({laws.filter(l=>l.active!==false).length})</span>
       <span className={'chip'+(act==='inactive'?' active':'')} onClick={()=>setAct('inactive')}>ไม่ใช้แล้ว ({laws.filter(l=>l.active===false).length})</span>
+      <span style={{margin:'0 6px',color:'var(--line)'}}>|</span>
+      {/* P21 · กรองตามสถานะการประเมิน — แสดงฉบับที่มีข้อปฏิบัติสถานะนั้นอย่างน้อย 1 ข้อ */}
+      <span className={'chip'+(st==='all'?' active':'')} onClick={()=>setSt('all')} title="ไม่กรองตามสถานะการประเมิน">ทุกสถานะ</span>
+      {REQ_STATUS_ORDER.map(k=>(
+        <span key={k} className={'chip'+(st===k?' active':'')} onClick={()=>setSt(k)} title={REQ_STATUS[k].desc}>
+          {REQ_STATUS[k].code} {REQ_STATUS[k].label} ({countKind(k)})
+        </span>
+      ))}
+      <span className={'chip'+(st==='waiting'?' active':'')} onClick={()=>setSt('waiting')} title="มีข้อที่ยังไม่มีใครประเมิน">
+        ยังไม่ประเมิน ({countKind('waiting')})
+      </span>
       {filterActive && <span className="chip" style={{marginLeft:'auto',cursor:'pointer'}} onClick={resetF} title="ล้างตัวกรองทั้งหมด">✕ ล้างตัวกรอง</span>}
     </div>
     <div className="cat-cards">
@@ -422,8 +439,11 @@ function ComplianceLawRow({l,onToggle,onOpen}){
         <button onClick={()=>setOpen(o=>!o)} title="กางข้อปฏิบัติ" style={{border:'none',background:'none',cursor:'pointer',color:'var(--ink-faint)',width:18}}>{open?'▾':'▸'}</button>
         <span className="law-code">{l.code}</span>
         <span style={{fontSize:13,flex:1,cursor:'pointer'}} onClick={()=>setOpen(o=>!o)}>{l.name.slice(0,60)}{l.name.length>60?'…':''}</span>
-        <span style={{fontSize:12,color:'var(--ink-faint)'}} className="num" title={`สอดคล้อง ${s.met} · ไม่สอดคล้อง ${s.unmet} · รอผู้เกี่ยวข้องประเมิน ${s.waiting}`}>
-          {s.pct==null?'ยังไม่ประเมิน':`C ${s.met}/${s.assessed}`}{s.waiting>0?` · รอ ${s.waiting}`:''}</span>
+        <span style={{fontSize:12,color:'var(--ink-faint)'}} className="num"
+          title={`สอดคล้อง ${s.met} · ไม่สอดคล้อง ${s.unmet} · เพื่อทราบ ${s.ack} · ไม่เกี่ยวข้อง ${s.na} · ยังไม่ประเมิน ${s.waiting}`}>
+          {/* pct เป็น null = ไม่มีข้อที่เข้าฐาน C+NC เลย (เช่นมีแต่ Ack/ไม่เกี่ยวข้อง) → N/A ไม่ใช่ 0% */}
+          {s.pct==null?(s.ack+s.na>0?'N/A':'ยังไม่ประเมิน'):`C ${s.met}/${s.assessed}`}
+          {s.ack>0?` · Ack ${s.ack}`:''}{s.na>0?` · ไม่เกี่ยวข้อง ${s.na}`:''}{s.waiting>0?` · รอ ${s.waiting}`:''}</span>
         <Pill s={l.status}/>
         <button className="btn btn-ghost" style={{padding:'2px 9px',fontSize:11}} onClick={()=>onOpen(l)}>เปิด</button>
       </div>
@@ -431,15 +451,17 @@ function ComplianceLawRow({l,onToggle,onOpen}){
         <div style={{paddingLeft:34,paddingBottom:10}}>
           {l.reqs.length===0 && <div style={{fontSize:12,color:'var(--ink-faint)',padding:'4px 0'}}>ไม่มีข้อปฏิบัติ</div>}
           {l.reqs.map(r=>{ const k=reqKind(r)
-            const bg=k==='met'?'var(--ok)':k==='unmet'?'var(--bad)':'var(--grayfill)'
-            const fg=k==='waiting'?'var(--ink-faint)':'#fff'
-            const lab=k==='met'?'C':k==='unmet'?'NC':'รอ'
+            const st=REQ_STATUS[k]||WAITING_STATUS
+            // P21 · ปุ่มนี้เคยสลับ met↔unmet ในคลิกเดียว ซึ่งใช้กับ 4 สถานะไม่ได้
+            // (Ack/ไม่เกี่ยวข้อง ต้องกรอกเหตุผลก่อนบันทึก) จึงพาไปที่แผงเลือกเต็มในหน้ารายละเอียดแทน
             return (
             <div key={r.id} style={{display:'flex',gap:9,padding:'6px 0',alignItems:'flex-start'}}>
-              <button onClick={()=>onToggle(l,r)} disabled={!can('edit')} title={can('edit')?(reqEvalTitle(r)+' · คลิกเพื่อสลับสอดคล้อง/ไม่สอดคล้อง'):NO_PERM}
-                style={{flexShrink:0,minWidth:22,height:22,padding:'0 5px',borderRadius:5,border:'none',cursor:can('edit')?'pointer':'not-allowed',fontSize:k==='waiting'?9.5:11,fontWeight:700,fontFamily:'var(--mono)',
-                  background:bg,color:fg}}>{lab}</button>
-              <span style={{fontSize:12.5,flex:1,lineHeight:1.5,color:k==='met'?'var(--ink-soft)':'var(--ink)'}} title={reqEvalTitle(r)}>{r.text}</span>
+              <button onClick={()=>onOpen(l)} title={reqEvalTitle(r)+' · เปิดรายละเอียดเพื่อเปลี่ยนสถานะ'}
+                style={{flexShrink:0,minWidth:26,height:22,padding:'0 5px',borderRadius:5,border:'none',cursor:'pointer',fontSize:k==='waiting'?9.5:11,fontWeight:700,fontFamily:'var(--mono)',
+                  background:st.bg,color:st.color}}>{st.code}</button>
+              <span style={{fontSize:12.5,flex:1,lineHeight:1.5,color:k==='met'?'var(--ink-soft)':'var(--ink)'}} title={reqEvalTitle(r)}>{r.text}
+                {r.status_reason && <em style={{display:'block',fontSize:11.5,color:'var(--ink-faint)',fontStyle:'normal',marginTop:2}}>เหตุผล: {r.status_reason}</em>}
+              </span>
             </div>
           )})}
         </div>

@@ -8,7 +8,8 @@ import { supabase, hasSupabase, fetchAll,
          fetchReports, setReportEvent, markReportSubmitted, saveReport, fetchTasks,
          fetchWorkflow, subscribeWorkflow, subscribeLaws, createAddWorkflow, createMonitorWorkflow,
          submitWorkflowAssessment, closeWorkflowPlan, fetchDiscoveredLaws, fetchSearchLog,
-         fetchSettings, saveSettings, DEFAULT_SETTINGS } from './lib/supabase.js'
+         fetchSettings, saveSettings, DEFAULT_SETTINGS,
+         computeLawStatus, reqStatusLabel, reqKind } from './lib/supabase.js'
 import { AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
          getSession as getAuthSession, signOut as authSignOut, onAuthChange } from './lib/auth.js'
 import LawDrawer from './components/LawDrawer.jsx'
@@ -218,7 +219,7 @@ export default function App(){
 
   const bellNotifications = useMemo(()=>{
     const out=[]
-    activeLaws.forEach(l=>{ if(l.status==='bad') out.push({type:'bad',law:l,text:l.code+' ยังไม่สอดคล้อง',sub:l.name.slice(0,60)}) })
+    activeLaws.forEach(l=>{ if(l.status==='bad') out.push({type:'bad',law:l,text:l.code+' ยังไม่สอดคล้อง',sub:l.name.slice(0,60)}) })   // status คำนวณจาก NC ที่ประเมินแล้วเท่านั้น (P21)
     comms.forEach(c=>{ if(c.next_scheduled_date){ const d=daysTo(c.next_scheduled_date); const nb=c.notify_days_before||7
       if(d<0) out.push({type:'bad',comm:c,goView:'comm',text:'การสื่อสารเกินกำหนด: '+c.topic.slice(0,50),sub:'เกิน '+Math.abs(d)+' วัน — '+thDate(c.next_scheduled_date)})
       else if(d<=nb) out.push({type:'comm',comm:c,days:d,text:'การสื่อสาร: '+c.topic.slice(0,50),sub:'ครบกำหนดใน '+d+' วัน — '+thDate(c.next_scheduled_date)}) }})
@@ -252,34 +253,39 @@ export default function App(){
     setShowNotify(true)
   },[authed, loading, bellNotifications])
 
-  async function toggleReq(law, req){
-    const next = req.status==='met' ? 'unmet' : 'met'
-    const stamp = { status:next, evaluated_by:currentUserName(), evaluated_at:new Date().toISOString() }
+  // P21 · เดิมเป็นปุ่มสลับ met↔unmet · ตอนนี้รับสถานะที่ผู้ใช้เลือกมาตรงๆ ครบ 4 สถานะ
+  // พร้อมเหตุผลประกอบ (บังคับเมื่อเป็น เพื่อทราบ / ไม่เกี่ยวข้อง — ตรวจซ้ำที่ setRequirementStatus)
+  async function setReqStatus(law, req, next, reason=''){
+    const stamp = { status:next, status_reason:(reason||'').trim()||null,
+                    evaluated_by:currentUserName(), evaluated_at:new Date().toISOString() }
     // snapshot for rollback if the write fails (optimistic UI)
     const prevLaws = laws
     const prevOpen = openLaw
     setLaws(prev=>prev.map(l=>{
       if(l.id!==law.id) return l
       const reqs=l.reqs.map(r=>r.id===req.id?{...r,...stamp}:r)
-      const status=reqs.some(r=>r.status==='unmet')?'bad':'ok'
-      return {...l,reqs,status}
+      return {...l,reqs,status:computeLawStatus(reqs)}
     }))
-    setOpenLaw(prev=>prev&&prev.id===law.id?{...prev,reqs:prev.reqs.map(r=>r.id===req.id?{...r,...stamp}:r),status:prev.reqs.map(r=>r.id===req.id?{...r,...stamp}:r).some(r=>r.status==='unmet')?'bad':'ok'}:prev)
+    setOpenLaw(prev=>{
+      if(!prev||prev.id!==law.id) return prev
+      const reqs=prev.reqs.map(r=>r.id===req.id?{...r,...stamp}:r)
+      return {...prev,reqs,status:computeLawStatus(reqs)}
+    })
     try{
       // เขียนสถานะจริงก่อน — ถ้าตรงนี้ไม่พังถือว่า "บันทึกสำเร็จ"
-      await setRequirementStatus(req.id,next)
-      await recomputeLawStatus(law.id,law.reqs.map(r=>r.id===req.id?{...r,status:next}:r))
+      await setRequirementStatus(req.id,next,reason)
+      await recomputeLawStatus(law.id,law.reqs.map(r=>r.id===req.id?{...r,...stamp}:r))
     }
-    catch(e){ setLaws(prevLaws); setOpenLaw(prevOpen); toast('บันทึกไม่สำเร็จ: '+e.message,'error'); return }
+    catch(e){ setLaws(prevLaws); setOpenLaw(prevOpen); toast('บันทึกไม่สำเร็จ: '+e.message,'error'); throw e }
     // บันทึก audit log + รีเฟรชประวัติ = best-effort (ล้มเหลวไม่ถือว่าบันทึกสถานะไม่สำเร็จ)
-    logActivity({ action:'requirement', law_id:law.id, law_code:law.code, law_name:law.name, detail:(next==='met'?'ปรับเป็นสอดคล้อง: ':'ปรับเป็นยังไม่สอดคล้อง: ')+(req.text||'').slice(0,80) })
+    logActivity({ action:'requirement', law_id:law.id, law_code:law.code, law_name:law.name, detail:'ปรับเป็น '+reqStatusLabel(next)+': '+(req.text||'').slice(0,80) })
       .then(()=>fetchActivity().then(setActivity)).catch(err=>console.warn('activity log failed (ignored):',err?.message))
   }
 
   // เพิ่มข้อปฏิบัติใหม่เข้ากฎหมายที่อยู่ในทะเบียนแล้ว (จาก LawDrawer)
   async function addReq(law, form){
     const newReq = await addRequirement(law.id, form)
-    const merge = l => { const reqs=[...l.reqs, newReq]; return {...l, reqs, status: reqs.some(r=>r.status==='unmet')?'bad':'ok'} }
+    const merge = l => { const reqs=[...l.reqs, newReq]; return {...l, reqs, status: computeLawStatus(reqs)} }
     setLaws(prev=>prev.map(l=>l.id===law.id?merge(l):l))
     setOpenLaw(prev=>prev&&prev.id===law.id?merge(prev):prev)
     await recomputeLawStatus(law.id, [...law.reqs, newReq])
@@ -392,9 +398,10 @@ export default function App(){
     try{
       await submitWorkflowAssessment(wf, law, payload)
       const d=await fetchAll(); setLaws(d.laws); await loadWorkflow(); fetchActivity().then(setActivity)
-      setFlowPopup({ title:'ประเมินเสร็จสิ้น', msg: payload.result==='สอดคล้อง'
-        ? `${law?.code||''} ประเมินแล้ว: สอดคล้อง — ปิดรายการ`
-        : `${law?.code||''} ประเมินแล้ว: ไม่สอดคล้อง — มีแผนปรับปรุงรอปิด` })
+      // P21 · เฉพาะ "ไม่สอดคล้อง" เท่านั้นที่ค้างแผนปรับปรุงไว้ · อีก 3 ผลปิดรายการได้ทันที
+      setFlowPopup({ title:'ประเมินเสร็จสิ้น', msg: payload.result==='ไม่สอดคล้อง'
+        ? `${law?.code||''} ประเมินแล้ว: ไม่สอดคล้อง — มีแผนปรับปรุงรอปิด`
+        : `${law?.code||''} ประเมินแล้ว: ${payload.result} — ปิดรายการ` })
     }catch(e){ toast('บันทึกผลประเมินไม่สำเร็จ: '+e.message); throw e }   // P15·T2 · โยนต่อเพื่อไม่ให้ popup/drawer ปิด (ข้อมูลที่พิมพ์ไม่หาย)
   }
   // Process 3 · ปิดแผนปรับปรุง
@@ -479,9 +486,11 @@ export default function App(){
   function handleExportPdf(mode, sel){
     let list = inForceLaws
     if(mode==='cats') list = inForceLaws.filter(l=>sel.has(l.cat))
+    // P21 · "เฉพาะ NC" = ข้อที่ประเมินแล้วและผลเป็นไม่สอดคล้องเท่านั้น
+    // เพื่อทราบ / ไม่เกี่ยวข้อง / ยังไม่ประเมิน ต้องไม่หลุดเข้ารายงานฉบับนี้
     else if(mode==='nc') list = inForceLaws
-      .filter(l=>l.reqs.some(r=>r.status==='unmet'))
-      .map(l=>({...l, reqs:l.reqs.filter(r=>r.status==='unmet')}))
+      .filter(l=>l.reqs.some(r=>reqKind(r)==='unmet'))
+      .map(l=>({...l, reqs:l.reqs.filter(r=>reqKind(r)==='unmet')}))
     setShowPdf(false)
     buildReport({ laws:list, catName:Object.fromEntries(cats.map(c=>[c.code,c.name])), catColor:Object.fromEntries(cats.map(c=>[c.code,c.color])), settings, mode })
     setTimeout(()=>window.print(),80)
@@ -644,7 +653,7 @@ export default function App(){
 
       {openLaw && (
         <LawDrawer law={openLaw} catMap={catMap} settings={settings} onClose={()=>setOpenLaw(null)}
-          onToggle={toggleReq} onAddReq={addReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive} onDelete={handleDeleteLaw}
+          onToggle={setReqStatus} onAddReq={addReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive} onDelete={handleDeleteLaw}
           thDate={thDate}/>
       )}
       {showAddLaw && <AddLawFlow cats={cats} allLaws={laws} suggest={suggest} initialData={addLawInit}

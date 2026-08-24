@@ -1,7 +1,7 @@
 // Shared UI helpers & primitives used across App layout and page components.
 // Extracted verbatim from App.jsx during the page split — behavior unchanged.
 import { useState, useEffect } from 'react'
-import { STATUS } from './supabase.js'
+import { STATUS, REQ_STATUS, WAITING_STATUS, reqKind, isWaitingReq, reqStatusLabel } from './supabase.js'
 
 // localStorage-backed state (persists filters/mode across reloads).
 export function usePersist(key, def){
@@ -26,30 +26,38 @@ export function usePageFilters(page, defaults) {
   return [state, set, reset, isActive]
 }
 
-// ── P18 · แยกแยะข้อปฏิบัติ 3 แบบ ─────────────────────────────────────────────
-//  met                          = ประเมินแล้ว: สอดคล้อง
-//  unmet (NC จริง)              = ประเมินแล้ว: ไม่สอดคล้อง
-//  waiting (รอผู้เกี่ยวข้องประเมิน) = ยังไม่ตัดสิน — เก็บเป็น status 'unmet' + evaluated_at NULL + note marker
-//    (ใช้ note marker เป็นตัวแยก เพื่อไม่ให้ข้อมูลเดิม (unmet ที่ไม่มี evaluated_at) ถูกนับเป็น waiting)
-export const isWaitingReq = r => r?.status === 'unmet' && !r?.evaluated_at && /รอผู้เกี่ยวข้องประเมิน/.test(r?.note || '')
-export const reqKind = r => r?.status === 'met' ? 'met' : (isWaitingReq(r) ? 'waiting' : 'unmet')
-// รวมสถิติข้อปฏิบัติของกฎหมายหลายฉบับ — % นับเฉพาะข้อที่ "ประเมินแล้ว" (met + unmet) ไม่รวม waiting
+// ── P21 · สถานะผลการประเมิน 4 สถานะ ─────────────────────────────────────────
+// ทะเบียนสถานะอยู่ที่ชั้นข้อมูล (supabase.js) เพราะต้องสะท้อน CHECK constraint
+// ของ migration 044 · ที่นี่แค่ re-export ต่อ เพื่อให้หน้าจอที่ import จาก ui.jsx
+// อยู่แล้วใช้ได้เหมือนเดิม และไม่เกิด import วนระหว่างสองไฟล์
+export { REQ_STATUS, REQ_STATUS_ORDER, REQ_STATUS_VALUES, reqStatusLabel, reasonRequired,
+         WAITING_STATUS, isWaitingReq, reqKind } from './supabase.js'
+
+// รวมสถิติข้อปฏิบัติของกฎหมายหลายฉบับ
+//   pct = C / (C + NC) × 100 — Ack / ไม่เกี่ยวข้อง / ยังไม่ประเมิน ไม่อยู่ในตัวหาร
+//   pct = null เมื่อฐานเป็นศูนย์ (เช่นฉบับที่มีแต่ Ack กับ ไม่เกี่ยวข้อง) → หน้าจอแสดง "N/A"
 export function sumReqStats(laws) {
-  let met = 0, unmet = 0, waiting = 0
-  for (const l of (laws || [])) for (const r of (l.reqs || [])) {
-    const k = reqKind(r); if (k === 'met') met++; else if (k === 'waiting') waiting++; else unmet++
+  const n = { met: 0, unmet: 0, acknowledged: 0, not_applicable: 0, waiting: 0 }
+  for (const l of (laws || [])) for (const r of (l.reqs || [])) n[reqKind(r)]++
+  const assessed = n.met + n.unmet
+  return {
+    ...n,
+    ack: n.acknowledged, na: n.not_applicable,          // ชื่อสั้นไว้ใช้ในหน้าจอ
+    total: assessed + n.acknowledged + n.not_applicable + n.waiting,
+    assessed,
+    pct: assessed ? Math.round(n.met / assessed * 100) : null,
   }
-  const assessed = met + unmet
-  return { total: met + unmet + waiting, met, unmet, waiting, assessed, pct: assessed ? Math.round(met / assessed * 100) : null }
 }
 export const reqStats = law => sumReqStats([law])
 // ค่าใช้จัดเรียง: ไม่มีข้อ=100, ประเมินแล้ว=pct, มีข้อแต่ยังไม่ประเมินเลย=-1 (จมล่างสุด)
 export const prog = l => { const s = reqStats(l); if (!s.total) return 100; return s.pct == null ? -1 : s.pct }
-// ป้ายกำกับ tooltip ผู้ประเมิน/วันที่ (met/unmet) หรือรายละเอียดผู้รับผิดชอบ (waiting)
+// ป้ายกำกับ tooltip: สถานะ + ผู้ประเมิน/วันที่ + เหตุผล (Ack/NA) หรือรายละเอียดผู้รับผิดชอบ (waiting)
 export const reqEvalTitle = r => {
-  if (isWaitingReq(r)) return r?.note || 'รอผู้เกี่ยวข้องประเมิน'
-  if (r?.evaluated_by || r?.evaluated_at) return `ประเมินโดย ${r?.evaluated_by || '—'}${r?.evaluated_at ? ' · ' + formatThaiDate(r.evaluated_at) : ''}`
-  return 'ยังไม่ได้บันทึกผู้ประเมิน'
+  if (isWaitingReq(r)) return r?.note || 'ยังไม่ประเมิน'
+  const parts = [reqStatusLabel(reqKind(r))]
+  if (r?.evaluated_by || r?.evaluated_at) parts.push(`ประเมินโดย ${r?.evaluated_by || '—'}${r?.evaluated_at ? ' · ' + formatThaiDate(r.evaluated_at) : ''}`)
+  if (r?.status_reason) parts.push('เหตุผล: ' + r.status_reason)
+  return parts.join(' · ')
 }
 
 // Extract a Buddhist-era (พ.ศ.) year from the messy free-text issue_date
@@ -209,11 +217,12 @@ export const daysTo = s => Math.ceil((new Date(s) - new Date()) / 86400000)
 export const beYearFromDate = d => { if (!d) return null; const x = new Date(d); return isNaN(x) ? null : x.getFullYear() + 543 }
 
 export const Pill = ({ s }) => <span className={'pill ' + (STATUS[s]?.cls || 'p-ok')}>{STATUS[s]?.label || s}</span>
-// P18 · ป้ายสถานะข้อปฏิบัติรายข้อ — สอดคล้อง(เขียว) / ไม่สอดคล้อง(แดง) / รอผู้เกี่ยวข้องประเมิน(เทา)
+// P21 · ป้ายสถานะข้อปฏิบัติรายข้อ — อ่านคลาสและชื่อไทยจากทะเบียนกลาง
+// แสดงทั้งรหัสย่อและชื่อไทยเสมอ ไม่ให้ผู้ใช้ต้องแยกสถานะด้วยสีอย่างเดียว
 export const ReqStatusPill = ({ req }) => {
-  const map = { met: ['p-ok', 'สอดคล้อง'], unmet: ['p-bad', 'ไม่สอดคล้อง'], waiting: ['p-wait', 'รอผู้เกี่ยวข้องประเมิน'] }
-  const [cls, label] = map[reqKind(req)]
-  return <span className={'pill ' + cls} title={reqEvalTitle(req)}>{label}</span>
+  const k = reqKind(req)
+  const st = REQ_STATUS[k] || WAITING_STATUS
+  return <span className={'pill ' + st.cls} title={reqEvalTitle(req)}>{st.code} — {st.label}</span>
 }
 export const Tag = ({ c, color }) => <span className="tag" style={{ borderColor: (color || '#888') + '33', color: color || '#888' }}>{c}</span>
 // Small "in-force" marker — green "ใช้อยู่" when the law is active, grey "ไม่ใช้แล้ว" when retired.

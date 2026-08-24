@@ -3,6 +3,35 @@
 // source-data/F-259 workbook: form no. top-right, per-category pages, C/NC
 // evaluation and an end-of-report signature block.
 import { thDate, reqStats, reqKind } from '../lib/ui.jsx'
+import { REQ_STATUS, REQ_STATUS_ORDER, WAITING_STATUS } from '../lib/supabase.js'
+
+// P21 · ป้ายสถานะ 4 สถานะ + ยังไม่ประเมิน — ใช้ร่วมกันทั้งรายงานทะเบียนและรายงานรายฉบับ
+// รหัสย่อมาจากทะเบียนกลาง ไม่เขียนซ้ำในไฟล์นี้ · คลาส CSS ใช้ชื่อสถานะตรงๆ
+const BADGE_CLS = { met:'ok', unmet:'bad', acknowledged:'ack', not_applicable:'na', waiting:'wait' }
+const statusBadge = r => {
+  const k = reqKind(r)
+  const st = REQ_STATUS[k] || WAITING_STATUS
+  return `<span class="badge ${BADGE_CLS[k] || 'wait'}" title="${ESC(st.label)}">${ESC(st.code)}</span>`
+}
+
+// คำอธิบายสัญลักษณ์ท้ายรายงาน — ข้อกำหนด F-259 · ต้องพิมพ์ติดไปกับเอกสารเสมอ
+// ไม่ใช่ตัวเลือก เพราะผู้ตรวจ ISO อ่านไฟล์ที่พิมพ์ออกมา ไม่ได้เปิดหน้าจอระบบ
+const legendBlock = () => `
+  <table class="legend">
+    <tr><td class="lgh" colspan="3">คำอธิบายสัญลักษณ์สถานะการประเมิน</td></tr>
+    ${REQ_STATUS_ORDER.map(k => `<tr>
+      <td class="ctr"><span class="badge ${BADGE_CLS[k]}">${ESC(REQ_STATUS[k].code)}</span></td>
+      <td class="lgn">${ESC(REQ_STATUS[k].label)}</td>
+      <td>${ESC(REQ_STATUS[k].desc)}${REQ_STATUS[k].inKpi ? '' : ' (ไม่นับในอัตราความสอดคล้อง)'}</td>
+    </tr>`).join('')}
+    <tr>
+      <td class="ctr"><span class="badge wait">${ESC(WAITING_STATUS.code)}</span></td>
+      <td class="lgn">${ESC(WAITING_STATUS.label)}</td>
+      <td>ยังไม่มีผู้ประเมินตัดสินสถานะของข้อนี้ (ไม่นับในอัตราความสอดคล้อง)</td>
+    </tr>
+    <tr><td colspan="3" class="lgf">อัตราความสอดคล้อง = C &divide; (C + NC) &times; 100 &nbsp;·&nbsp; Ack และ ไม่เกี่ยวข้อง ไม่นับเป็นตัวหาร &nbsp;·&nbsp; ฉบับที่มีเฉพาะ Ack และ ไม่เกี่ยวข้อง แสดงผลเป็น N/A</td></tr>
+  </table>`
+
 
 const ESC = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
@@ -21,11 +50,12 @@ const COLS = [
   ['สรุปสาระสำคัญ', '22%'],
   ['วันที่ประกาศ/บังคับใช้', '7%'],
   ['ผู้รับผิดชอบ', '7%'],
-  ['สถานะ<br/>C / NC', '4%'],
-  ['ความถี่การตรวจสอบ', '7%'],
-  ['การรายงานผล', '6%'],
-  ['เอกสารที่เกี่ยวข้อง', '8%'],
-  ['หมายเหตุ', '6%'],
+  ['สถานะ<br/>C / NC / Ack / -', '4%'],
+  ['เหตุผลประกอบสถานะ', '7%'],
+  ['ความถี่การตรวจสอบ', '6%'],
+  ['การรายงานผล', '5%'],
+  ['เอกสารที่เกี่ยวข้อง', '7%'],
+  ['หมายเหตุ', '5%'],
 ]
 
 // ── P10 Task 11 · สรุปประจำเดือน (A4 แนวตั้ง, ฟอนต์ไทยเดิม) — reuse #print-report ──
@@ -47,6 +77,9 @@ export function buildMonthlyReport({ month, year, settings = {}, activity = [], 
   const assessed = workflowRows.filter(w => inMonth(w.assessed_at))
   const compliant = assessed.filter(w => w.assess_result === 'สอดคล้อง').length
   const nc = assessed.filter(w => w.assess_result === 'ไม่สอดคล้อง').length
+  // P21 · สองผลนี้เคยไม่มีที่อยู่ในรายงานประจำเดือน ทำให้ยอด "ประเมินแล้ว" ไม่ครบตามจริง
+  const ackCount = assessed.filter(w => w.assess_result === 'เพื่อทราบ').length
+  const naCount  = assessed.filter(w => w.assess_result === 'ไม่เกี่ยวข้อง').length
   const plansOpened = workflowRows.filter(w => inMonth(w.assessed_at) && w.assess_result === 'ไม่สอดคล้อง' && w.improvement_plan).length
   const plansClosed = workflowRows.filter(w => inMonth(w.plan_closed_at)).length
   const searchM = searchLog.filter(s => inMonth(s.searched_at))
@@ -57,6 +90,8 @@ export function buildMonthlyReport({ month, year, settings = {}, activity = [], 
       ${stat(added, 'กฎหมายใหม่ที่เพิ่ม')}
       ${stat(compliant, 'ประเมิน: สอดคล้อง')}
       ${stat(nc, 'ประเมิน: ไม่สอดคล้อง')}
+      ${stat(ackCount, 'ประเมิน: เพื่อทราบ')}
+      ${stat(naCount, 'ประเมิน: ไม่เกี่ยวข้อง')}
       ${stat(plansOpened, 'แผนปรับปรุงที่เปิด')}
       ${stat(plansClosed, 'แผนที่ปิด')}
       ${stat(searchM.length, 'ค้นหากฎหมาย (ครั้ง)')}
@@ -166,7 +201,6 @@ export function buildReport({ laws, catName = {}, catColor = {}, settings = {}, 
           <td rowspan="${span}">${ESC(l.ministry || '')}</td>
           <td rowspan="${span}" class="law">${ESC(l.name || '')}</td>` : ''
         const dateCell = i === 0 ? `<td rowspan="${span}" class="ctr">${ESC(l.issue_date || l.effective_date || '—')}</td>` : ''
-        const met = r.status === 'met', nc = r.status === 'unmet'
         const evidence = [r.documents, r.evidence_label].filter(Boolean).join(' · ')
         // ใส่ลิงก์ตัวบทจริง (source_url) ไว้ในคอลัมน์เอกสารที่เกี่ยวข้อง — แถวแรกของกฎหมาย
         const srcLine = i === 0 && l.source_url ? `<div class="src">ตัวบท: <a href="${ESC(l.source_url)}">${ESC(l.source_url)}</a></div>` : ''
@@ -174,7 +208,8 @@ export function buildReport({ laws, catName = {}, catColor = {}, settings = {}, 
           <td class="req">${ESC(r.text || '—')}</td>
           ${dateCell}
           <td>${ESC(r.responsible || '—')}</td>
-          <td class="ctr"><span class="badge ${met ? 'ok' : nc ? 'bad' : 'wait'}">${met ? 'C' : nc ? 'NC' : '—'}</span></td>
+          <td class="ctr">${statusBadge(r)}</td>
+          <td>${ESC(r.status_reason || '—')}</td>
           <td>${ESC(r.frequency || '—')}</td>
           <td>${ESC(r.report || '—')}</td>
           <td>${ESC(evidence || '—')}${srcLine}</td>
@@ -226,6 +261,13 @@ export function buildReport({ laws, catName = {}, catColor = {}, settings = {}, 
     #print-report .badge.ok  { color:#0a7a32; background:#e3f5e8 }
     #print-report .badge.bad { color:#c4271d; background:#fbe6e4 }
     #print-report .badge.wait{ color:#777; background:#eee }
+    #print-report .badge.ack { color:#0055b3; background:#e4eefb }
+    #print-report .badge.na  { color:#5a6068; background:#eef0f2 }
+    #print-report .legend { width:100%; border-collapse:collapse; margin-top:12px; font-size:11.5px; page-break-inside:avoid }
+    #print-report .legend td { border:1px solid #cfd3da; padding:3px 7px; vertical-align:top }
+    #print-report .legend .lgh { background:#f2f4f7; font-weight:700; text-align:center }
+    #print-report .legend .lgn { font-weight:700; white-space:nowrap }
+    #print-report .legend .lgf { background:#fbfbfc; color:#3a3f47 }
     #print-report .reg .law { font-weight:700; color:#1c2431 }
     #print-report .reg .req { white-space:pre-wrap }
     #print-report .reg .src { font-size:9.5px; color:#0a58ca; word-break:break-all; margin-top:2px }
@@ -256,6 +298,7 @@ export function buildReport({ laws, catName = {}, catColor = {}, settings = {}, 
       </tr>
     </table>
     ${sections || '<div style="padding:24px;text-align:center">ไม่มีรายการตามเงื่อนไขที่เลือก</div>'}
+    ${legendBlock()}
     ${signature}
   </div>`
 }
@@ -288,15 +331,17 @@ export function buildLawReport({ law, catName = '', catColor = '', settings = {}
   const stat = (n, lab, cls = '') => `<td class="st ${cls}"><div class="stn">${ESC(String(n))}</div><div class="stl">${ESC(lab)}</div></td>`
   const summary = `<table class="msum"><tr>
       ${stat(reqs.length, 'ข้อปฏิบัติทั้งหมด')}
-      ${stat(stats.met, 'สอดคล้อง', 'ok')}
-      ${stat(stats.unmet, 'ไม่สอดคล้อง', 'bad')}
-      ${stat(stats.waiting, 'รอประเมิน', 'wait')}
-      ${stat(stats.pct == null ? '—' : stats.pct + '%', '% ความสอดคล้อง')}
+      ${stat(stats.met, 'สอดคล้อง (C)', 'ok')}
+      ${stat(stats.unmet, 'ไม่สอดคล้อง (NC)', 'bad')}
+      ${stat(stats.ack, 'เพื่อทราบ (Ack)')}
+      ${stat(stats.na, 'ไม่เกี่ยวข้อง (-)')}
+      ${stat(stats.waiting, 'ยังไม่ประเมิน', 'wait')}
+      ${stat(stats.pct == null ? (stats.ack + stats.na > 0 ? 'N/A' : '—') : stats.pct + '%', '% ความสอดคล้อง')}
     </tr></table>`
 
   const reqRows = reqs.length ? reqs.map((r, i) => {
     const kind = reqKind(r)
-    const badge = kind === 'met' ? '<span class="badge ok">C</span>' : kind === 'unmet' ? '<span class="badge bad">NC</span>' : '<span class="badge wait">—</span>'
+    const badge = statusBadge(r)
     const evidence = [r.documents, r.evidence_label].filter(Boolean).join(' · ') || '—'
     const evalLine = r.evaluated_by ? `${ESC(r.evaluated_by)}${r.evaluated_at ? ' · ' + thDate(r.evaluated_at) : ''}` : 'ยังไม่ได้ประเมิน'
     return `<tr>
@@ -356,6 +401,13 @@ export function buildLawReport({ law, catName = '', catColor = '', settings = {}
     #print-report .badge.ok  { color:#0a7a32; background:#e3f5e8 }
     #print-report .badge.bad { color:#c4271d; background:#fbe6e4 }
     #print-report .badge.wait{ color:#777; background:#eee }
+    #print-report .badge.ack { color:#0055b3; background:#e4eefb }
+    #print-report .badge.na  { color:#5a6068; background:#eef0f2 }
+    #print-report .legend { width:100%; border-collapse:collapse; margin-top:12px; font-size:11.5px; page-break-inside:avoid }
+    #print-report .legend td { border:1px solid #cfd3da; padding:3px 7px; vertical-align:top }
+    #print-report .legend .lgh { background:#f2f4f7; font-weight:700; text-align:center }
+    #print-report .legend .lgn { font-weight:700; white-space:nowrap }
+    #print-report .legend .lgf { background:#fbfbfc; color:#3a3f47 }
     #print-report .srcline { margin-top:10px; font-size:10.5px; color:#0a58ca; word-break:break-all }
     #print-report .sign { margin-top:26px; page-break-inside:avoid }
     #print-report .sign td { border:none; text-align:center; padding:28px 10px 4px; font-size:13px; width:50% }
@@ -388,6 +440,7 @@ export function buildLawReport({ law, catName = '', catColor = '', settings = {}
       ${reqRows}
     </table>
     ${law.source_url ? `<div class="srcline">ตัวบทกฎหมาย: <a href="${ESC(law.source_url)}">${ESC(law.source_url)}</a></div>` : ''}
+    ${legendBlock()}
 
     ${signature}
   </div>`

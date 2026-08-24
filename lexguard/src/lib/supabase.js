@@ -22,6 +22,62 @@ export const STATUS = {
   repealed:{ label: 'ถูกยกเลิกแล้ว',   cls: 'p-repealed' },
 }
 
+// ── P21 · สถานะผลการประเมินข้อปฏิบัติ 4 สถานะ ────────────────────────────────
+//
+// ทะเบียนนี้เป็นแหล่งความจริงจุดเดียวของสถานะ — ทุกหน้าจอ ทุกไฟล์ export
+// ต้องอ่านรหัสย่อ ชื่อไทย และสีจากที่นี่ ห้ามเขียนซ้ำในไฟล์ปลายทาง
+// เขียนซ้ำเมื่อไร ตัวเลขบนหน้าจอกับในไฟล์ส่งออกจะเริ่มไม่ตรงกันโดยไม่มีใครรู้
+//
+// inKpi = นับเข้าฐานคำนวณอัตราความสอดคล้องหรือไม่
+//   ฐาน = C + NC เท่านั้น · Ack และ ไม่เกี่ยวข้อง ถูกตัดออกจากตัวหาร
+//   เพราะทั้งสองไม่ใช่ "ผลการปฏิบัติ" — ข้อเพื่อทราบไม่มีอะไรให้ปฏิบัติ
+//   และข้อที่ไม่เข้าข่ายกิจการก็ไม่ควรถูกนับว่าองค์กรทำไม่ได้
+export const REQ_STATUS = {
+  met:            { code: 'C',   label: 'สอดคล้อง',      inKpi: true,  reasonRequired: false,
+                    desc: 'ปฏิบัติครบถ้วนตามข้อกำหนด',
+                    color: 'var(--ok)',   bg: 'var(--ok-bg)',   cls: 'p-ok'   },
+  unmet:          { code: 'NC',  label: 'ไม่สอดคล้อง',    inKpi: true,  reasonRequired: false,
+                    desc: 'ยังปฏิบัติไม่ครบถ้วน ต้องแก้ไข',
+                    color: 'var(--bad)',  bg: 'var(--bad-bg)',  cls: 'p-bad'  },
+  acknowledged:   { code: 'Ack', label: 'เพื่อทราบ',      inKpi: false, reasonRequired: true,
+                    desc: 'ไม่ต้องดำเนินการ แต่ต้องรับทราบและเฝ้าระวัง เช่น บทนิยาม บทกำหนดโทษ ข้อกำหนดที่หน่วยงานภายนอกเป็นผู้ปฏิบัติ',
+                    color: 'var(--accent)', bg: 'var(--accent-tint)', cls: 'p-ack' },
+  not_applicable: { code: '-',   label: 'ไม่เกี่ยวข้อง',   inKpi: false, reasonRequired: true,
+                    desc: 'ไม่เข้าข่ายลักษณะกิจการหรือกิจกรรมขององค์กร',
+                    color: 'var(--ink-faint)', bg: 'var(--surface-3)', cls: 'p-na' },
+}
+// ลำดับที่ใช้แสดงทุกที่ (ตัวกรอง ปุ่มเลือก Legend สรุปท้ายรายงาน)
+export const REQ_STATUS_ORDER = ['met', 'unmet', 'acknowledged', 'not_applicable']
+// ป้ายเต็มสำหรับปุ่มเลือกในฟอร์ม เช่น "C — สอดคล้อง"
+export const reqStatusLabel = k => REQ_STATUS[k] ? `${REQ_STATUS[k].code} — ${REQ_STATUS[k].label}` : ''
+// สถานะที่บังคับกรอกเหตุผล (ต้องตรงกับ CHECK constraint ใน migration 044 เสมอ)
+export const reasonRequired = k => !!REQ_STATUS[k]?.reasonRequired
+// สถานะเทียมสำหรับข้อที่ยังไม่ประเมิน — ไม่ใช่ค่าใน DB จึงแยกไว้ต่างหาก
+export const WAITING_STATUS = { code: '?', label: 'ยังไม่ประเมิน', color: 'var(--ink-faint)', bg: 'var(--grayfill)', cls: 'p-wait' }
+
+// ── ยังไม่ประเมิน ────────────────────────────────────────────────────────────
+// ตัวชี้ขาดคือ evaluated_at เป็น NULL หรือไม่ ตามข้อกำหนด P21 ข้อ 1.3
+// (P18 เคยต้องใช้ note marker ช่วยแยก เพราะตอนนั้นข้อมูลเดิม 573/575 แถวมี
+//  evaluated_at เป็น NULL ทั้งที่เป็นผลประเมินจริง · migration 044 backfill ให้แล้ว
+//  ตัวชี้จึงกลับมาตรงไปตรงมาได้ และไม่ต้องพึ่งข้อความใน note อีก)
+export const isWaitingReq = r => !r?.evaluated_at
+// คืน 1 ใน 5 ค่า: met | unmet | acknowledged | not_applicable | waiting
+// ค่าสถานะที่ระบบไม่รู้จัก (ข้อมูลเก่าหรือเขียนเข้ามาเอง) ถือเป็น unmet ไว้ก่อน
+// เพื่อให้มันโผล่ให้คนเห็นในรายการ NC แทนที่จะหายเงียบจากทุกหน้าจอ
+export const reqKind = r => isWaitingReq(r) ? 'waiting' : (REQ_STATUS[r?.status] ? r.status : 'unmet')
+
+// ค่าที่ฐานข้อมูลรับได้จริง — ต้องตรงกับ CHECK lg_requirements_status_check เป๊ะ
+export const REQ_STATUS_VALUES = REQ_STATUS_ORDER
+
+// ด่านฝั่ง client · คู่กับ CHECK constraint ฝั่ง server (migration 044)
+// สองด่านนี้ต้องพูดตรงกันเสมอ — ด่านนี้มีไว้ให้ผู้ใช้เห็นข้อความไทยที่อ่านรู้เรื่อง
+// แทนที่จะเห็น error ดิบของ Postgres · ไม่ใช่มีไว้แทนกัน
+export function assertReqStatus(status, statusReason) {
+  if (!REQ_STATUS[status]) throw new Error('สถานะการประเมินไม่ถูกต้อง: ' + status)
+  if (reasonRequired(status) && !String(statusReason || '').trim())
+    throw new Error(`ต้องระบุเหตุผลประกอบสถานะ "${reqStatusLabel(status)}"`)
+}
+
 export const RECURRENCE_LABELS = {
   once:         'ครั้งเดียว',
   monthly:      'รายเดือน',
@@ -132,28 +188,43 @@ export async function fetchAll() {
 }
 
 // ---- Law mutations ----
-export async function setRequirementStatus(reqId, status) {
+// P21 · รับครบ 4 สถานะ · เหตุผลบังคับเมื่อเป็น Ack / ไม่เกี่ยวข้อง
+export async function setRequirementStatus(reqId, status, statusReason = '') {
+  assertReqStatus(status, statusReason)
   // stamp who/when evaluated compliance for this requirement
   const { error } = await supabase.from('lg_requirements')
-    .update({ status, evaluated_at: new Date().toISOString(), evaluated_by: currentUserName() })
+    .update({ status, status_reason: String(statusReason || '').trim() || null,
+              evaluated_at: new Date().toISOString(), evaluated_by: currentUserName() })
     .eq('id', reqId)
   if (error) throw error
 }
 
 // Update evidence / other fields on a single requirement
+// P21 · ถ้า patch แตะสถานะ ต้องผ่านด่านเดียวกับทางเขียนอื่น — ทางนี้เป็นทางลัดที่หน้าจอ
+// เรียกได้ตรงๆ ปล่อยผ่านเมื่อไรก็เลี่ยงการบังคับเหตุผลได้ทันที
 export async function updateRequirementField(reqId, patch) {
+  if (patch && 'status' in patch) {
+    let reason = patch.status_reason
+    if (!('status_reason' in patch) && reasonRequired(patch.status)) {
+      // ไม่ได้ส่งเหตุผลมาในรอบนี้ — ต้องไปดูของเดิมในฐาน ไม่ใช่ถือว่าไม่มี
+      const { data } = await supabase.from('lg_requirements').select('status_reason').eq('id', reqId).maybeSingle()
+      reason = data?.status_reason
+    }
+    assertReqStatus(patch.status, reason)
+  }
   const { error } = await supabase.from('lg_requirements').update(patch).eq('id', reqId)
   if (error) throw error
 }
 
 // เพิ่มข้อปฏิบัติใหม่ให้กฎหมายที่ขึ้นทะเบียนแล้ว — ต่อท้าย seq เดิม
-// choice ใช้กติกาเดียวกับ createLawFull (P18): met/unmet = ประเมินแล้ว, waiting = ยังไม่ตัดสิน (unmet + note marker)
-export async function addRequirement(lawId, { text, responsible = '', frequency = '', documents = '', choice = 'waiting', waitDate = '' } = {}) {
+// choice ใช้กติกาเดียวกับ createLawFull (P21): 4 สถานะ = ประเมินแล้ว, waiting = ยังไม่ตัดสิน
+export async function addRequirement(lawId, { text, responsible = '', frequency = '', documents = '', choice = 'waiting', statusReason = '', waitDate = '' } = {}) {
   const t = (text || '').trim()
   if (!t) throw new Error('ข้อความข้อปฏิบัติห้ามว่าง')
+  const evaluated = !!REQ_STATUS[choice]
+  if (evaluated) assertReqStatus(choice, statusReason)
   const { data: last } = await supabase.from('lg_requirements')
     .select('seq').eq('law_id', lawId).order('seq', { ascending: false }).limit(1)
-  const evaluated = choice === 'met' || choice === 'unmet'
   const now = new Date().toISOString()
   let note = null
   if (!evaluated) {
@@ -165,7 +236,9 @@ export async function addRequirement(lawId, { text, responsible = '', frequency 
     law_id: lawId,
     seq: (last?.[0]?.seq ?? -1) + 1,
     text: t,
-    status: choice === 'met' ? 'met' : 'unmet',
+    // ยังไม่ประเมิน เก็บเป็น unmet + evaluated_at NULL เหมือนเดิม (reqKind อ่านเป็น waiting)
+    status: evaluated ? choice : 'unmet',
+    status_reason: evaluated ? (statusReason.trim() || null) : null,
     responsible: responsible.trim() || null,
     frequency: frequency.trim() || null,
     documents: documents.trim() || null,
@@ -177,21 +250,59 @@ export async function addRequirement(lawId, { text, responsible = '', frequency 
   return data
 }
 
+// ── P21 · ป้ายไทยที่ฟอร์มประเมินระดับกฎหมายใช้ ↔ รหัสสถานะของข้อปฏิบัติ ──────
+// สองฝั่งเก็บคนละรูปแบบมาตั้งแต่ต้น (lg_law_workflow.assess_result เป็นข้อความไทย
+// ส่วน lg_requirements.status เป็นรหัสอังกฤษ) · แผนที่นี้คือจุดแปลงจุดเดียวของระบบ
+export const ASSESS_RESULT_BY_STATUS = {
+  met: 'สอดคล้อง', unmet: 'ไม่สอดคล้อง', acknowledged: 'เพื่อทราบ', not_applicable: 'ไม่เกี่ยวข้อง',
+}
+export const STATUS_BY_ASSESS_RESULT = Object.fromEntries(
+  Object.entries(ASSESS_RESULT_BY_STATUS).map(([k, v]) => [v, k]))
+
+// ตั้งสถานะข้อปฏิบัติทั้งฉบับเป็นค่าเดียวกัน แล้วคำนวณสถานะระดับกฎหมายใหม่
+// ใช้โดยฟอร์มประเมินระดับกฎหมาย (Workflow A/B) ซึ่งตัดสินทั้งฉบับในครั้งเดียว
+export async function bulkSetReqStatus(lawIds, status, statusReason = '') {
+  if (!lawIds?.length) return
+  assertReqStatus(status, statusReason)
+  const { error } = await supabase.from('lg_requirements')
+    .update({ status, status_reason: String(statusReason || '').trim() || null,
+              evaluated_at: new Date().toISOString(), evaluated_by: currentUserName() })
+    .in('law_id', lawIds)
+  if (error) throw error
+  for (const id of lawIds) {
+    const { data: rs } = await supabase.from('lg_requirements').select('status,evaluated_at').eq('law_id', id)
+    await recomputeLawStatus(id, rs || [])
+  }
+}
+
 // Bulk: set all requirements of given laws to met/unmet, then sync law status
+// P21 · แตะเฉพาะข้อที่เป็น C/NC หรือยังไม่ประเมินเท่านั้น
+// ข้อที่ถูกตัดสินเป็น "เพื่อทราบ" หรือ "ไม่เกี่ยวข้อง" มาพร้อมเหตุผลที่คนกรอกไว้
+// การกดปุ่มเหมารวมทีเดียวแล้วล้างทิ้งทั้งสถานะและเหตุผล คือการทำลายบันทึกที่ผู้ตรวจต้องเห็น
 export async function bulkSetCompliance(lawIds, met = true) {
   if (!lawIds.length) return
   const status = met ? 'met' : 'unmet'
   const { error } = await supabase.from('lg_requirements')
     .update({ status, evaluated_at: new Date().toISOString(), evaluated_by: currentUserName() })
     .in('law_id', lawIds)
+    .in('status', ['met', 'unmet'])
   if (error) throw error
-  await supabase.from('lg_laws').update({ status: met ? 'ok' : 'bad', updated_at: new Date().toISOString() }).in('id', lawIds)
+  // สถานะระดับกฎหมายต้องคำนวณใหม่จากของจริง ไม่ใช่เดาจากปุ่มที่กด
+  // เพราะฉบับที่มีแต่ Ack/NA จะไม่ถูกแตะเลย การตั้งเป็น 'bad' ตรงๆ จึงผิด
+  for (const id of lawIds) {
+    const { data: rs } = await supabase.from('lg_requirements').select('status,evaluated_at').eq('law_id', id)
+    await recomputeLawStatus(id, rs || [])
+  }
 }
 
-// P18 · law status คงตรรกะเดิม 2 ทาง: มี unmet อย่างน้อย 1 → 'bad', ไม่งั้น → 'ok'
-// (หมายเหตุ: "รอผู้เกี่ยวข้องประเมิน" ถูกเก็บเป็น status 'unmet' อยู่แล้ว จึงนับเป็น 'bad' ระดับกฎหมาย)
+// P21 · law status ยังมี 2 ทางเหมือนเดิม แต่ตัวนับเปลี่ยนเป็น "NC ที่ประเมินแล้วจริง"
+//   'bad' = มีข้อที่ประเมินแล้วและผลเป็นไม่สอดคล้อง อย่างน้อย 1 ข้อ
+// เพื่อทราบ / ไม่เกี่ยวข้อง / ยังไม่ประเมิน ต้องไม่ทำให้ทั้งฉบับกลายเป็น 'bad'
+// (ก่อนหน้านี้ "รอผู้เกี่ยวข้องประเมิน" ถูกเก็บเป็น unmet จึงทำให้ฉบับที่ยังไม่มีใครประเมิน
+//  ขึ้นเป็น "ยังไม่สอดคล้อง" ทั้งที่ยังไม่มีใครตัดสินอะไรเลย)
+// ต้องส่ง reqs ที่มีทั้ง status และ evaluated_at มาด้วยเสมอ ไม่งั้น reqKind จะอ่านเป็น waiting หมด
 export function computeLawStatus(reqs) {
-  return (reqs || []).some(r => r.status === 'unmet') ? 'bad' : 'ok'
+  return (reqs || []).some(r => reqKind(r) === 'unmet') ? 'bad' : 'ok'
 }
 export async function recomputeLawStatus(lawId, reqs) {
   const status = computeLawStatus(reqs)
@@ -327,14 +438,15 @@ export async function createLawFull({ code, cat, name, hierarchy_level, law_type
   const clean = (reqs || []).filter(r => (r.text || '').trim())
   const now = new Date().toISOString()
   const by = currentUserName()
-  // P18 · แปลง "ทางเลือกที่ผู้ใช้กดจริง" → แถว lg_requirements (สถานะมีแค่ met/unmet)
-  //   สอดคล้อง             → met  + evaluated_at/by (ประเมินแล้ว)
-  //   ไม่สอดคล้อง          → unmet + evaluated_at/by (ประเมินแล้ว = NC จริง)
-  //   รอผู้เกี่ยวข้องประเมิน → unmet + evaluated_at/by = NULL + note 'รอผู้เกี่ยวข้องประเมิน: <ชื่อ>'
-  // ไม่มี fallback เป็น 'met' อีกต่อไป — ถ้าไม่ได้เลือกจริง ให้ถือเป็น "รอผู้เกี่ยวข้องประเมิน" (ปลอดภัย ไม่นับ met)
+  // P21 · แปลง "ทางเลือกที่ผู้ใช้กดจริง" → แถว lg_requirements (4 สถานะ)
+  //   สอดคล้อง / ไม่สอดคล้อง / เพื่อทราบ / ไม่เกี่ยวข้อง → เขียนค่าตรง + evaluated_at/by
+  //   ยังไม่ได้เลือก → unmet + evaluated_at/by = NULL + note 'รอผู้เกี่ยวข้องประเมิน: <ชื่อ>'
+  // ไม่มี fallback เป็น 'met' — ไม่ได้เลือกจริง ให้ถือเป็น "รอผู้เกี่ยวข้องประเมิน" (ปลอดภัย ไม่นับ met)
+  // ตรวจเหตุผลของทุกข้อก่อนแตะฐาน — ล้มกลางทางแล้วกฎหมายจะถูกสร้างไว้โดยไม่มีข้อปฏิบัติ
+  clean.forEach(r => { if (REQ_STATUS[r.choice]) assertReqStatus(r.choice, r.statusReason) })
   const rowsFor = lawId => clean.map((r, i) => {
-    const choice = (r.choice === 'met' || r.choice === 'unmet') ? r.choice : 'waiting'
-    const evaluated = choice === 'met' || choice === 'unmet'
+    const choice = REQ_STATUS[r.choice] ? r.choice : 'waiting'
+    const evaluated = choice !== 'waiting'
     let note = (r.note || '').trim() || null
     if (choice === 'waiting') {
       const parts = ['รอผู้เกี่ยวข้องประเมิน: ' + ((r.responsible || '').trim() || '-')]
@@ -343,7 +455,8 @@ export async function createLawFull({ code, cat, name, hierarchy_level, law_type
     }
     return {
       law_id: lawId, seq: i, text: r.text.trim(),
-      status: choice === 'met' ? 'met' : 'unmet',
+      status: evaluated ? choice : 'unmet',
+      status_reason: evaluated ? ((r.statusReason || '').trim() || null) : null,
       responsible: (r.responsible || '').trim() || null,
       frequency: r.frequency || null, documents: r.documents || null,
       evaluated_at: evaluated ? now : null,
@@ -360,7 +473,10 @@ export async function createLawFull({ code, cat, name, hierarchy_level, law_type
       ref_answers: Array.isArray(r.ref_answers) ? r.ref_answers : [],
     }
   })
-  const reqStatusList = clean.map(r => ({ status: (r.choice === 'met') ? 'met' : 'unmet' }))
+  // ป้อน computeLawStatus ด้วยรูปแบบเดียวกับที่จะถูกเขียนลงฐานจริง (ต้องมี evaluated_at ด้วย)
+  const reqStatusList = clean.map(r => (REQ_STATUS[r.choice]
+    ? { status: r.choice, evaluated_at: now }
+    : { status: 'unmet', evaluated_at: null }))
   const { data, error } = await supabase.from('lg_laws').insert({
     code, cat, name,
     hierarchy_level: hierarchy_level ? Number(hierarchy_level) : null,
@@ -669,7 +785,7 @@ export async function addStagedLaw(rows) {
   }))
   const { error: e2 } = await supabase.from('lg_requirements').insert(reqRows)
   if (e2) throw e2
-  const { data: allReq } = await supabase.from('lg_requirements').select('status').eq('law_id', law.id)
+  const { data: allReq } = await supabase.from('lg_requirements').select('status,evaluated_at').eq('law_id', law.id)
   await recomputeLawStatus(law.id, allReq || [])
   await supabase.from('lg_import_staging').update({ status: 'added' }).in('id', rows.map(r => r.id))
   await logActivity({ action: 'import', law_id: law.id, law_code: first.law_code, law_name: first.law_name || first.law_code, detail: `นำเข้าจาก AI · ${rows.length} ข้อปฏิบัติ` })
@@ -923,15 +1039,17 @@ export async function assignBatch(batch, rows, depts, { dueDate, by: byArg } = {
   return law
 }
 
-// ── ขั้น 3 · ประเมินรายข้อปฏิบัติ (C = met / NC = unmet) — บังคับชื่อผู้ประเมิน ──────
-export async function assessRequirement(req, law, status, assessorName) {
+// ── ขั้น 3 · ประเมินรายข้อปฏิบัติ (C / NC / Ack / ไม่เกี่ยวข้อง) — บังคับชื่อผู้ประเมิน ──
+export async function assessRequirement(req, law, status, assessorName, statusReason = '') {
+  assertReqStatus(status, statusReason)
   const { error } = await supabase.from('lg_requirements')
-    .update({ status, evaluated_at: new Date().toISOString(), evaluated_by: assessorName }).eq('id', req.id)
+    .update({ status, status_reason: String(statusReason || '').trim() || null,
+              evaluated_at: new Date().toISOString(), evaluated_by: assessorName }).eq('id', req.id)
   if (error) throw error
-  const { data: allReq } = await supabase.from('lg_requirements').select('status').eq('law_id', law.id)
+  const { data: allReq } = await supabase.from('lg_requirements').select('status,evaluated_at').eq('law_id', law.id)
   await recomputeLawStatus(law.id, allReq || [])
   await logActivity({ action: 'assess', law_id: law.id, law_code: law.code, law_name: law.name,
-    detail: `${assessorName} ประเมิน ${status === 'met' ? 'สอดคล้อง (C)' : 'ไม่สอดคล้อง (NC)'}: ${(req.text || '').slice(0, 80)}` })
+    detail: `${assessorName} ประเมิน ${reqStatusLabel(status)}: ${(req.text || '').slice(0, 80)}` })
 }
 // ทำงานประเมินของหน่วยงานหนึ่งให้เป็น "กำลังประเมิน" / "เสร็จ"
 export async function setFlowAssessStatus(flowId, status, assessorName) {
@@ -970,9 +1088,9 @@ export async function closeImprovementPlan(plan, { evidence }) {
   if (error) throw error
   if (plan.requirement_id) {
     await supabase.from('lg_requirements')
-      .update({ status: 'met', evaluated_at: new Date().toISOString(), evaluated_by: by }).eq('id', plan.requirement_id)
+      .update({ status: 'met', status_reason: null, evaluated_at: new Date().toISOString(), evaluated_by: by }).eq('id', plan.requirement_id)
     if (plan.law_id) {
-      const { data: allReq } = await supabase.from('lg_requirements').select('status').eq('law_id', plan.law_id)
+      const { data: allReq } = await supabase.from('lg_requirements').select('status,evaluated_at').eq('law_id', plan.law_id)
       await recomputeLawStatus(plan.law_id, allReq || [])
     }
   }
@@ -1011,6 +1129,8 @@ export const WF_STATUS = {
   'รอประเมิน':   { cls: 'p-warn' },
   'สอดคล้อง':    { cls: 'p-ok'   },
   'ไม่สอดคล้อง': { cls: 'p-bad'  },
+  'เพื่อทราบ':   { cls: 'p-ack'  },   // P21
+  'ไม่เกี่ยวข้อง': { cls: 'p-na'   },   // P21
   'เสร็จสิ้น':   { cls: 'p-ok'   },
 }
 
@@ -1150,23 +1270,29 @@ export async function fetchActivityByLaw(lawId, limit = 20) {
 }
 
 // ── Process 2 · ผู้ประเมิน (ใช้ร่วมทั้ง Workflow A และ B) ──────────────────────
-// result = 'สอดคล้อง' | 'ไม่สอดคล้อง'. ถ้าไม่สอดคล้อง ต้องมี plan/measure/reverifyDate.
+// P21 · result = 'สอดคล้อง' | 'ไม่สอดคล้อง' | 'เพื่อทราบ' | 'ไม่เกี่ยวข้อง'
+//   ไม่สอดคล้อง         → ต้องมี plan/reverifyDate และแฟ้มงานค้างไว้เป็น 'ไม่สอดคล้อง'
+//   เพื่อทราบ/ไม่เกี่ยวข้อง → ต้องมี reason และปิดแฟ้มงานได้ทันที (ไม่มีอะไรให้แก้ไข)
 // อัปเดตความสอดคล้องของกฎหมายให้ตรงกับผล (พลิกทั้งฉบับ) เพื่อให้ทะเบียน sync.
-export async function submitWorkflowAssessment(wf, law, { assessorName, result, plan, measure, reverifyDate }) {
-  const compliant = result === 'สอดคล้อง'
+export async function submitWorkflowAssessment(wf, law, { assessorName, result, plan, measure, reverifyDate, reason = '' }) {
+  const status = STATUS_BY_ASSESS_RESULT[result]
+  if (!status) throw new Error('ผลการประเมินไม่ถูกต้อง: ' + result)
+  assertReqStatus(status, reason)
+  const nc = status === 'unmet'
   const now = new Date().toISOString()
   const { error } = await supabase.from('lg_law_workflow').update({
     assessor_name: assessorName || currentUserName(), assessed_at: now, assess_result: result,
-    improvement_plan: compliant ? null : (plan || null),
-    measure: compliant ? null : (measure || null),
-    reverify_date: compliant ? null : (reverifyDate || null),
-    stage: 3, status: compliant ? 'เสร็จสิ้น' : 'ไม่สอดคล้อง',
-    completed_at: compliant ? now : null, updated_at: now,
+    assess_reason: String(reason || '').trim() || null,
+    improvement_plan: nc ? (plan || null) : null,
+    measure: nc ? (measure || null) : null,
+    reverify_date: nc ? (reverifyDate || null) : null,
+    stage: 3, status: nc ? 'ไม่สอดคล้อง' : 'เสร็จสิ้น',
+    completed_at: nc ? null : now, updated_at: now,
   }).eq('id', wf.id)
   if (error) throw error
-  if (law?.id) await bulkSetCompliance([law.id], compliant)
+  if (law?.id) await bulkSetReqStatus([law.id], status, reason)
   await logActivity({ action: 'assess', law_id: law?.id || null, law_code: law?.code || '', law_name: law?.name || '',
-    detail: `${assessorName || currentUserName()} ประเมิน: ${result}${compliant ? '' : ' — ' + (plan || '').slice(0, 60)}` })
+    detail: `${assessorName || currentUserName()} ประเมิน: ${result}${nc ? ' — ' + (plan || '').slice(0, 60) : ''}` })
 }
 
 // ── Process 3 · ปิดแผนปรับปรุง (Workflow B; ใช้กับ A ได้เมื่อมีแผนค้าง) ──────────

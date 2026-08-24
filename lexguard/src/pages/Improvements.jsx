@@ -1,9 +1,15 @@
 // Improvements page — NC (non-conformity) follow-up list (ref PD-05).
 // Moved verbatim from App.jsx (pure refactor).
+//
+// P21 · "NC" ที่นี่ต้องหมายถึงข้อที่ประเมินแล้วและผลเป็นไม่สอดคล้องเท่านั้น
+// เพื่อทราบ / ไม่เกี่ยวข้อง / ยังไม่ประเมิน เคยหลุดเข้ามาเพราะกรองด้วย status==='unmet' ตรงๆ
+// ซึ่งจะกลายเป็นการสั่งให้คนไปทำแผนปรับปรุงกับข้อที่ไม่มีอะไรต้องแก้
+import { reqKind } from '../lib/ui.jsx'
 
 export default function Improvements({ laws, catMap, onOpen }) {
-  const ncLaws = laws.filter(l=>l.status==='bad')
-  const totalNc = ncLaws.reduce((a,l)=>a+l.reqs.filter(r=>r.status==='unmet').length, 0)
+  const isNc = r => reqKind(r) === 'unmet'
+  const ncLaws = laws.filter(l=>(l.reqs||[]).some(isNc))
+  const totalNc = ncLaws.reduce((a,l)=>a+l.reqs.filter(isNc).length, 0)
 
   if (ncLaws.length===0) return (
     <div className="view">
@@ -24,7 +30,7 @@ export default function Improvements({ laws, catMap, onOpen }) {
         <p style={{marginBottom:0}}>รายการข้อปฏิบัติที่ยังไม่สอดคล้อง <b>{totalNc} ข้อ</b> จาก <b>{ncLaws.length} กฎหมาย</b> — คลิกที่รายการเพื่อเปิดรายละเอียดและอัปเดตสถานะ</p>
       </div>
       {ncLaws.map(l=>{
-        const ncReqs=l.reqs.filter(r=>r.status==='unmet')
+        const ncReqs=l.reqs.filter(isNc)
         const cat=catMap[l.cat]
         return (
           <div key={l.id} className="panel" style={{marginBottom:12}}>

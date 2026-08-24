@@ -3,6 +3,8 @@ import { STATUS, uploadEvidence, updateRequirementField, fetchReviewLog, addRevi
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 import { daysTo, reqStats, reqKind, reqEvalTitle } from '../lib/ui.jsx'
+import { REQ_STATUS, WAITING_STATUS, reasonRequired } from '../lib/supabase.js'
+import ReqStatusPicker from './ReqStatusPicker.jsx'
 import { I } from './icons.jsx'
 import DeleteLawModal from './DeleteLawModal.jsx'
 import { buildLawReport } from './PdfExport.jsx'
@@ -93,7 +95,7 @@ function RepealModal({ law, onConfirm, onClose }){
   )
 }
 
-const EMPTY_NEW_REQ = { text:'', responsible:'', frequency:'', documents:'', choice:'waiting', waitDate:'' }
+const EMPTY_NEW_REQ = { text:'', responsible:'', frequency:'', documents:'', choice:'waiting', statusReason:'', waitDate:'' }
 
 export default function LawDrawer({ law, catMap, settings, onClose, onToggle, onAddReq, onRepeal, onRestore, onDuplicate, onToggleActive, onDelete, thDate }){
   const { can } = useAuth()
@@ -107,6 +109,11 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
   const [editingId, setEditingId] = useState(null)     // req id ที่กำลังแก้ไข
   const [editForm, setEditForm] = useState({ text:'', responsible:'', frequency:'', documents:'' })
   const [savingReq, setSavingReq] = useState(false)
+  // P21 · ตัวแก้สถานะรายข้อ — เดิมเป็นปุ่มสลับ 2 ทาง ซึ่งใช้กับ 4 สถานะไม่ได้
+  // และ Ack/ไม่เกี่ยวข้อง ต้องมีที่ให้กรอกเหตุผลก่อนบันทึก จึงต้องเป็นแผงเลือกที่กางออกมา
+  const [statusEditId, setStatusEditId] = useState(null)
+  const [statusDraft, setStatusDraft]   = useState({ choice:'', reason:'' })
+  const [savingStatus, setSavingStatus] = useState(false)
   const [addingReq, setAddingReq] = useState(false)   // เปิดฟอร์ม "เพิ่มข้อปฏิบัติ"
   const [newReq, setNewReq] = useState(EMPTY_NEW_REQ)
   const [savingNew, setSavingNew] = useState(false)
@@ -118,7 +125,7 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
   const summary = law.reqs.slice(0,3).map(r=>r.text).join(' ').slice(0,280)
 
   useEffect(()=>{
-    setEvOverrides({}); setReqOverrides({}); setEditingId(null)
+    setEvOverrides({}); setReqOverrides({}); setEditingId(null); setStatusEditId(null)
     setAddingReq(false); setNewReq(EMPTY_NEW_REQ)
     setReviewDate(law.review_date); setReportDue(law.report_due_date || '')
     let alive = true
@@ -174,10 +181,32 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
     finally{ setSavingReq(false) }
   }
 
+  function startStatusEdit(r){
+    setEditingId(null)
+    setStatusEditId(r.id)
+    const k = reqKind(r)
+    setStatusDraft({ choice: REQ_STATUS[k] ? k : '', reason: r.status_reason || '' })
+  }
+  async function saveStatus(r){
+    if(savingStatus) return
+    const { choice, reason } = statusDraft
+    if(!REQ_STATUS[choice]){ toast('เลือกสถานะก่อนบันทึก'); return }
+    if(reasonRequired(choice) && !reason.trim()){ toast(`สถานะ "${REQ_STATUS[choice].label}" ต้องระบุเหตุผลประกอบ`); return }
+    setSavingStatus(true)
+    try{
+      await onToggle(law, r, choice, reason.trim())
+      setStatusEditId(null)
+      toast('บันทึกผลการประเมินแล้ว','success')
+    }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
+    finally{ setSavingStatus(false) }
+  }
+
   async function saveNewReq(){
     if(savingNew) return
     if(!newReq.text.trim()){ toast('ข้อความข้อปฏิบัติห้ามว่าง'); return }
     if(newReq.choice==='waiting' && !newReq.responsible.trim()){ toast('ระบุผู้รับผิดชอบที่ต้องประเมินข้อนี้'); return }
+    if(reasonRequired(newReq.choice) && !newReq.statusReason.trim()){
+      toast(`สถานะ "${REQ_STATUS[newReq.choice].label}" ต้องระบุเหตุผลประกอบ`); return }
     setSavingNew(true)
     try{
       await onAddReq(law, newReq)
@@ -303,9 +332,10 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
                 const rdocs = ro.documents   ?? r.documents
                 const isEditing = editingId === r.id
                 return (
-                <div className={'req '+(reqKind(r)==='waiting'?'waiting':r.status)} key={r.id}>
-                  <button className="ck" onClick={()=>onToggle(law,r)} disabled={!can('edit')||isEditing} title={can('edit')?(reqEvalTitle(r)+' · คลิกเพื่อสลับสถานะ'):NO_PERM}>
-                    {reqKind(r)==='met' ? 'C' : reqKind(r)==='unmet' ? 'NC' : '⏳'}
+                <div className={'req '+reqKind(r)} key={r.id}>
+                  <button className="ck" onClick={()=>startStatusEdit(r)} disabled={!can('edit')||isEditing}
+                    title={can('edit')?(reqEvalTitle(r)+' · คลิกเพื่อเปลี่ยนสถานะ'):NO_PERM}>
+                    {(REQ_STATUS[reqKind(r)] || WAITING_STATUS).code}
                   </button>
                   <div style={{flex:1}}>
                     {isEditing ? (
@@ -366,7 +396,22 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
                       <button className="b" style={{cursor:can('edit')?'pointer':'not-allowed',opacity:can('edit')?1:.55,background:'none'}}
                         disabled={!can('edit')} title={can('edit')?'แก้ไขข้อปฏิบัติ':NO_PERM} onClick={()=>startEdit(r)}>แก้ไข</button>
                     </div>
-                    {r.status==='unmet' && r.note && <div className="note">{r.note}</div>}
+                    {reqKind(r)==='unmet' && r.note && <div className="note">{r.note}</div>}
+                    {r.status_reason && <div className="reason">เหตุผล: {r.status_reason}</div>}
+
+                    {statusEditId===r.id && (
+                      <div style={{marginTop:9,paddingTop:9,borderTop:'1px solid var(--line)',display:'flex',flexDirection:'column',gap:8}}>
+                        <div style={{fontSize:11.5,fontWeight:700,color:'var(--ink-soft)'}}>ผลการประเมินข้อนี้</div>
+                        <ReqStatusPicker
+                          value={statusDraft.choice} reason={statusDraft.reason} disabled={savingStatus}
+                          onChange={c=>setStatusDraft(d=>({...d,choice:c}))}
+                          onReasonChange={v=>setStatusDraft(d=>({...d,reason:v}))}/>
+                        <div style={{display:'flex',gap:8}}>
+                          <button className="btn btn-primary" style={{padding:'5px 14px',fontSize:12.5}} disabled={savingStatus} onClick={()=>saveStatus(r)}>{savingStatus?'กำลังบันทึก…':'บันทึกผลประเมิน'}</button>
+                          <button className="btn btn-ghost" style={{padding:'5px 14px',fontSize:12.5}} disabled={savingStatus} onClick={()=>setStatusEditId(null)}>ยกเลิก</button>
+                        </div>
+                      </div>
+                    )}
                     </>)}
                   </div>
                 </div>
@@ -385,11 +430,10 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
                       <input className="form-input" value={newReq.frequency} onChange={e=>setNewReq(f=>({...f,frequency:e.target.value}))} placeholder="ความถี่"/>
                     </div>
                     <input className="form-input" value={newReq.documents} onChange={e=>setNewReq(f=>({...f,documents:e.target.value}))} placeholder="เอกสาร/หลักฐานที่ต้องมี"/>
-                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                      <button type="button" className={'req-choice met'+(newReq.choice==='met'?' on':'')} title="ประเมินแล้ว: สอดคล้อง" onClick={()=>setNewReq(f=>({...f,choice:'met'}))}>สอดคล้อง</button>
-                      <button type="button" className={'req-choice unmet'+(newReq.choice==='unmet'?' on':'')} title="ประเมินแล้ว: ไม่สอดคล้อง (NC)" onClick={()=>setNewReq(f=>({...f,choice:'unmet'}))}>ไม่สอดคล้อง</button>
-                      <button type="button" className={'req-choice wait'+(newReq.choice==='waiting'?' on':'')} title="รอผู้เกี่ยวข้องประเมิน (ยังไม่ตัดสินความสอดคล้อง)" onClick={()=>setNewReq(f=>({...f,choice:'waiting'}))}>รอผู้เกี่ยวข้องประเมิน</button>
-                    </div>
+                    <ReqStatusPicker allowWaiting
+                      value={newReq.choice} reason={newReq.statusReason}
+                      onChange={c=>setNewReq(f=>({...f,choice:c}))}
+                      onReasonChange={v=>setNewReq(f=>({...f,statusReason:v}))}/>
                     {newReq.choice==='waiting' && (
                       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',fontSize:11.5,color:'var(--ink-faint)'}}>
                         <span>ต้องการคำตอบภายใน</span>
