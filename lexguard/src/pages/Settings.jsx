@@ -1,9 +1,10 @@
 // Settings page — org profile & display settings (admin only; gated in App).
 // Moved verbatim from App.jsx (pure refactor).
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from '../lib/toast.js'
 import { confirmDialog } from '../lib/confirm.js'
-import { addCategory, updateCategory, deleteCategory } from '../lib/supabase.js'
+import { addCategory, updateCategory, deleteCategory,
+         fetchCompanyProfile, saveCompanyProfile, EMPTY_PROFILE, profileReady } from '../lib/supabase.js'
 
 // สีเริ่มต้นให้เลือกตอนเพิ่มหมวด — ชุดเดียวกับโทนของหมวดเดิม (CAT_COLORS ใน lib/ui.jsx)
 const CAT_SWATCHES = ['#1C2431', '#3A6A97', '#B4553F', '#B58A3C', '#5F7A61', '#2A3547', '#6E6E73', '#00B3A4']
@@ -168,10 +169,172 @@ function CategoryCard({ cats, laws, onAdded }) {
   )
 }
 
+
+/* ══ P22 ขั้นที่ 1 · บริบทองค์กร ══════════════════════════════════════════════
+   ระบบรู้ว่าตัวบทใช้กับ "ใคร" แต่ไม่เคยรู้ว่า "เรา" เป็นใคร จึงตอบไม่ได้ว่ากฎหมาย
+   ฉบับหนึ่งเกี่ยวข้องกับบริษัทหรือไม่ · หน้านี้คือฝั่ง "เรา"
+
+   โครงของแบบฟอร์มไม่ได้คิดเอง — มาจากเหตุผลที่ผู้ใช้เขียนไว้จริงในช่องหมายเหตุของ F-259
+   (docs/f259-mapping.md ข้อ 4) ซึ่งแบ่งได้ 4 ประเภท และเรียงตามที่พบบ่อยที่สุด */
+
+// ช่องกรอกรายการหลายบรรทัด — เก็บเป็น array ของ string ใน jsonb
+function ListField({ label, hint, value = [], onChange, placeholder }) {
+  const text = (value || []).map(v => typeof v === 'string' ? v : JSON.stringify(v)).join('\n')
+  return (
+    <div style={{ marginTop: 14 }}>
+      <label className="form-label">{label}</label>
+      {hint && <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: '0 0 5px', lineHeight: 1.5 }}>{hint}</p>}
+      <textarea className="form-input" rows={3} style={{ marginTop: 0, resize: 'vertical', lineHeight: 1.6 }}
+        placeholder={placeholder} value={text}
+        onChange={e => onChange(e.target.value.split('\n').map(s => s.trim()).filter(Boolean))} />
+      <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 3 }}>บรรทัดละ 1 รายการ · ตอนนี้ {(value || []).length} รายการ</div>
+    </div>
+  )
+}
+
+const VALUE_CHAIN = ['ผู้ใช้งาน', 'ผู้ให้บริการ', 'ผู้ผลิต', 'ผู้นำเข้า', 'ผู้จำหน่าย']
+
+function CompanyProfileCard() {
+  const [p, setP] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const set = (k, v) => setP(prev => ({ ...prev, [k]: v }))
+
+  useEffect(() => {
+    let alive = true
+    fetchCompanyProfile()
+      .then(d => { if (alive) { setP(d || { ...EMPTY_PROFILE }); setLoading(false) } })
+      .catch(() => { if (alive) { setP({ ...EMPTY_PROFILE }); setLoading(false) } })
+    return () => { alive = false }
+  }, [])
+
+  async function save() {
+    if (busy || !p) return
+    setBusy(true)
+    try {
+      const num = v => (v === '' || v === null || v === undefined) ? null : Number(v)
+      await saveCompanyProfile({
+        business_type: p.business_type || null, workplace_type: p.workplace_type || null,
+        employee_count: num(p.employee_count), contractor_count: num(p.contractor_count),
+        site_count: num(p.site_count), value_chain_role: p.value_chain_role || null,
+        sites: p.sites || [], activities: p.activities || [], machines: p.machines || [],
+        chemicals: p.chemicals || [], licenses: p.licenses || [],
+        regulator_status: p.regulator_status || [], iso_scope: p.iso_scope || [],
+      })
+      toast('บันทึกบริบทองค์กรแล้ว', 'success')
+    } catch (e) { toast('บันทึกไม่สำเร็จ: ' + e.message) }
+    setBusy(false)
+  }
+
+  if (loading) return <div className="panel" style={{ maxWidth: 700, padding: 20, fontSize: 13, color: 'var(--ink-faint)' }}>กำลังโหลดบริบทองค์กร…</div>
+
+  const ready = profileReady(p)
+  const N = (k, label, hint) => (
+    <div>
+      <label className="form-label">{label}</label>
+      {hint && <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: '0 0 5px', lineHeight: 1.5 }}>{hint}</p>}
+      <input className="form-input" type="number" min="0" style={{ marginTop: 0 }}
+        value={p[k] ?? ''} onChange={e => set(k, e.target.value)} />
+    </div>
+  )
+
+  return (
+    <div className="panel" style={{ maxWidth: 700 }}>
+      <div className="panel-h"><h3>บริบทองค์กร</h3></div>
+      <div className="panel-b">
+        <div style={{
+          padding: '10px 13px', borderRadius: 7, marginBottom: 16, lineHeight: 1.65, fontSize: 12.5,
+          background: ready ? 'var(--ok-bg)' : 'var(--warn-bg)', color: ready ? 'var(--ok)' : 'var(--warn)',
+        }}>
+          {ready
+            ? '✓ ข้อมูลเพียงพอสำหรับให้ AI คัดกรองความเกี่ยวข้องของกฎหมายแล้ว'
+            : 'ยังกรอกไม่พอสำหรับการคัดกรอง — ต้องมีอย่างน้อย ประเภทกิจการ · ลักษณะสถานประกอบกิจการ · จำนวนลูกจ้าง และรายการกิจกรรม/เครื่องจักร/ใบอนุญาตอย่างน้อย 1 กลุ่ม'}
+        </div>
+        <p style={{ fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.7, marginTop: 0 }}>
+          ข้อมูลนี้ใช้เทียบกับเงื่อนไขการใช้บังคับที่เขียนไว้ในตัวบท เพื่อตอบว่ากฎหมายฉบับนั้นเกี่ยวข้องกับบริษัทหรือไม่
+          — กรอกเฉพาะที่เป็นความจริง ช่องที่ไม่รู้ให้เว้นว่างไว้ ระบบจะตอบว่า “ต้องข้อมูลเพิ่ม” แทนการเดา
+        </p>
+
+        <div style={{ marginTop: 16 }}>
+          <label className="form-label">ประเภทกิจการ</label>
+          <input className="form-input" style={{ marginTop: 0 }} maxLength={200}
+            placeholder="เช่น ผู้ให้บริการโครงข่ายโทรคมนาคมและศูนย์ข้อมูล"
+            value={p.business_type || ''} onChange={e => set('business_type', e.target.value)} />
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <label className="form-label">ลักษณะสถานประกอบกิจการ</label>
+          <input className="form-input" style={{ marginTop: 0 }} maxLength={200}
+            placeholder="เช่น อาคารสำนักงานเช่า ชั้น G และ P10 + ศูนย์ข้อมูล (Data Center)"
+            value={p.workplace_type || ''} onChange={e => set('workplace_type', e.target.value)} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, marginTop: 14 }}>
+          {N('employee_count', 'จำนวนลูกจ้าง (คน)', 'เกณฑ์ที่กฎหมายไทยใช้บ่อยที่สุด (10/20/50/100 คน)')}
+          {N('contractor_count', 'ผู้รับเหมาประจำ (คน)')}
+          {N('site_count', 'จำนวนพื้นที่/สาขา')}
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <label className="form-label">บทบาทในห่วงโซ่ธุรกิจ</label>
+          <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', margin: '0 0 6px', lineHeight: 1.5 }}>
+            ใช้ตัดกฎหมายที่บังคับเฉพาะผู้ผลิตหรือผู้นำเข้าออก เช่น “เป็นผู้ใช้งานสายใยนำแสง ไม่ใช่ผู้ผลิต”
+          </p>
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+            {VALUE_CHAIN.map(v => (
+              <span key={v} className={'chip' + (p.value_chain_role === v ? ' active' : '')}
+                style={{ cursor: 'pointer' }} onClick={() => set('value_chain_role', p.value_chain_role === v ? '' : v)}>{v}</span>
+            ))}
+          </div>
+        </div>
+
+        <ListField label="สถานะตามรายชื่อของหน่วยงานกำกับ"
+          hint="เหตุผลที่อ้างมากที่สุดในทะเบียนเดิม — เช่น “กสทช. แจ้งว่าไม่อยู่ในรายชื่อหน่วยงาน CII”"
+          placeholder={'ไม่อยู่ในรายชื่อหน่วยงาน CII ตามที่ กสทช. แจ้ง\nถือใบอนุญาตประกอบกิจการโทรคมนาคมแบบที่สาม'}
+          value={p.regulator_status} onChange={v => set('regulator_status', v)} />
+
+        <ListField label="กิจกรรมที่ทำจริง"
+          hint="เฉพาะที่ทำจริงในปัจจุบัน ไม่ใช่ที่เคยทำหรืออาจจะทำ"
+          placeholder={'ทำงานบนที่สูง\nทำงานในที่อับอากาศ\nทำงานกับไฟฟ้าแรงสูง\nงานก่อสร้าง/ปรับปรุงพื้นที่'}
+          value={p.activities} onChange={v => set('activities', v)} />
+
+        <ListField label="เครื่องจักรและอุปกรณ์"
+          placeholder={'เครื่องกำเนิดไฟฟ้าสำรอง (ดีเซล 3,000 ลิตร)\nลิฟต์โดยสาร\nระบบปรับอากาศขนาดใหญ่'}
+          value={p.machines} onChange={v => set('machines', v)} />
+
+        <ListField label="สารเคมีที่ใช้"
+          hint="ระบุปริมาณด้วยถ้าทราบ — กฎหมายหลายฉบับใช้ปริมาณเป็นเกณฑ์"
+          placeholder={'น้ำมันดีเซล 3,000 ลิตร (สำรองเครื่องกำเนิดไฟฟ้า)\nกรดซัลฟิวริกในแบตเตอรี่สำรอง'}
+          value={p.chemicals} onChange={v => set('chemicals', v)} />
+
+        <ListField label="ใบอนุญาตที่ถือครอง"
+          placeholder={'ใบอนุญาตประกอบกิจการโทรคมนาคมแบบที่สาม เลขที่ … (กสทช.)'}
+          value={p.licenses} onChange={v => set('licenses', v)} />
+
+        <ListField label="ขอบข่ายมาตรฐานที่รับรอง"
+          hint="ตามชีท “ข้อมูลจำเพาะของเอกสาร” ของ F-259 — ใช้อ้างอิงในรายงาน Gap Analysis"
+          placeholder={'ISO 45001 ข้อ 6.1.3\nISO 27001 ข้อ A.18.1\nISO 20000 ข้อ 4.2, 9.1'}
+          value={p.iso_scope} onChange={v => set('iso_scope', v)} />
+
+        <div style={{ marginTop: 18 }}>
+          <button className="btn btn-primary" disabled={busy} onClick={save}>{busy ? 'กำลังบันทึก…' : 'บันทึกบริบทองค์กร'}</button>
+        </div>
+        {p.updated_by && (
+          <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 12 }}>
+            แก้ไขล่าสุดโดย {p.updated_by}{p.updated_at ? ' · ' + new Date(p.updated_at).toLocaleString('th-TH') : ''}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // P20g · การ์ด "อบรมพัฒนาความรู้ จป. (ชั่วโมงสะสม)" ถูกตัดออกจากหน้าตั้งค่าไว้ก่อน
 export default function SettingsPage({ settings, onSave, cats = [], laws = [], onCatsChanged }) {
   const [f, setF] = useState(settings)
   const [busy, setBusy] = useState(false)
+  // P22 ขั้นที่ 1 · แยกเป็นแท็บ เพราะบริบทองค์กรเป็นข้อมูลคนละชนิดกับการแสดงผล
+  // และเป็นหน้าที่ผู้ใช้ต้องกลับมาแก้เมื่อองค์กรเปลี่ยน (จำนวนคน กิจกรรม ใบอนุญาต)
+  const [tab, setTab] = useState('org')
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
   const F = [
     ['company_name', 'ชื่อระบบ / บริษัท (หัวเมนู)'],
@@ -180,8 +343,18 @@ export default function SettingsPage({ settings, onSave, cats = [], laws = [], o
     ['user_name', 'ชื่อผู้ใช้ (มุมล่าง)'],
   ]
   async function save() { setBusy(true); try { await onSave(f) } catch (e) { toast('บันทึกไม่สำเร็จ: ' + e.message) } setBusy(false) }
+  const TABS = [['org', 'ข้อมูลองค์กร & การแสดงผล'], ['context', 'บริบทองค์กร (ใช้คัดกรองกฎหมาย)']]
   return (
     <div className="view">
+      <div className="seg" style={{ marginBottom: 16 }}>
+        {TABS.map(([k, label]) => (
+          <button key={k} className={'seg-btn' + (tab === k ? ' active' : '')} onClick={() => setTab(k)}>{label}</button>
+        ))}
+      </div>
+
+      {tab === 'context' && <CompanyProfileCard />}
+
+      {tab === 'org' && <>
       <div className="panel" style={{ maxWidth: 560 }}>
         <div className="panel-h"><h3>ข้อมูลองค์กร & การแสดงผล</h3></div>
         <div className="panel-b">
@@ -197,6 +370,7 @@ export default function SettingsPage({ settings, onSave, cats = [], laws = [], o
       </div>
 
       <CategoryCard cats={cats} laws={laws} onAdded={onCatsChanged} />
+      </>}
     </div>
   )
 }

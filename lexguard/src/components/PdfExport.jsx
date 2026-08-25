@@ -4,6 +4,7 @@
 // evaluation and an end-of-report signature block.
 import { thDate, reqStats, reqKind } from '../lib/ui.jsx'
 import { REQ_STATUS, REQ_STATUS_ORDER, WAITING_STATUS, LAW_STATUS } from '../lib/supabase.js'
+import { GAP_GROUPS as GAP_GROUP_DEFS } from '../lib/gap.js'
 
 // P21 · ป้ายสถานะ 4 สถานะ + ยังไม่ประเมิน — ใช้ร่วมกันทั้งรายงานทะเบียนและรายงานรายฉบับ
 // รหัสย่อมาจากทะเบียนกลาง ไม่เขียนซ้ำในไฟล์นี้ · คลาส CSS ใช้ชื่อสถานะตรงๆ
@@ -459,5 +460,110 @@ export function buildLawReport({ law, catName = '', catColor = '', settings = {}
     ${legendBlock()}
 
     ${signature}
+  </div>`
+}
+
+// ── P22 ขั้นที่ 4 · รายงาน Gap Analysis (A4 แนวตั้ง) — reuse #print-report ──
+//
+// หัวกระดาษยึดโครงจริงของ F-259 ตามที่สำรวจไว้ใน docs/f259-mapping.md ข้อ 5
+// (ชั้นความลับ · เลขที่เอกสาร Rev. · รอบการติดตาม · วันที่ · อ้าง ISO 45001 ข้อ 6.1.3)
+// เพื่อให้ผู้ตรวจเห็นความเชื่อมโยงกับเอกสารที่เขาคุ้นอยู่แล้วทันที
+export function buildGapReport({ groups = {}, summary = {}, catMap = {}, settings = {}, round, groupDefs }) {
+  const el = document.getElementById('print-report'); if (!el) return
+  const company = settings.company_name || settings.org_name || 'บริษัท จัสเทล เน็ทเวิร์ค จำกัด'
+  const printedOn = thDate(new Date().toISOString())
+  const defs = groupDefs || GAP_GROUP_DEFS
+
+  const sections = defs.map((g, gi) => {
+    const rows = groups[g.key] || []
+    const body = rows.length
+      ? rows.map((x, i) => `<tr>
+          <td class="ctr nw">${i + 1}</td>
+          <td class="nw">${ESC(x.law?.code || '')}</td>
+          <td>${ESC(String(x.law?.name || '').slice(0, 90))}</td>
+          <td class="nw">${ESC(x.section || '—')}</td>
+          <td class="nw">${ESC(x.responsible || '—')}</td>
+          <td>${ESC(x.todo || '')}</td>
+          <td class="nw">${x.due ? 'เลยกำหนด ' + ESC(x.due) : 'ยังไม่กำหนด'}</td>
+        </tr>`).join('')
+      : `<tr><td colspan="7" class="empty">ไม่พบช่องว่างในกลุ่มนี้</td></tr>`
+    return `
+      <div class="gsect">
+        <div class="gh">${gi + 1}. ${ESC(g.title)} <span class="gn">(${rows.length} รายการ)</span></div>
+        <div class="gw">เหตุที่เป็นช่องว่าง: ${ESC(g.why)} &nbsp;·&nbsp; สิ่งที่ต้องทำต่อ: ${ESC(g.todo)}</div>
+        <table class="gt">
+          <thead><tr>
+            <th style="width:24px">#</th><th style="width:62px">รหัส</th><th>ชื่อกฎหมาย</th>
+            <th style="width:78px">มาตรา/ข้อ</th><th style="width:72px">หน่วยงาน</th>
+            <th>สิ่งที่ต้องทำต่อ</th><th style="width:80px">กำหนดเวลา</th>
+          </tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>`
+  }).join('')
+
+  const pct = summary.pct == null ? '—' : summary.pct + '%'
+  const evPct = summary.evidencePct == null ? '—' : summary.evidencePct + '%'
+
+  el.innerHTML = `
+  <style>
+    #print-report .doc { font-family:'Angsana New','AngsanaUPC','TH Sarabun New','Sarabun',serif; color:#000; font-size:14px; line-height:1.35 }
+    #print-report table { width:100%; border-collapse:collapse }
+    #print-report .ghead .t1 { font-size:19px; font-weight:700; text-align:center }
+    #print-report .ghead .t2 { font-size:14px; text-align:center; margin-top:2px }
+    #print-report .ghead .meta { font-size:12px; margin-top:7px; display:flex; justify-content:space-between }
+    #print-report .form { font-size:11px; text-align:right }
+    #print-report .gsum { margin:10px 0 14px; table-layout:fixed }
+    #print-report .gsum .st { border:1px solid #000; text-align:center; padding:7px 4px }
+    #print-report .gsum .stn { font-size:20px; font-weight:700 }
+    #print-report .gsum .stl { font-size:11px }
+    #print-report .gsect { margin-top:13px; page-break-inside:avoid }
+    #print-report .gh { font-size:14px; font-weight:700; border-bottom:1.5px solid #000; padding-bottom:2px }
+    #print-report .gn { font-weight:400; font-size:12px }
+    #print-report .gw { font-size:11px; margin:3px 0 4px }
+    #print-report .gt th,#print-report .gt td { border:1px solid #000; padding:2px 4px; font-size:11.5px; vertical-align:top }
+    #print-report .gt th { background:#eee; font-weight:700 }
+    #print-report .ctr { text-align:center } #print-report .nw { white-space:nowrap }
+    #print-report .empty { text-align:center; padding:6px; font-style:italic }
+    #print-report .gfoot { margin-top:16px; font-size:11.5px; border-top:1px solid #000; padding-top:6px }
+  </style>
+  <div class="doc">
+    <table style="margin-bottom:6px">
+      <tr>
+        <td style="font-size:11px">ใช้ภายใน</td>
+        <td class="form">F-259 Rev.1 &nbsp; วันที่มีผลบังคับใช้ : 10/01/66</td>
+      </tr>
+    </table>
+    <div class="ghead">
+      <div class="t1">รายงานการวิเคราะห์ช่องว่างความสอดคล้องตามกฎหมาย</div>
+      <div class="t2">GAP ANALYSIS &amp; AUDIT READINESS REPORT — ISO 45001 ข้อ 6.1.3</div>
+      <div class="meta">
+        <span><b>${ESC(company)}</b></span>
+        <span>รอบการติดตาม : ${round ? `ไตรมาส ${round.q}/${round.by}` : '...........'} &nbsp;·&nbsp; วันที่พิมพ์ : ${ESC(printedOn)}</span>
+      </div>
+    </div>
+
+    <table class="gsum"><tr>
+      <td class="st"><div class="stn">${ESC(pct)}</div><div class="stl">อัตราความสอดคล้อง<br/>(${summary.met}/${summary.assessed} ฐาน C+NC)</div></td>
+      <td class="st"><div class="stn">${ESC(evPct)}</div><div class="stl">ความครบถ้วนของหลักฐาน<br/>(${summary.evidenceHave}/${summary.evidenceNeed})</div></td>
+      <td class="st"><div class="stn">${summary.totalGaps}</div><div class="stl">ช่องว่างที่พบทั้งหมด</div></td>
+      <td class="st"><div class="stn">${summary.laws}</div><div class="stl">กฎหมายที่บังคับใช้<br/>(${summary.req} ข้อปฏิบัติ)</div></td>
+    </tr></table>
+
+    ${sections}
+
+    <div class="gfoot">
+      อัตราความสอดคล้อง = C &divide; (C + NC) &times; 100 &nbsp;·&nbsp; Ack และ ไม่เกี่ยวข้อง ไม่นับเป็นตัวหาร<br/>
+      ความครบถ้วนของหลักฐาน = จำนวนข้อที่ประเมินว่าสอดคล้องและมีหลักฐานแนบ &divide; จำนวนข้อที่ประเมินว่าสอดคล้องทั้งหมด<br/>
+      รายงานนี้สร้างจากข้อมูลในระบบทะเบียนกฎหมาย ณ วันที่พิมพ์ — ตัวเลขตรงกับที่แสดงบนหน้า Dashboard
+    </div>
+
+    <table style="margin-top:22px;font-size:12px">
+      <tr>
+        <td style="width:33%;text-align:center">ผู้จัดทำ<br/><br/>............................................<br/>(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</td>
+        <td style="width:33%;text-align:center">ผู้ทบทวน<br/><br/>............................................<br/>(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</td>
+        <td style="width:33%;text-align:center">ผู้อนุมัติ (MR)<br/><br/>............................................<br/>(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</td>
+      </tr>
+    </table>
   </div>`
 }

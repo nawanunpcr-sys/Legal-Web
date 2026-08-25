@@ -12,7 +12,7 @@
 // ตรวจซ้ำได้แค่แบบเบา — ตัดตัวที่ไม่มีชื่อกฎหมายหรือไม่ได้ตั้ง needs_lookup ทิ้ง
 import { relateAndMerge } from './_lib/osh-law-relate.js'
 import { flagUnverifiedNumbers } from './_lib/verify-numbers.js'
-import { sameOrigin, clientIp, rateLimited } from './_lib/guard.js'
+import { sameOrigin, clientIp, rateLimited, tooManyRequests } from './_lib/guard.js'
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL
 const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
@@ -25,7 +25,7 @@ export default async function handler(req, res){
   const startedAt = Date.now()
   if(req.method !== 'POST') return res.status(405).json({ error: 'POST only' })
   if(!sameOrigin(req)) return res.status(403).json({ error: 'คำขอไม่ได้มาจากโดเมนของแอป' })
-  if(rateLimited(clientIp(req))) return res.status(429).json({ error: 'เรียกใช้งานถี่เกินไป กรุณารอสักครู่แล้วลองใหม่' })
+  const wait = rateLimited(clientIp(req)); if(wait) return tooManyRequests(res, wait)
   if(!SUPA_URL || !SUPA_KEY) return res.status(500).json({ error: 'ยังไม่ได้ตั้งค่า Supabase (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)' })
   if(!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Vercel' })
 

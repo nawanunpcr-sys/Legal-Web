@@ -2,7 +2,8 @@
 // P19 · จัดใหม่: เห็นโดยไม่ต้องเลื่อน = การ์ด "ต้องทำตอนนี้" + KPI strip
 //   ที่เหลือ (CatBars/NC list/สถิติรายเดือน) พับเก็บ ค่าเริ่มต้น=พับ จำสถานะใน localStorage
 import { useState, useMemo } from 'react'
-import { Pill, Tag, ActiveBadge, thDate, TH_MONTHS, monthlyByAnnounce, announceYears, announceMonth, sumReqStats, usePersist } from '../lib/ui.jsx'
+import { Pill, Tag, ActiveBadge, thDate, TH_MONTHS, monthlyByAnnounce, announceYears, announceMonth, sumReqStats, usePersist, GLOSSARY } from '../lib/ui.jsx'
+import { buildGapAnalysis, GAP_GROUPS } from '../lib/gap.js'
 import { I } from '../components/icons.jsx'
 
 /* P19 · ส่วนที่พับเก็บได้ — จำสถานะเปิด/ปิดต่อบล็อกใน localStorage (ค่าเริ่มต้น = พับ) */
@@ -162,6 +163,12 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
 
   const bad=fLaws.filter(l=>l.status==='bad')
 
+  // P22 ขั้นที่ 4 · การ์ดสรุปช่องว่างเร่งด่วน — ใช้สูตรเดียวกับหน้ารายงาน (src/lib/gap.js)
+  // ไม่คำนวณเองที่นี่ ไม่งั้นวันหนึ่งตัวเลขสองหน้าจะไม่ตรงกัน แล้วผู้ตรวจจะเจอเอกสารที่ขัดกันเอง
+  // แผนปรับปรุงยังไม่ถูกโหลดในหน้านี้ จึงส่ง [] ไป — กลุ่มที่ต้องใช้แผนจะถูกนับรวมเป็น
+  // "NC ที่ยังไม่มีแผน" ทั้งหมด ซึ่งเป็นค่าที่ปลอดภัยกว่า (ไม่ทำให้ช่องว่างดูน้อยกว่าจริง)
+  const gap = useMemo(()=>buildGapAnalysis(fLaws, []),[fLaws])
+
   // ── P21 · แถบสรุปด้านบน ──────────────────────────────────────────────────
   // เดิมเป็นช่องเท่ากัน 8 ช่องเรียงกันรวด พอเพิ่ม 3 สถานะใหม่เข้าไปเลยล้นเป็นสองแถว
   // และ "% ความสอดคล้อง" ซึ่งเป็นตัวเลขที่คนเปิดหน้านี้มาดูจริง ๆ ไปตกอยู่แถวล่างโดดเดี่ยว
@@ -175,19 +182,40 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
     ? `${stats.met.toLocaleString('en-US')} จาก ${stats.assessed.toLocaleString('en-US')} ข้อที่เข้าฐานคำนวณ`
     : (stats.ack+stats.na>0 ? 'ไม่มีข้อที่เข้าฐานคำนวณ (มีแต่เพื่อทราบ / ไม่เกี่ยวข้อง)' : 'ยังไม่มีข้อที่ประเมิน')
   const pctNum = stats.assessed ? (stats.met/stats.assessed*100) : 0
+  // P22 ขั้นที่ 6 · tip อธิบายศัพท์ตรงจุดที่ผู้ใช้เห็นคำนั้น
   const breakdown=[
-    {k:'met',   lab:'สอดคล้อง',     val:stats.met,     color:'var(--ok)'},
-    {k:'unmet', lab:'ไม่สอดคล้อง',  val:stats.unmet,   color:'var(--bad)', go:()=>goRegistry('compliance')},
-    {k:'ack',   lab:'เพื่อทราบ',    val:stats.ack,     color:'var(--accent)'},
-    {k:'na',    lab:'ไม่เกี่ยวข้อง', val:stats.na,      color:'var(--ink-faint)'},
-    {k:'wait',  lab:'ยังไม่ประเมิน', val:stats.waiting, color:'var(--ink-faint)', hollow:true},
+    {k:'met',   lab:'สอดคล้อง',     val:stats.met,     color:'var(--ok)',  tip:GLOSSARY.met},
+    {k:'unmet', lab:'ไม่สอดคล้อง',  val:stats.unmet,   color:'var(--bad)', go:()=>goRegistry('compliance'), tip:GLOSSARY.unmet},
+    {k:'ack',   lab:'เพื่อทราบ',    val:stats.ack,     color:'var(--accent)', tip:GLOSSARY.acknowledged},
+    {k:'na',    lab:'ไม่เกี่ยวข้อง', val:stats.na,      color:'var(--ink-faint)', tip:GLOSSARY.not_applicable},
+    {k:'wait',  lab:'ยังไม่ประเมิน', val:stats.waiting, color:'var(--ink-faint)', hollow:true, tip:GLOSSARY.waiting},
   ]
 
+  const gapCards = GAP_GROUPS.map(g=>({ ...g, n: gap.summary.counts[g.key]||0 })).filter(g=>g.n>0)
+
   return <div className="view">
+    {/* P22 ขั้นที่ 4 · ช่องว่างเร่งด่วน — ลิงก์ไปหน้ารายงานเต็ม */}
+    {gapCards.length>0 && (
+      <div className="panel" style={{marginBottom:14,borderLeft:'3px solid var(--bad)'}}>
+        <div className="panel-h" style={{cursor:'pointer'}} onClick={()=>onGoView&&onGoView('gap')}>
+          <span style={{flex:1,fontSize:14,fontWeight:600}}>ช่องว่างที่ผู้ตรวจจะพบ ({gap.summary.totalGaps} รายการ)</span>
+          <span style={{fontSize:12,color:'var(--brand)',fontWeight:500}}>ดูรายงานเต็ม →</span>
+        </div>
+        <div className="panel-b" style={{paddingTop:4,display:'flex',gap:8,flexWrap:'wrap'}}>
+          {gapCards.map(g=>(
+            <button key={g.key} className="chip" style={{cursor:'pointer'}} title={g.why}
+              onClick={()=>onGoView&&onGoView('gap')}>{g.title} ({g.n})</button>
+          ))}
+          <span style={{fontSize:11.5,color:'var(--ink-faint)',alignSelf:'center',marginLeft:4}}>
+            ความครบถ้วนของหลักฐาน {gap.summary.evidencePct==null?'—':gap.summary.evidencePct+'%'}
+          </span>
+        </div>
+      </div>
+    )}
     <div className="dash-summary">
       <div className="dash-summary-top">
         <div className="dash-summary-main">
-          <div className="dash-summary-lab">ความสอดคล้องตามข้อกำหนด</div>
+          <div className="dash-summary-lab" title={GLOSSARY.pct}>ความสอดคล้องตามข้อกำหนด</div>
           <div className="dash-summary-val">{pctText}</div>
           <div className="dash-summary-sub">{pctSub}</div>
           {/* แถบนี้แทนสัดส่วน C ต่อฐาน C+NC เท่านั้น — ไม่ใช่สัดส่วนของข้อทั้งหมด */}
@@ -219,7 +247,8 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
             className={'dash-chip'+(b.val===0?' is-zero':'')+(b.go&&b.val>0?' is-link':'')}
             role={b.go&&b.val>0?'button':undefined} tabIndex={b.go&&b.val>0?0:undefined}
             onClick={b.go&&b.val>0?b.go:undefined}
-            onKeyDown={b.go&&b.val>0?(e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); b.go() } }):undefined}>
+            onKeyDown={b.go&&b.val>0?(e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); b.go() } }):undefined}
+            title={b.tip||''}>
             <i style={b.hollow
               ? {borderColor:b.color,background:'transparent'}
               : {background:b.color,borderColor:b.color}}/>

@@ -11,6 +11,21 @@
     },
     "api/law-repeal-check.js": {
       "maxDuration": 300
+    },
+    "api/law-screen.js": {
+      "maxDuration": 300
+    },
+    "api/req-preassess.js": {
+      "maxDuration": 300
+    },
+    "api/law-action-guide.js": {
+      "maxDuration": 300
+    },
+    "api/queue-run.js": {
+      "maxDuration": 300
+    },
+    "api/law-overview.js": {
+      "maxDuration": 300
     }
   },
   "rewrites": [

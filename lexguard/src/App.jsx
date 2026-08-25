@@ -10,7 +10,8 @@ import { supabase, hasSupabase, fetchAll,
          submitWorkflowAssessment, closeWorkflowPlan, fetchDiscoveredLaws, fetchSearchLog,
          fetchSettings, saveSettings, DEFAULT_SETTINGS,
          computeLawStatus, reqStatusLabel, reqKind,
-         lawInForce, runRepealCheck, fetchRepealChecks, applyRepealCheck, dismissRepealCheck } from './lib/supabase.js'
+         lawInForce, runRepealCheck, fetchRepealChecks, applyRepealCheck, dismissRepealCheck,
+         fetchCompanyProfile, fetchRelevance } from './lib/supabase.js'
 import { AuthContext, useAuth, can, ROLE_LABELS, NO_PERM, currentUserName,
          getSession as getAuthSession, signOut as authSignOut, onAuthChange } from './lib/auth.js'
 import LawDrawer from './components/LawDrawer.jsx'
@@ -36,6 +37,8 @@ import RegistryCompliance from './pages/Registry.jsx'
 import Communication from './pages/Communications.jsx'
 import ExportPdfModal from './components/ExportPdfModal.jsx'
 import Improvements from './pages/Improvements.jsx'
+import GapReport from './pages/GapReport.jsx'
+import GettingStarted from './pages/GettingStarted.jsx'
 import NotificationsPage from './pages/Notifications.jsx'
 import SettingsPage from './pages/Settings.jsx'
 
@@ -49,6 +52,11 @@ const NAV_GROUPS = [
     { id:'tasks',         label:'รายการที่ต้องทำ',        icon:'update'  },
     { id:'comm',          label:'สื่อสาร & ส่งรายงาน',    icon:'chat'    },
     { id:'summary',       label:'สรุปกฎหมาย (AI)',       icon:'spark'   },
+    // P22 ขั้นที่ 4 · หน้ารายงานช่องว่าง — ระบบไม่เคยมีหน้ารายงานวิเคราะห์มาก่อน
+    // (Reports.jsx เป็นตารางกำหนดส่งรายงานราชการใต้เมนูสื่อสาร ไม่ใช่ที่ของรายงานนี้)
+    { id:'gap',           label:'รายงานช่องว่าง',        icon:'scale'   },
+    // P22 ขั้นที่ 6 · เข้าถึงได้จากทุกหน้าเพราะอยู่ในเมนูหลักที่แสดงตลอดเวลา
+    { id:'help',          label:'เริ่มต้นใช้งาน',        icon:'info'    },
   ]},
 ]
 
@@ -57,6 +65,8 @@ const TITLES = {
   tasks:         ['รายการที่ต้องทำ',        'งานที่ต้องดำเนินการทั้งหมด — ทวนสอบกฎหมาย · รายงานราชการ · การสื่อสาร'],
   // P19 · registry ตอนนี้มี 3 แท็บ (ทะเบียน/ประวัติ/ยกเลิก) — history และ repealed ไม่ใช่ view เดี่ยวๆ แล้ว
   registry:      ['ทะเบียนกฎหมาย',        ''],
+  gap:           ['รายงานช่องว่าง (Gap Analysis)', 'ช่องว่างที่ผู้ตรวจจะพบ เรียงตามความเสี่ยง — ISO 45001 ข้อ 6.1.3'],
+  help:          ['เริ่มต้นใช้งาน',       'สายงาน 5 ขั้นของระบบ และความหมายของศัพท์ที่ใช้'],
   register:      ['ทะเบียนกฎหมาย',         'กฎหมายที่เกี่ยวข้องและสถานะการปฏิบัติ'],
   compliance:    ['ติดตามความสอดคล้อง',    'สถานะรายข้อปฏิบัติแยกตามหมวดและลำดับชั้น'],
   improvements:  ['แผนปรับปรุง',           'รายการ NC และแนวทางแก้ไข (อ้างอิง PD-05)'],
@@ -101,6 +111,10 @@ export default function App(){
   const [activity,setActivity] = useState([])
   const [,setQuarterStats] = useState([])   // lg_law_quarter_stats: ยังอัปเดตไว้ (ใช้ maintainance) แต่ไม่แสดงผลแล้ว (P17)
   const [settings,setSettings] = useState(DEFAULT_SETTINGS)
+  // P22 ขั้นที่ 1 · บริบทองค์กร + ผลคัดกรองความเกี่ยวข้อง (เก็บแยกจาก laws
+  // เพื่อไม่ให้การรีโหลดผลคัดกรองต้องดึงกฎหมายทั้ง 160 ฉบับใหม่ทุกครั้ง)
+  const [companyProfile,setCompanyProfile] = useState(null)
+  const [relevance,setRelevance] = useState([])
   const [reports,setReports] = useState([])
   const [workflowRows,setWorkflowRows] = useState([])   // lg_law_workflow — Process Tracker รายกฎหมาย (P10)
   const [taskRows,setTaskRows] = useState([])           // view lg_tasks — หน้า "รายการที่ต้องทำ" (P16/P17)
@@ -160,9 +174,9 @@ export default function App(){
   useEffect(()=>{ if(!authed) return; (async()=>{
     if(!hasSupabase){ setErr('ยังไม่ได้ตั้งค่า Supabase (.env) — กำลังแสดงหน้าเปล่า'); setLoading(false); return }
     try{
-      const [d, mData, a, rp, st, wf, disc, slog, tk, dept, rc] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchReports(), fetchSettings(), fetchWorkflow(), fetchDiscoveredLaws(), fetchSearchLog(), fetchTasks(), listDepartments(), fetchRepealChecks('pending')])
+      const [d, mData, a, rp, st, wf, disc, slog, tk, dept, rc, cp, relv] = await Promise.all([fetchAll(), fetchComplianceMonths(new Date().getFullYear()), fetchActivity(), fetchReports(), fetchSettings(), fetchWorkflow(), fetchDiscoveredLaws(), fetchSearchLog(), fetchTasks(), listDepartments(), fetchRepealChecks('pending'), fetchCompanyProfile(), fetchRelevance()])
       setCats(withCatColors(d.cats)); setLaws(d.laws); setComms(d.comms); setNotifs(d.notifs)
-      setMonths(mData); setCurMonthRows(mData); setActivity(a); setReports(rp); setSettings(st); setWorkflowRows(wf); setDiscovered(disc); setSearchLog(slog); setTaskRows(tk); setDepartments(dept); setRepealChecks(rc)
+      setMonths(mData); setCurMonthRows(mData); setActivity(a); setReports(rp); setSettings(st); setWorkflowRows(wf); setDiscovered(disc); setSearchLog(slog); setTaskRows(tk); setDepartments(dept); setRepealChecks(rc); setCompanyProfile(cp); setRelevance(relv)
     }
     catch(e){ setErr('เชื่อมต่อฐานข้อมูลไม่สำเร็จ: '+e.message) }
     setLoading(false)
@@ -193,8 +207,14 @@ export default function App(){
   const catMap      = useMemo(()=>Object.fromEntries(cats.map(c=>[c.code,c])),[cats])
   // P21 ส่วนที่ 2 · "ยกเลิกแล้ว" ตัดสินจาก lawInForce() ซึ่งดู law_status เป็นหลัก
   // และยังรองรับ status='repealed' แบบเดิมไว้ด้วย (ข้อมูลก่อน migration 046)
-  const activeLaws  = useMemo(()=>laws.filter(lawInForce),[laws])
-  const repealedLaws= useMemo(()=>laws.filter(l=>!lawInForce(l)),[laws])
+  // P22 ขั้นที่ 1 · แนบผลคัดกรองเข้าไปกับกฎหมายแต่ละฉบับ (l.relevance)
+  // ทำที่นี่ที่เดียว หน้าจอทุกหน้าจึงอ่านค่าเดียวกัน ไม่ต้องส่ง map ผลคัดกรองไปทุกที่
+  const relByLaw = useMemo(()=>{ const m={}; (relevance||[]).forEach(r=>{ m[r.law_id]=r }); return m },[relevance])
+  const lawsWithRel = useMemo(()=>laws.map(l=>({...l, relevance: relByLaw[l.id]||null})),[laws,relByLaw])
+  async function loadRelevance(){ try{ setRelevance(await fetchRelevance()) }catch(e){ console.warn('relevance reload',e) } }
+
+  const activeLaws  = useMemo(()=>lawsWithRel.filter(lawInForce),[lawsWithRel])
+  const repealedLaws= useMemo(()=>lawsWithRel.filter(l=>!lawInForce(l)),[lawsWithRel])
   const lawMap      = useMemo(()=>Object.fromEntries(laws.map(l=>[l.id,l])),[laws])
   // P20c · แนบรายชื่อแผนก (lg_departments) เข้าไปกับ suggest เพื่อช่วยเติมช่องผู้รับผิดชอบ
   const suggest     = useMemo(()=>({ ...suggestionLists(laws), departments: departments.map(dp=>dp.name) }),[laws,departments])
@@ -663,7 +683,10 @@ export default function App(){
             </div>
           </div>
           <div className="view-swap" key={view}>
-          {view==='dashboard'     && <Dashboard     laws={laws} cats={cats} catMap={catMap} onOpen={setOpenLaw} onGoView={goView}
+          {/* P22 · ต้องเป็น lawsWithRel ไม่ใช่ laws — การ์ดช่องว่างบน Dashboard อ่าน l.relevance
+              ถ้าส่ง laws เปล่าไป ทุกฉบับจะถูกนับว่า "ยังไม่คัดกรอง" ตลอดกาล
+              แล้วตัวเลขจะไม่ตรงกับหน้ารายงานช่องว่าง ซึ่งผิดเกณฑ์ผ่านของขั้นที่ 4 */}
+          {view==='dashboard'     && <Dashboard     laws={lawsWithRel} cats={cats} catMap={catMap} onOpen={setOpenLaw} onGoView={goView}
             monthsData={months}/>}
           {view==='tasks'         && <Tasks taskRows={taskRows} workflowRows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest} focusSignal={trackerFocus}
             onStartMonitor={async(...a)=>{ await handleStartMonitor(...a); loadTasks() }}
@@ -674,7 +697,7 @@ export default function App(){
             onOpenLaw={setOpenLaw}/>}
           {view==='registry'      && <RegistryCompliance
             regLaws={activeLaws} cats={cats} catMap={catMap} stats={stats}
-            search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={laws}
+            search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={lawsWithRel}
             workflow={workflowRows} suggest={suggest} onAssess={handleWorkflowAssess} focus={regFocus} onDelete={handleDeleteLaw}
             round={round} onExportF259={()=>setShowPdf(true)} onAddLaw={()=>openAddLaw()}
             onImported={async()=>{ await loadLaws(); fetchQuarterStats().then(setQuarterStats); fetchActivity().then(setActivity) }}
@@ -682,10 +705,13 @@ export default function App(){
             onMarkNoNewLaws={handleMonthNoNewLaws} onMarkHasNewLaws={handleMonthHasNewLaws}
             activity={activity} settings={settings} searchLog={searchLog} repealedLaws={repealedLaws} onRestore={handleRestore}
             repealChecks={repealChecks} repealBusy={repealBusy} onRepealCheck={handleRepealCheck}
-            onRepealApply={handleRepealApply} onRepealDismiss={handleRepealDismiss}/>}
+            onRepealApply={handleRepealApply} onRepealDismiss={handleRepealDismiss}
+            companyProfile={companyProfile} onRelevanceChanged={loadRelevance}/>}
           {view==='summary'       && <LawSummary laws={activeLaws} allLaws={laws} cats={cats} catMap={catMap} discovered={discovered} suggest={suggest}
             onReloadDiscovered={loadDiscovered} onReloadLaws={loadLaws} onOpenLaw={setOpenLaw} onAddToRegistry={init=>openAddLaw(init)}/>}
-          {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw}/>}
+          {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw} onChanged={loadLaws}/>}
+          {view==='gap'           && <GapReport laws={inForceLaws} catMap={catMap} settings={settings} round={round} onOpen={setOpenLaw}/>}
+          {view==='help'          && <GettingStarted onGoView={goView}/>}
           {view==='comm'          && (<div className="view">
             <div className="seg" style={{marginBottom:14}}>
               <button className={'seg-btn'+(commTab==='comm'?' active':'')} onClick={()=>setCommTab('comm')}>ตารางการสื่อสาร</button>
@@ -706,7 +732,7 @@ export default function App(){
       {openLaw && (
         <LawDrawer law={openLaw} catMap={catMap} settings={settings} onClose={()=>setOpenLaw(null)}
           onToggle={setReqStatus} onAddReq={addReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive} onDelete={handleDeleteLaw}
-          thDate={thDate}/>
+          thDate={thDate} relevance={relByLaw[openLaw.id]||null} onRelevanceChanged={loadRelevance} onPlansCreated={loadLaws}/>
       )}
       {showAddLaw && <AddLawFlow cats={cats} allLaws={laws} suggest={suggest} initialData={addLawInit}
         onCreate={handleCreateAddWorkflow} onClose={()=>{ setShowAddLaw(false); setAddLawInit(null) }}

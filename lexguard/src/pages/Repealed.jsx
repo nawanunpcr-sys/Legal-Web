@@ -1,12 +1,20 @@
 // Repealed page — laws that have been repealed / superseded (restorable).
 // Moved verbatim from App.jsx (pure refactor).
+import { useState } from 'react'
 import { Tag, thDate } from '../lib/ui.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
+import RepealDetails from '../components/RepealDetails.jsx'
 
-export default function Repealed({laws,catMap,search,onOpen,onRestore}){
+// P22 ขั้นที่ 6 · หน้านี้เคยแสดงเพียง 4 ช่อง (วันที่ · รหัสที่แทน · เลขอ้างอิง · เหตุผล)
+// ทั้งที่ฐานข้อมูลเก็บครบตั้งแต่ migration 046 แล้ว — ชื่อเต็มของฉบับที่ยกเลิก
+// ลิงก์ราชกิจจาฯ ขอบเขตการยกเลิก และผลกระทบต่อข้อกำหนดที่เคยประเมินไว้ ไม่เคยถูกแสดงเลย
+export default function Repealed({laws,catMap,search,onOpen,onRestore,allLaws=[]}){
   const { can }=useAuth()
   const q=search.toLowerCase()
   const rows=laws.filter(l=>!q||l.name.toLowerCase().includes(q)||l.code.toLowerCase().includes(q))
+  const [openId,setOpenId]=useState(null)
+  // ฉบับที่ใช้แทน ถ้ามันอยู่ในทะเบียนแล้ว — ใช้บอกว่านำเข้าหรือยัง
+  const byCode=Object.fromEntries((allLaws||[]).map(l=>[l.code,l]))
 
   if (rows.length===0) return (
     <div className="view">
@@ -50,24 +58,31 @@ export default function Repealed({laws,catMap,search,onOpen,onRestore}){
                 <button className="btn btn-primary" style={{padding:'5px 12px',fontSize:12}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onRestore(l)}>กู้คืน</button>
               </div>
             </div>
-            {/* repeal details */}
-            <div style={{padding:'14px 20px',display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'12px 24px'}}>
-              <div>
-                <div style={{fontSize:11,color:'var(--ink-faint)',fontWeight:600,letterSpacing:.4,textTransform:'uppercase',marginBottom:3}}>วันที่มีผลยกเลิก</div>
-                <div style={{fontSize:13.5,fontWeight:600,color:'var(--bad)'}}>{thDate(l.repeal_date)}</div>
+            {/* repeal details — ครบ 4 อย่างตามข้อเสนอแนะข้อ 6 */}
+            <div style={{padding:'14px 20px'}}>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'12px 24px'}}>
+                <div>
+                  <div style={{fontSize:11,color:'var(--ink-faint)',fontWeight:600,letterSpacing:.4,textTransform:'uppercase',marginBottom:3}}>วันที่มีผลยกเลิก</div>
+                  <div style={{fontSize:13.5,fontWeight:600,color:l.repeal_date?'var(--bad)':'var(--warn)'}}>{l.repeal_date?thDate(l.repeal_date):'รอตรวจสอบ'}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:'var(--ink-faint)',fontWeight:600,letterSpacing:.4,textTransform:'uppercase',marginBottom:3}}>แทนที่ด้วย</div>
+                  <div className="num" style={{fontSize:13.5,fontWeight:600,color:l.replaced_by_code?'var(--brand)':'var(--ink-faint)'}}>{l.replaced_by_code||'ไม่มีกฎหมายแทน'}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:'var(--ink-faint)',fontWeight:600,letterSpacing:.4,textTransform:'uppercase',marginBottom:3}}>ข้อกำหนดที่ได้รับผล</div>
+                  <div style={{fontSize:13.5,fontWeight:600,color:(l.reqs||[]).length?'var(--ink)':'var(--ink-faint)'}}>
+                    {(l.reqs||[]).length?`${l.reqs.length} ข้อ`:'ไม่มีข้อกำหนด'}
+                  </div>
+                </div>
               </div>
-              <div>
-                <div style={{fontSize:11,color:'var(--ink-faint)',fontWeight:600,letterSpacing:.4,textTransform:'uppercase',marginBottom:3}}>แทนที่ด้วย</div>
-                <div className="num" style={{fontSize:13.5,fontWeight:600,color:l.replaced_by_code?'var(--brand)':'var(--ink-faint)'}}>{l.replaced_by_code||'ไม่มีกฎหมายแทน'}</div>
-              </div>
-              <div>
-                <div style={{fontSize:11,color:'var(--ink-faint)',fontWeight:600,letterSpacing:.4,textTransform:'uppercase',marginBottom:3}}>อ้างอิง</div>
-                <div style={{fontSize:12.5,color:'var(--ink-soft)'}}>{l.repealed_by_authority||'—'}</div>
-              </div>
-              {l.repeal_reason && (
-                <div style={{gridColumn:'1/-1',paddingTop:10,borderTop:'1px solid var(--line-soft)'}}>
-                  <div style={{fontSize:11,color:'var(--ink-faint)',fontWeight:600,letterSpacing:.4,textTransform:'uppercase',marginBottom:4}}>เหตุผลการยกเลิก</div>
-                  <div style={{fontSize:13,color:'var(--ink-soft)',lineHeight:1.6}}>{l.repeal_reason}</div>
+              <button className="btn btn-ghost" style={{marginTop:12,padding:'4px 11px',fontSize:12}}
+                onClick={()=>setOpenId(openId===l.id?null:l.id)}>
+                {openId===l.id?'ย่อรายละเอียดการยกเลิก ▲':'ดูรายละเอียดการยกเลิกทั้งหมด ▼'}
+              </button>
+              {openId===l.id && (
+                <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid var(--line-soft)'}}>
+                  <RepealDetails law={l} replacementLaw={l.replaced_by_code?byCode[l.replaced_by_code]:null}/>
                 </div>
               )}
             </div>

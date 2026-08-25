@@ -4,14 +4,18 @@
 // P19 · รับ History + Repealed เข้ามาเป็นแท็บในหน้าเดียว (ลดเมนูหลักเหลือ 4 อัน)
 import { useState, useMemo, useEffect } from 'react'
 import { LAW_TYPES, fetchStaging, REQ_STATUS, REQ_STATUS_ORDER, WAITING_STATUS,
-         LAW_STATUS, LAW_STATUS_ORDER, REPEAL_CONFIDENCE, lawInForce } from '../lib/supabase.js'
+         LAW_STATUS, LAW_STATUS_ORDER, REPEAL_CONFIDENCE, lawInForce,
+         RELEVANCE, RELEVANCE_ORDER, relevanceOf, profileReady,
+         enqueueScreening, runScreeningQueue, screeningQueueCount } from '../lib/supabase.js'
 import RepealReviewModal from '../components/RepealReviewModal.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
+import { useAiAction } from '../lib/aiAction.js'
+import { toast } from '../lib/toast.js'
 import { I } from '../components/icons.jsx'
 import AssessForm from '../components/AssessForm.jsx'
 import DeleteLawModal from '../components/DeleteLawModal.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
-import { usePageFilters, Pill, Tag, ActiveBadge, thDate, TH_MONTHS, prog, lawBEYear, sumReqStats, reqStats, reqKind, reqEvalTitle } from '../lib/ui.jsx'
+import { usePageFilters, Pill, Tag, ActiveBadge, thDate, TH_MONTHS, prog, lawBEYear, sumReqStats, reqStats, reqKind, reqEvalTitle, GLOSSARY } from '../lib/ui.jsx'
 import History from './History.jsx'
 import Repealed from './Repealed.jsx'
 
@@ -97,17 +101,20 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
     // P19 · props ใหม่สำหรับแท็บ ประวัติ/ยกเลิก
     activity=[],settings={},searchLog=[],repealedLaws=[],onRestore,
     // P21 ส่วนที่ 2 · ตรวจสถานะการบังคับใช้
-    repealChecks=[],repealBusy=false,onRepealCheck,onRepealApply,onRepealDismiss}){
+    repealChecks=[],repealBusy=false,onRepealCheck,onRepealApply,onRepealDismiss,
+    // P22 ขั้นที่ 1 · บริบทองค์กร + ผลคัดกรอง
+    companyProfile=null,onRelevanceChanged}){
   // จำแท็บที่เลือกไว้ (namespace แยกจาก 'registry' ที่ Register() ใช้อยู่แล้ว
   // เพื่อกัน state ชนกันเวลาสอง component เขียน localStorage.lg_filters.registry พร้อมกัน)
   const [tabF,setTabF]=usePageFilters('registryTabs',{tab:'register'})
   const tab=tabF.tab, setTab=t=>setTabF('tab',t)
 
+  // P22 ขั้นที่ 6 · tip = คำอธิบายศัพท์ จากทะเบียนกลางเดียวกับหน้า "เริ่มต้นใช้งาน"
   const kpis=[
     {lab:'ข้อปฏิบัติทั้งหมด',   val:stats.req, accent:'#1C2431'},
-    {lab:'ผ่านการประเมิน (C)', val:stats.met, accent:'#5F7A61'},
-    {lab:'ยังไม่สอดคล้อง (NC)', val:stats.nc, accent:'#B4553F'},
-    {lab:'รอผู้เกี่ยวข้องประเมิน', val:stats.waiting||0, accent:'#8A8F98'},
+    {lab:'ผ่านการประเมิน (C)', val:stats.met, accent:'#5F7A61', tip:GLOSSARY.met},
+    {lab:'ยังไม่สอดคล้อง (NC)', val:stats.nc, accent:'#B4553F', tip:GLOSSARY.unmet},
+    {lab:'รอผู้เกี่ยวข้องประเมิน', val:stats.waiting||0, accent:'#8A8F98', tip:GLOSSARY.waiting},
   ]
   return <div className="view">
     <div className="seg" style={{marginBottom:14}}>
@@ -121,7 +128,7 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
     {tab==='register' && <>
       <div className="rc-stats">
         {kpis.map((k,i)=>(
-          <div className="stat" key={i} style={{borderTopColor:k.accent}}>
+          <div className="stat" key={i} style={{borderTopColor:k.accent}} title={k.tip||''}>
             <div className="lab">{k.lab}</div>
             <div className="val num" style={{color:k.accent}}>{k.val}</div>
           </div>
@@ -142,13 +149,14 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
         round={round} onExportF259={onExportF259} onAddLaw={onAddLaw} onImported={onImported}
         workflow={workflow} suggest={suggest} onAssess={onAssess} focus={focus} onDelete={onDelete}
         repealChecks={repealChecks} repealBusy={repealBusy} onRepealCheck={onRepealCheck}
-        onRepealApply={onRepealApply} onRepealDismiss={onRepealDismiss}/>
+        onRepealApply={onRepealApply} onRepealDismiss={onRepealDismiss}
+        companyProfile={companyProfile} onRelevanceChanged={onRelevanceChanged}/>
     </>}
 
     {tab==='history' && <History activity={activity} laws={allLaws} catMap={catMap} settings={settings}
       workflowRows={workflow} searchLog={searchLog} onDeleteLaw={onDelete}/>}
 
-    {tab==='repealed' && <Repealed laws={repealedLaws} catMap={catMap} search={search} onOpen={onOpen} onRestore={onRestore}/>}
+    {tab==='repealed' && <Repealed laws={repealedLaws} catMap={catMap} search={search} onOpen={onOpen} onRestore={onRestore} allLaws={allLaws}/>}
   </div>
 }
 
@@ -182,9 +190,110 @@ function StagingModal({ laws=[], catMap={}, onClose }){
   </>)
 }
 
+/* P22 ขั้นที่ 1 · ป้ายความเกี่ยวข้องบนแถวทะเบียน
+   แสดงเฉพาะเมื่อมีเรื่องต้องบอก — "ยังไม่คัดกรอง" ที่เป็นค่าเริ่มต้นของทั้ง 150 ฉบับ
+   ถ้าขึ้นป้ายทุกแถวจะกลายเป็นสัญญาณรบกวนจนไม่มีใครอ่าน จึงขึ้นเฉพาะฉบับที่ยังมีข้อเสนอค้างอยู่
+   ไม่ใช้สีสื่อความหมายอย่างเดียว — มีข้อความกำกับทุกป้าย (กติกาข้อ 8) */
+function RelBadge({ law }) {
+  const rel = law.relevance
+  const final = relevanceOf(rel)
+  if (final === 'unscreened' && !rel?.suggested_at) return null
+  if (final === 'unscreened') return (
+    <span className="pill p-pending" style={{ fontSize: 10.5 }}
+      title={`AI เสนอว่า "${RELEVANCE[rel.verdict]?.label}" — ${rel.reason || ''}`}>
+      รอยืนยันผลคัดกรอง
+    </span>
+  )
+  return (
+    <span className={'pill ' + (RELEVANCE[final]?.cls || '')} style={{ fontSize: 10.5 }}
+      title={rel?.confirm_note || rel?.reason || ''}>
+      {RELEVANCE[final]?.short}
+    </span>
+  )
+}
+
+/* ══ P22 ขั้นที่ 1 · แถบคัดกรองความเกี่ยวข้องเป็นชุด ═══════════════════════════
+   กติกาข้อ 6 · ห้ามวนยิง AI จากหน้าจอ — ปุ่มนี้ทำสองจังหวะแยกกัน
+     (1) "เข้าคิว"      = insert แถวลง lg_agent_queue เฉยๆ ไม่เรียก AI เลย
+     (2) "ประมวลผลคิว"  = ยิง /api/queue-run ครั้งเดียว แล้ว server วนทำเองทีละฉบับ
+   ยังไม่ตั้งบริบทองค์กร = ปุ่มถูกปิดพร้อมบอกให้ไปตั้งก่อน ไม่ใช่เรียก AI แล้วได้ผลมั่ว */
+function ScreeningBar({ laws, profile, onChanged }) {
+  const { can } = useAuth()
+  const ai = useAiAction()
+  const [queued, setQueued] = useState(0)
+  const [msg, setMsg] = useState('')
+  const ready = profileReady(profile)
+
+  useEffect(() => { let live = true
+    screeningQueueCount().then(n => { if (live) setQueued(n) }).catch(() => {})
+    return () => { live = false }
+  }, [laws.length])
+
+  const unscreened = laws.filter(l => relevanceOf(l.relevance) === 'unscreened')
+
+  async function addToQueue() {
+    return ai.run('enqueue', async () => {
+      const r = await enqueueScreening(unscreened)
+      setQueued(await screeningQueueCount())
+      setMsg(`เข้าคิวแล้ว ${r.queued} ฉบับ${r.skipped ? ` · ข้ามที่ค้างอยู่แล้ว ${r.skipped} ฉบับ` : ''}`)
+      toast(`เข้าคิวคัดกรอง ${r.queued} ฉบับ`, 'success')
+    }, { errorPrefix: 'เข้าคิวไม่สำเร็จ' })
+  }
+
+  async function runQueue() {
+    return ai.run('run', async () => {
+      const r = await runScreeningQueue()
+      setQueued(r.remaining ?? 0)
+      setMsg((r.recovered ? `นำงานที่ค้างจากรอบก่อนกลับเข้าคิว ${r.recovered} ฉบับ · ` : '')
+        + `คัดกรองแล้ว ${r.done} ฉบับ` + (r.failed ? ` · ผิดพลาด ${r.failed}` : '')
+        + (r.remaining ? ` · เหลืออีก ${r.remaining} ฉบับ (${r.stopped}) — กดประมวลผลต่อได้` : ' · คิวหมดแล้ว'))
+      toast(`คัดกรองแล้ว ${r.done} ฉบับ — เป็นข้อเสนอ ยังต้องยืนยันรายฉบับ`, 'success')
+      onChanged && onChanged()
+    }, { errorPrefix: 'ประมวลผลคิวไม่สำเร็จ' })
+  }
+
+  return (
+    <div className="panel" style={{ padding: '13px 16px', marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <b style={{ fontSize: 13 }}>คัดกรองความเกี่ยวข้องกับกิจการ</b>
+        <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
+          ยังไม่คัดกรอง {unscreened.length} ฉบับ{queued ? ` · ค้างในคิว ${queued} ฉบับ` : ''}
+        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-ghost" style={{ padding: '4px 11px', fontSize: 12 }}
+            disabled={ai.busy || !ready || !can('edit') || !unscreened.length}
+            title={!ready ? 'ยังไม่ได้ตั้งบริบทองค์กร' : (can('edit') ? '' : NO_PERM)}
+            onClick={addToQueue}>
+            {ai.isBusy('enqueue') ? 'กำลังเข้าคิว…' : `เข้าคิวทั้งหมด (${unscreened.length})`}
+          </button>
+          <button className="btn btn-primary" style={{ padding: '4px 11px', fontSize: 12 }}
+            disabled={ai.busy || !ready || !can('edit') || !queued}
+            title={!ready ? 'ยังไม่ได้ตั้งบริบทองค์กร' : (can('edit') ? '' : NO_PERM)}
+            onClick={runQueue}>
+            {ai.isBusy('run') ? 'กำลังคัดกรอง…' : `ประมวลผลคิว${queued ? ` (${queued})` : ''}`}
+          </button>
+        </div>
+      </div>
+      {!ready && (
+        <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 7, background: 'var(--warn-bg)',
+          color: 'var(--warn)', fontSize: 12.5, lineHeight: 1.65 }}>
+          ยังไม่ได้ตั้งบริบทองค์กร — ไปที่ <b>ตั้งค่า › บริบทองค์กร</b> แล้วกรอกประเภทกิจการ ลักษณะสถานประกอบกิจการ
+          จำนวนลูกจ้าง และกิจกรรมที่ทำจริงก่อน มิฉะนั้น AI ไม่มีข้อมูลฝั่งบริษัทให้เทียบกับเงื่อนไขในตัวบท
+        </div>
+      )}
+      {msg && <div style={{ marginTop: 9, fontSize: 12, color: 'var(--ink-soft)' }}>{msg}</div>}
+      <div style={{ marginTop: 9, fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.6 }}>
+        ผลที่ได้เป็น “ข้อเสนอ” ทั้งหมด — ต้องเปิดรายฉบับแล้วกดยืนยันจึงจะมีผลต่อทะเบียน
+        และระบบจะไม่เปลี่ยนสถานะข้อปฏิบัติใดให้เองไม่ว่ากรณีใด
+      </div>
+    </div>
+  )
+}
+
 function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259,onAddLaw,onImported,
     workflow=[],suggest={},onAssess,focus,onDelete,
-    repealChecks=[],repealBusy=false,onRepealCheck,onRepealApply,onRepealDismiss}){
+    repealChecks=[],repealBusy=false,onRepealCheck,onRepealApply,onRepealDismiss,
+    companyProfile=null,onRelevanceChanged}){
   const { can }=useAuth()
   // P20d · รายการรออนุมัติใน lg_import_staging (badge ข้างปุ่มเพิ่มกฎหมาย)
   const [staging,setStaging]=useState([])
@@ -197,9 +306,13 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   //   lawSt  = สถานะการบังคับใช้ (ยังใช้/ยกเลิก/แก้ไข/…)      ← ส่วนที่ 2
   // showRepealed ค่าเริ่มต้น false = ซ่อนฉบับที่ยกเลิกแล้ว (ข้อ 2.8)
   const [f,setF,resetF,filterActive]=usePageFilters('registry',
-    {cat:'all',act:'all',st:'all',lawSt:'all',showRepealed:false,sortKey:'code',sortDir:1})
-  const {cat,act,st,lawSt,showRepealed,sortKey,sortDir}=f
+    {cat:'all',act:'all',st:'all',lawSt:'all',rel:'all',showRepealed:false,sortKey:'code',sortDir:1})
+  const {cat,act,st,lawSt,rel,showRepealed,sortKey,sortDir}=f
   const setCat=v=>setF('cat',v), setAct=v=>setF('act',v), setSt=v=>setF('st',v), setLawSt=v=>setF('lawSt',v)
+  // P22 ขั้นที่ 1 · แกนที่สาม — ความเกี่ยวข้องกับกิจการ (คนละแกนกับสองอันบน ใช้ร่วมกันได้)
+  const setRel=v=>setF('rel',v)
+  const relOf=l=>relevanceOf(l.relevance)
+  const countRel=k=>visible.filter(l=>relOf(l)===k).length
   const [reviewCheck,setReviewCheck]=useState(null)   // ผลตรวจที่กำลังเปิดยืนยัน
   const lawStatusOf=l=>l.law_status||'in_force'
   // countLawSt นับจากรายการเต็มโดยตั้งใจ — ป้ายกรองสถานะต้องบอกว่ามีอยู่กี่ฉบับจริง
@@ -253,6 +366,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
     &&(act==='all'||(act==='active'?l.active!==false:l.active===false))
     &&(st==='all'||hasKind(l,st))
     &&(lawSt==='all'||lawStatusOf(l)===lawSt)
+    &&(rel==='all'||relOf(l)===rel)
     // ซ่อนฉบับที่ยกเลิกแล้วโดยค่าเริ่มต้น เว้นแต่ผู้ใช้เปิดสวิตช์ หรือกำลังกรองสถานะนั้นอยู่โดยตรง
     &&(showRepealed||lawSt!=='all'||lawInForce(l))
     &&matchQ(l))
@@ -269,6 +383,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   const grouped=useMemo(()=>{ const byCat={}; rows.forEach(l=>{ const c=l.cat; if(!byCat[c])byCat[c]={}; const t=l.hierarchy_level||5; if(!byCat[c][t])byCat[c][t]=[]; byCat[c][t].push(l) }); return byCat },[rows])
   const activeCats=catsList.filter(c=>cat==='all'||c===cat)
   return <div className="view">
+    <ScreeningBar laws={visible} profile={companyProfile} onChanged={onRelevanceChanged}/>
     <div className="filterbar">
       <span className={'chip'+(act==='all'?' active':'')} onClick={()=>setAct('all')}>ทั้งหมด</span>
       <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({visible.filter(l=>l.active!==false).length})</span>
@@ -290,6 +405,15 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
       {LAW_STATUS_ORDER.filter(k=>countLawSt(k)>0).map(k=>(
         <span key={k} className={'chip'+(lawSt===k?' active':'')} onClick={()=>setLawSt(k)}>
           {LAW_STATUS[k].label} ({countLawSt(k)})
+        </span>
+      ))}
+      <span style={{margin:'0 6px',color:'var(--line)'}}>|</span>
+      {/* P22 ขั้นที่ 1 · กรองตามความเกี่ยวข้องกับกิจการ — นับเฉพาะที่คนยืนยันแล้วเท่านั้น */}
+      <span className={'chip'+(rel==='all'?' active':'')} onClick={()=>setRel('all')}>ทุกความเกี่ยวข้อง</span>
+      {RELEVANCE_ORDER.filter(k=>countRel(k)>0).map(k=>(
+        <span key={k} className={'chip'+(rel===k?' active':'')} onClick={()=>setRel(k)}
+          title={k==='unscreened'?'ยังไม่มีใครยืนยันผลคัดกรอง':''}>
+          {RELEVANCE[k].label} ({countRel(k)})
         </span>
       ))}
       <label className="chip" style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:6}}
@@ -416,7 +540,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
                 <tbody>{[...grouped[c][t.level]].sort(sortCmp).map(l=>{ const openWf=openWfByLaw[l.id]; const pending=openWf?.status==='รอประเมิน'; return (
                   <tr key={l.id} id={'reg-law-'+l.id} className={(sel.has(l.id)?'row-sel':'')+(flashId===l.id?' row-flash':'')} style={l.active===false?{opacity:.55}:null}>
                     <td onClick={e=>{e.stopPropagation();toggleSel(l.id)}} style={{textAlign:'center'}}><input type="checkbox" checked={sel.has(l.id)} onChange={()=>toggleSel(l.id)} onClick={e=>e.stopPropagation()}/></td>
-                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/>{l.source_url && <a href={l.source_url} target="_blank" rel="noopener noreferrer" title={"เปิดตัวบท: "+l.source_url} onClick={e=>e.stopPropagation()} style={{fontSize:12,textDecoration:'none',color:'var(--brand)',fontWeight:600}}>📄 แหล่งที่มา</a>}</div><div className="law-title">{l.name}</div>{(()=>{ const rt=reqMatchText(l); return rt?<div style={{fontSize:11.5,color:'var(--ink-faint)',marginTop:3,lineHeight:1.4}}>↳ {markSnippet(rt,q)}</div>:null })()}</td>
+                    <td onClick={()=>onOpen(l)}><div className="law-code" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>{l.code}<ActiveBadge active={l.active!==false} size="sm"/><RelBadge law={l}/>{l.source_url && <a href={l.source_url} target="_blank" rel="noopener noreferrer" title={"เปิดตัวบท: "+l.source_url} onClick={e=>e.stopPropagation()} style={{fontSize:12,textDecoration:'none',color:'var(--brand)',fontWeight:600}}>📄 แหล่งที่มา</a>}</div><div className="law-title">{l.name}</div>{(()=>{ const rt=reqMatchText(l); return rt?<div style={{fontSize:11.5,color:'var(--ink-faint)',marginTop:3,lineHeight:1.4}}>↳ {markSnippet(rt,q)}</div>:null })()}</td>
                     <td data-lb="กระทรวง" onClick={()=>onOpen(l)} style={{fontSize:12.5,color:'var(--ink-soft)',lineHeight:1.5}}>{l.ministry||'—'}</td>
                     {(()=>{ const d=splitLawDates(l); return <>
                     <td data-lb="วันที่ประกาศ" onClick={()=>onOpen(l)} style={{fontSize:12,color:'var(--ink-soft)',lineHeight:1.5}}>{d.announce||'—'}</td>

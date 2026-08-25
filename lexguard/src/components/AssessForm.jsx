@@ -7,6 +7,7 @@ import { useState } from 'react'
 import Attachments from './Attachments.jsx'
 import { I } from './icons.jsx'
 import { REQ_STATUS, REQ_STATUS_ORDER, ASSESS_RESULT_BY_STATUS, reasonRequired } from '../lib/supabase.js'
+import { CriteriaHint } from './ReqStatusPicker.jsx'
 
 export default function AssessForm({ law, suggest = {}, onSubmit, onCancel }) {
   const [assessor, setAssessor] = useState('')
@@ -54,7 +55,11 @@ export default function AssessForm({ law, suggest = {}, onSubmit, onCancel }) {
         </div>
       </div>
 
-      <label className="form-label" style={{marginTop:10}}>ผลการทวนสอบต่อข้อปฏิบัติ <span style={{color:'var(--bad)'}}>*</span></label>
+      <label className="form-label" style={{marginTop:10,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
+        ผลการทวนสอบต่อข้อปฏิบัติ <span style={{color:'var(--bad)'}}>*</span>
+        {/* P22 ขั้นที่ 3 · เกณฑ์ตัดสินร่วม — ต้องอยู่ทุกจุดที่ประเมิน ไม่ใช่แค่หน้าเดียว */}
+        <CriteriaHint/>
+      </label>
       <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10}}>
         {REQ_STATUS_ORDER.map(k=>{
           const st=REQ_STATUS[k], on=status===k

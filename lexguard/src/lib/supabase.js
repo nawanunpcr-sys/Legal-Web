@@ -1,5 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { currentUserName } from './auth.js'
+// P22 · ทางเดียวที่หน้าจอเรียก endpoint AI ได้ — ได้ timeout ฝั่งหน้าจอ
+// และข้อความ error ไทยที่บอกสาเหตุจริงเหมือนกันทุกปุ่ม (กติกาขั้นที่ 0 ข้อ 3)
+import { callAi } from './aiAction.js'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -1503,4 +1506,328 @@ export async function fetchSearchLog(limit = 300) {
   if (!hasSupabase) return []
   const { data } = await supabase.from('lg_search_log').select('*').order('searched_at', { ascending: false }).limit(limit)
   return data || []
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// P22 ขั้นที่ 1 · บริบทองค์กร + การคัดกรองความเกี่ยวข้อง
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ป้ายกำกับผลคัดกรอง — ทุกที่ต้องใช้ชุดเดียวกัน และต้องมี "ข้อความ" เสมอ
+// ไม่ใช้สีเป็นตัวสื่อความหมายอย่างเดียว (กติกาข้อ 8)
+export const RELEVANCE = {
+  relevant:     { label: 'เกี่ยวข้อง',      short: 'เกี่ยวข้อง',     cls: 'p-ok' },
+  not_relevant: { label: 'ไม่เกี่ยวข้อง',   short: 'ไม่เกี่ยวข้อง',  cls: 'p-na' },
+  uncertain:    { label: 'ต้องข้อมูลเพิ่ม', short: 'ต้องข้อมูลเพิ่ม', cls: 'p-pending' },
+  unscreened:   { label: 'ยังไม่คัดกรอง',   short: 'ยังไม่คัดกรอง',  cls: 'p-waiting' },
+}
+export const RELEVANCE_ORDER = ['relevant', 'not_relevant', 'uncertain', 'unscreened']
+
+// ผลสุดท้ายของฉบับหนึ่ง = คำตัดสินของคนเท่านั้น
+// ไม่มีคนยืนยัน = ยังไม่คัดกรอง — ห้ามตกไปใช้ข้อเสนอของ AI แทน (กติกาข้อ 3)
+export const relevanceOf = rel => rel?.confirmed_verdict || 'unscreened'
+export const hasAiSuggestion = rel => !!rel?.suggested_at
+
+// ── โปรไฟล์บริบทองค์กร (แถวเดียว id=1) ──────────────────────────────────────
+export const EMPTY_PROFILE = {
+  business_type: '', workplace_type: '', employee_count: null, contractor_count: null,
+  site_count: null, value_chain_role: '',
+  sites: [], activities: [], machines: [], chemicals: [], licenses: [],
+  regulator_status: [], iso_scope: [], extra: {},
+}
+
+export async function fetchCompanyProfile() {
+  if (!hasSupabase) return null
+  const { data } = await supabase.from('lg_company_profile').select('*').eq('id', 1).maybeSingle()
+  return data || null
+}
+
+export async function saveCompanyProfile(patch) {
+  if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  const { error } = await supabase.from('lg_company_profile').upsert({
+    id: 1, ...patch, updated_by: currentUserName(), updated_at: new Date().toISOString(),
+  })
+  if (error) throw error
+  await logActivity({ action: 'profile', detail: 'แก้ไขโปรไฟล์บริบทองค์กร' })
+}
+
+// โปรไฟล์พร้อมใช้คัดกรองหรือยัง — เกณฑ์เดียวกับฝั่ง server (api/law-screen.js profileTooThin)
+// ต้องตรงกันสองฝั่ง ไม่งั้นหน้าจอปล่อยให้กดปุ่มแล้ว server ปฏิเสธ ซึ่งผู้ใช้ไม่เข้าใจว่าทำไม
+export function profileReady(p) {
+  if (!p) return false
+  const filled = [p.business_type, p.workplace_type, p.employee_count, p.value_chain_role]
+    .filter(v => v !== null && v !== undefined && String(v).trim() !== '').length
+  const lists = ['activities', 'machines', 'chemicals', 'licenses', 'regulator_status']
+    .reduce((n, k) => n + ((Array.isArray(p[k]) && p[k].length) ? 1 : 0), 0)
+  return filled >= 2 && (filled + lists) >= 3
+}
+
+// ── ผลคัดกรองรายฉบับ ────────────────────────────────────────────────────────
+export async function fetchRelevance() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_law_relevance').select('*')
+  return data || []
+}
+
+// ผู้ใช้ยืนยันผลคัดกรอง — ทางเดียวที่ผลจะกลายเป็นข้อมูลทางการของทะเบียน
+// verdict ที่ต่างจากที่ AI เสนอ ต้องมี note (ฐานข้อมูลบังคับด้วย CHECK อีกชั้น)
+export async function confirmRelevance(lawId, verdict, note = '') {
+  if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  const { data: cur } = await supabase.from('lg_law_relevance').select('*').eq('law_id', lawId).maybeSingle()
+  if (!cur) throw new Error('ยังไม่มีผลคัดกรองของฉบับนี้ — สั่งให้ AI คัดกรองก่อน')
+  const disagree = verdict !== cur.verdict
+  const clean = String(note || '').trim()
+  if (disagree && !clean) throw new Error('เห็นต่างจากข้อเสนอของ AI ต้องระบุเหตุผลประกอบ')
+  const { error } = await supabase.from('lg_law_relevance').update({
+    confirmed_verdict: verdict, confirmed_by: currentUserName(),
+    confirmed_at: new Date().toISOString(), confirm_note: clean || null,
+    // migration 051 · ตรึงไว้ว่า AI เสนออะไร ณ วินาทีที่คนตัดสิน
+    // ถ้าเทียบกับ verdict ปัจจุบัน การคัดกรองใหม่จะไปชน CHECK ของแถวที่ยืนยันไปแล้ว
+    confirmed_against_verdict: cur.verdict,
+  }).eq('law_id', lawId)
+  if (error) throw error
+
+  // บันทึกผลลง lg_assessment_flow.screen_status ด้วย — เป็นสายงานตามแบบเดิมของระบบ
+  // (migration 018) · ตารางนี้ยังไม่มีหน้าจอไหนอ่าน แต่เขียนไว้เพื่อไม่ให้สายงานเดิมขาดตอน
+  // ⚠ insert แถวใหม่หรือ update เฉพาะแถวที่ระบบนี้สร้างเองเท่านั้น (ตารางมี 0 แถวก่อนงานนี้)
+  const screenStatus = verdict === 'relevant' ? 'relevant' : verdict === 'not_relevant' ? 'not_relevant' : 'pending'
+  try {
+    const { data: law } = await supabase.from('lg_laws').select('cat,code,name').eq('id', lawId).maybeSingle()
+    if (law) {
+      const patch = {
+        cat: law.cat, law_code: law.code, law_name: law.name, law_id: lawId,
+        screen_status: screenStatus, screen_by: currentUserName(),
+        screen_note: clean || null, screened_at: new Date().toISOString(),
+      }
+      const { data: exist } = await supabase.from('lg_assessment_flow')
+        .select('id').eq('law_id', lawId).is('assigned_dept_id', null).maybeSingle()
+      if (exist) await supabase.from('lg_assessment_flow').update(patch).eq('id', exist.id)
+      else await supabase.from('lg_assessment_flow').insert({ ...patch, created_by: currentUserName() })
+    }
+  } catch (e) { console.warn('เขียน lg_assessment_flow ไม่สำเร็จ (ไม่กระทบผลคัดกรอง)', e) }
+
+  await logActivity({ action: 'screen', law_id: lawId,
+    detail: `ยืนยันผลคัดกรอง: ${RELEVANCE[verdict]?.label || verdict}` + (disagree ? ` (เห็นต่างจาก AI ที่เสนอ ${RELEVANCE[cur.verdict]?.label || cur.verdict}) — ${clean}` : '') })
+}
+
+// ── สั่งคัดกรอง ─────────────────────────────────────────────────────────────
+// 1 ฉบับ = ยิง /api/law-screen ตรง · หลายฉบับ = เข้าคิวแล้วให้ server ประมวลผลทีละรายการ
+// (กติกาข้อ 6 · ห้ามวนยิง AI จากหน้าจอ — การ insert แถวคิวไม่ใช่การเรียก AI จึงทำจากหน้าจอได้)
+//
+// ⚠ ชื่อคอลัมน์ต้องตรงกับค่าคงที่ COL ใน api/_lib/queue.js เสมอ
+//   category_guess = ประเภทงาน · source_url = รหัสอ้างอิง · title = ป้ายให้คนอ่าน
+//   แก้ที่ใดที่หนึ่งแล้วต้องแก้อีกที่ด้วย ไม่งั้น server จะหางานในคิวไม่เจอ
+const QUEUE_COL = { kind: 'category_guess', ref: 'source_url', label: 'title', payload: 'raw_text' }
+
+export async function enqueueScreening(laws = []) {
+  if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  if (!laws.length) return { queued: 0, skipped: 0 }
+  const refs = laws.map(l => 'law:' + l.id)
+  // ข้ามฉบับที่ยังค้างอยู่ในคิว — กดปุ่มซ้ำจึงไม่ทำให้คิวบวมและไม่เสียโควตา AI ซ้ำซ้อน
+  const { data: pending } = await supabase.from('lg_agent_queue')
+    .select(QUEUE_COL.ref)
+    .eq(QUEUE_COL.kind, 'law_screen').in('status', ['pending', 'processing'])
+  const already = new Set((pending || []).map(r => r[QUEUE_COL.ref]))
+  const rows = laws.filter(l => !already.has('law:' + l.id)).map(l => ({
+    [QUEUE_COL.kind]: 'law_screen',
+    [QUEUE_COL.ref]: 'law:' + l.id,
+    [QUEUE_COL.label]: `${l.code} ${l.name || ''}`.trim().slice(0, 300),
+    status: 'pending',
+  }))
+  if (rows.length) {
+    const { error } = await supabase.from('lg_agent_queue').insert(rows)
+    if (error) throw error
+  }
+  await logActivity({ action: 'screen_queue', detail: `เข้าคิวคัดกรอง ${rows.length} ฉบับ (ข้ามที่ค้างอยู่แล้ว ${refs.length - rows.length} ฉบับ)` })
+  return { queued: rows.length, skipped: refs.length - rows.length }
+}
+
+// จำนวนงานคัดกรองที่ยังค้างในคิว — ให้ปุ่มบอกได้ว่าเหลืออีกกี่ฉบับ
+export async function screeningQueueCount() {
+  if (!hasSupabase) return 0
+  const { count } = await supabase.from('lg_agent_queue')
+    .select('id', { count: 'exact', head: true })
+    .eq(QUEUE_COL.kind, 'law_screen').in('status', ['pending', 'processing'])
+  return count || 0
+}
+
+// สั่งให้ server ประมวลผลคิว 1 ชุด — คืนจำนวนที่ทำได้และที่ยังเหลือ
+export async function runScreeningQueue(max = 50) {
+  return callAi('/api/queue-run', { kind: 'law_screen', max })
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// P22 ขั้นที่ 2 · คู่มือปฏิบัติรายกฎหมาย (สิ่งที่ต้องทำ / เอกสาร / หลักฐาน)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const EMPTY_GUIDE = { actions: [], documents: [], evidence: [], not_specified: [] }
+
+export async function fetchActionGuide(lawId) {
+  if (!hasSupabase || !lawId) return null
+  const { data } = await supabase.from('lg_law_action_guide').select('*').eq('law_id', lawId).maybeSingle()
+  return data || null
+}
+
+// หลักฐานที่ "มีอยู่จริง" ของกฎหมายฉบับหนึ่ง — รวมจากสองที่ที่ระบบเก็บไว้คนละแบบ
+//   1. lg_attachments ref_type 'law' และ 'assess' (ทั้งคู่ผูกกับ law.id)
+//   2. lg_requirements.evidence_url/evidence_label (ไฟล์เดียวต่อข้อ)
+// ระบบไม่มี ref_type 'requirement' ใน lg_attachments (CHECK อนุญาตแค่ car/report/comm/law/assess)
+// จึงต้องอ่านสองที่ ไม่ใช่ที่เดียวตามที่แผนเขียนไว้
+export async function fetchLawEvidence(lawId) {
+  if (!hasSupabase || !lawId) return []
+  const [att, reqs] = await Promise.all([
+    supabase.from('lg_attachments').select('*').in('ref_type', ['law', 'assess']).eq('ref_id', lawId),
+    supabase.from('lg_requirements').select('id,seq,text,evidence_url,evidence_label').eq('law_id', lawId),
+  ])
+  const out = (att.data || []).map(a => ({
+    name: a.file_name || 'ไฟล์แนบ', url: a.file_url, from: 'law', uploaded_at: a.uploaded_at, by: a.uploaded_by,
+  }))
+  ;(reqs.data || []).forEach(r => {
+    if (r.evidence_url) out.push({
+      name: r.evidence_label || 'หลักฐานรายข้อ', url: r.evidence_url, from: 'req',
+      req_id: r.id, req_text: r.text,
+    })
+  })
+  return out
+}
+
+// จับคู่รายการหลักฐานที่ "ต้องมี" กับไฟล์ที่ "มีอยู่จริง"
+// จับคู่แบบหลวมด้วยคำสำคัญ เพราะชื่อไฟล์ที่คนตั้งไม่มีทางตรงกับชื่อหลักฐานในตัวบท
+// ผลลัพธ์เป็นเพียง "ข้อสันนิษฐาน" — หน้าจอต้องเปิดให้คนดูไฟล์จริงเองได้เสมอ
+export function matchEvidence(evidenceItems = [], files = []) {
+  const norm = s => String(s || '').toLowerCase().replace(/[\s_\-.()]/g, '')
+  return evidenceItems.map(item => {
+    const key = norm(item.name)
+    const words = String(item.name || '').split(/\s+/).filter(w => w.length >= 4).map(norm)
+    const hit = files.find(f => {
+      const fn = norm(f.name)
+      if (!fn || !key) return false
+      return fn.includes(key) || key.includes(fn) || words.some(w => w && fn.includes(w))
+    })
+    return { ...item, file: hit || null, has: !!hit }
+  })
+}
+
+// สร้างแผนปรับปรุงจากรายการหลักฐานที่ยังไม่มี — insert แถวใหม่เท่านั้น ไม่แก้แถวเดิมใดๆ
+export async function createPlansFromMissingEvidence(law, missing = [], { dueDate = null, ownerName = '' } = {}) {
+  if (!missing.length) return { created: 0 }
+  let created = 0
+  for (const m of missing) {
+    await createImprovementPlan({
+      requirement_id: null, law_id: law.id,
+      plan_text: `จัดทำ/รวบรวมหลักฐาน: ${m.name}` + (m.section_ref ? ` (อ้างอิง ${m.section_ref})` : ''),
+      owner_dept_id: null, owner_name: ownerName || law.responsible || null, due_date: dueDate,
+    })
+    created++
+  }
+  return { created }
+}
+
+// แผนปรับปรุงของกฎหมายฉบับหนึ่ง — ใช้ทั้งในคู่มือปฏิบัติและหน้าแผนปรับปรุง
+export async function fetchPlansByLaw(lawId) {
+  if (!hasSupabase || !lawId) return []
+  const { data } = await supabase.from('lg_improvement_plans')
+    .select('*').eq('law_id', lawId).order('created_at', { ascending: false })
+  return data || []
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// P22 ขั้นที่ 3 · ข้อเสนอสถานะจาก AI + เกณฑ์ตัดสินร่วม
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── เกณฑ์ตัดสิน 4 สถานะ — แหล่งความจริงเดียวของทั้งระบบ ──────────────────────
+// นี่คือตัวลดความแตกต่างระหว่างผู้ประเมิน (ข้อเสนอแนะข้อ 3)
+// ⚠ ข้อความชุดนี้ต้องตรงกับ SYSTEM prompt ใน api/req-preassess.js ทุกตัวอักษร
+//   ไม่งั้น AI กับคนจะใช้นิยามคนละชุด แล้วข้อเสนอจะกลายเป็นสิ่งที่ต้องเถียงทุกครั้ง
+export const ASSESS_CRITERIA = [
+  { key: 'met', code: 'C', label: 'สอดคล้อง',
+    rule: 'มีหลักฐานครอบคลุมข้อกำหนดครบทุกองค์ประกอบ',
+    detail: '“ครบทุกองค์ประกอบ” หมายถึง ถ้าข้อกำหนดสั่งให้ทำ 3 อย่าง ต้องมีหลักฐานครบทั้ง 3 — อ้างว่าปฏิบัติแล้วแต่ไม่มีหลักฐานให้ผู้ตรวจดู ยังไม่ถือเป็น C' },
+  { key: 'unmet', code: 'NC', label: 'ไม่สอดคล้อง',
+    rule: 'เข้าข่ายต้องปฏิบัติ แต่ยังไม่มีหลักฐาน หรือมีแต่ไม่ครบทุกองค์ประกอบ',
+    detail: 'ต้องเปิดแผนปรับปรุงและกำหนดวันแล้วเสร็จ' },
+  { key: 'acknowledged', code: 'Ack', label: 'เพื่อทราบ',
+    rule: 'เป็นบทนิยาม บทกำหนดอำนาจหน้าที่ของราชการ บทกำหนดโทษ บทเฉพาะกาล หรือข้อที่หน่วยงานภายนอกเป็นผู้ปฏิบัติ — ไม่สร้างหน้าที่ให้องค์กร แต่ต้องรับทราบและเฝ้าระวัง',
+    detail: 'ไม่ถูกนับในอัตราความสอดคล้อง แต่ต้องระบุเหตุผลประกอบทุกครั้ง' },
+  { key: 'not_applicable', code: '-', label: 'ไม่เกี่ยวข้อง',
+    rule: 'องค์กรไม่มีกิจกรรม เครื่องจักร สารเคมี หรือเงื่อนไขที่เข้าข่ายตามโปรไฟล์บริบทองค์กร',
+    detail: 'ต้องอ้างข้อเท็จจริงจากบริบทองค์กรได้เสมอ — “น่าจะไม่เกี่ยวข้อง” ใช้เป็นเหตุผลไม่ได้' },
+]
+
+// ── ข้อเสนอของ AI ───────────────────────────────────────────────────────────
+// อ่านข้อเสนอ "ล่าสุดต่อข้อ" ของกฎหมายฉบับหนึ่ง → { [requirement_id]: suggestion }
+export async function fetchSuggestions(lawId) {
+  if (!hasSupabase || !lawId) return {}
+  const { data } = await supabase.from('lg_req_ai_suggestion')
+    .select('*').eq('law_id', lawId).order('created_at', { ascending: false })
+  const m = {}
+  ;(data || []).forEach(s => { if (!m[s.requirement_id]) m[s.requirement_id] = s })
+  return m
+}
+
+// ผู้ประเมินตัดสินแล้ว — บันทึกว่ารับข้อเสนอหรือไม่ เพื่อวัดความแม่นย้อนหลัง
+// ⚠ ฟังก์ชันนี้ไม่แตะ lg_requirements เลย · การเปลี่ยนสถานะจริงยังต้องผ่าน
+//   setRequirementStatus / updateRequirementField เหมือนเดิมทุกประการ
+export async function recordSuggestionDecision(suggestionId, decidedStatus) {
+  if (!hasSupabase || !suggestionId) return
+  const { data: s } = await supabase.from('lg_req_ai_suggestion')
+    .select('suggested_status').eq('id', suggestionId).maybeSingle()
+  if (!s) return
+  const { error } = await supabase.from('lg_req_ai_suggestion').update({
+    accepted: decidedStatus === s.suggested_status,
+    decided_status: decidedStatus, decided_by: currentUserName(),
+    decided_at: new Date().toISOString(),
+  }).eq('id', suggestionId)
+  if (error) console.warn('บันทึกผลตัดสินข้อเสนอไม่สำเร็จ', error)
+}
+
+// มีคนประเมินข้อนี้จริงหรือยัง
+// ⚠ ใช้ evaluated_by ไม่ใช่ evaluated_at — migration 044 เติม evaluated_at ให้ครบทั้ง 575 แถว
+//   ไปแล้ว (ดูหมายเหตุในไฟล์ 044) ตัวชี้ว่า "มีคนประเมินจริง" ที่ยังเชื่อถือได้จึงเหลือตัวนี้
+//   ในฐานปัจจุบันมี 572 จาก 575 แถวที่ evaluated_by ว่าง = ไม่เคยมีใครประเมินจริง
+export const humanAssessed = r => !!String(r?.evaluated_by || '').trim()
+
+// สั่งให้ AI เสนอสถานะทั้งฉบับ
+export async function runPreassess(lawId, { force = false } = {}) {
+  return callAi('/api/req-preassess', { law_id: lawId, force })
+}
+
+// สถิติความแม่นของข้อเสนอ — ใช้ตอบว่าระบบช่วยจริงหรือแค่เพิ่มขั้นตอน
+export async function suggestionAccuracy() {
+  if (!hasSupabase) return { decided: 0, accepted: 0, pct: null }
+  const { data } = await supabase.from('lg_req_ai_suggestion')
+    .select('accepted').not('accepted', 'is', null)
+  const decided = (data || []).length
+  const accepted = (data || []).filter(x => x.accepted).length
+  return { decided, accepted, pct: decided ? Math.round(accepted / decided * 100) : null }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// P22 ขั้นที่ 5 · สรุปภาพรวมทั้งฉบับแบบข้ามมาตรา
+// ═══════════════════════════════════════════════════════════════════════════
+
+// อ่านเฉพาะส่วน overview ของฉบับหนึ่ง (ไม่ดึง requirements ที่อาจใหญ่มาก)
+export async function fetchLawOverview(lawId) {
+  if (!hasSupabase || !lawId) return null
+  const { data } = await supabase.from('lg_law_overview_view')
+    .select('*').eq('law_id', lawId).maybeSingle()
+  return data || null
+}
+
+// สั่งสร้างสรุปภาพรวม — เขียนผ่าน RPC ที่แตะได้เฉพาะคีย์ overview
+// ⚠ ห้ามใช้ saveLawAiSummary กับงานนี้เด็ดขาด — ฟังก์ชันนั้นเขียนทับ ai_summary ทั้งก้อน
+//   ซึ่งจะลบ requirements ที่ผ่านการตรวจทานแล้วหายไปทั้งชุด (กติกา 9.4)
+export async function runLawOverview(lawId) {
+  return callAi('/api/law-overview', { law_id: lawId })
+}
+
+// ── P22 · จำนวนไฟล์แนบระดับฉบับ ต่อ law_id ──────────────────────────────────
+// รายงานช่องว่างต้องรู้ด้วยว่ามีหลักฐานผูกไว้ที่ระดับฉบับหรือไม่ ไม่ใช่ดูแค่รายข้อ
+// ไม่งั้นฉบับที่แนบไฟล์รวมไว้ที่ระดับกฎหมายจะถูกนับเป็น "ไม่มีหลักฐาน" ทั้งที่มี
+export async function fetchLawFileCounts() {
+  if (!hasSupabase) return {}
+  const { data } = await supabase.from('lg_attachments')
+    .select('ref_id').in('ref_type', ['law', 'assess'])
+  const m = {}
+  ;(data || []).forEach(a => { m[a.ref_id] = (m[a.ref_id] || 0) + 1 })
+  return m
 }

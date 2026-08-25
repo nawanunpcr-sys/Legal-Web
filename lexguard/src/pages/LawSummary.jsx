@@ -9,6 +9,7 @@ import { I } from '../components/icons.jsx'
 import { thDate, findLawDuplicate, beToISO } from '../lib/ui.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
+import { callAi, useAiAction } from '../lib/aiAction.js'
 import { confirmDialog } from '../lib/confirm.js'
 
 // P16 · แยกเป็น 2 คำขอ เพราะทำต่อกันในคำขอเดียวชนเพดาน 300 วิของ Vercel จนต้องข้ามงานทิ้ง
@@ -16,12 +17,9 @@ import { confirmDialog } from '../lib/confirm.js'
 //   คำขอ 2 /api/law-relate  → ตามอ่านกฎหมายที่อ้างถึง แล้ว merge กลับเข้า state เดิม
 // แต่ละฝั่งได้เวลา 300 วิของตัวเอง จึงไม่ต้องข้ามขั้นตอนไหนอีก
 async function analyzeSource({ source = '', sourceUrl = '', pdfBase64 = '', pdfName = '' }) {
-  const r = await fetch('/api/law-analyze', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ source, sourceUrl, pdfBase64, pdfName, stage: false, relate: false }),
-  })
-  const d = await r.json()
-  if (!r.ok) throw new Error(d.error || 'สรุปไม่สำเร็จ')
+  // P22 ขั้นที่ 0 · ยิงผ่าน callAi — ได้ timeout ฝั่งหน้าจอ และข้อความ error ไทยที่บอกสาเหตุจริง
+  const d = await callAi('/api/law-analyze',
+    { source, sourceUrl, pdfBase64, pdfName, stage: false, relate: false })
   // Skill 3 · related_count/unresolved_count ต้องส่งต่อด้วย ไม่งั้นบรรทัดสรุปเหนือตารางไม่มีข้อมูล
   // related_laws = รายฉบับที่ตามไปดึง (ชื่อ/สถานะ/ลิงก์) — ต้องบอกได้ว่า "ฉบับไหน" ที่หาตัวบทไม่พบ
   // ไม่งั้น จป. เห็นแค่ตัวเลข แล้วยังไม่รู้ว่าต้องไปเปิดกฎหมายฉบับไหนเอง
@@ -42,12 +40,7 @@ async function analyzeSource({ source = '', sourceUrl = '', pdfBase64 = '', pdfN
 // คำขอที่ 2 · ตามอ่านกฎหมายที่ตัวบทอ้างถึง แล้วคืนชุดข้อกำหนดที่รวมแล้ว
 // แยก endpoint เพื่อให้ Skill 3 ได้เวลา 300 วิของตัวเอง ไม่ต้องแบ่งกับการอ่านตัวบทหลัก
 async function relateSource({ refs, requirements, lawName }) {
-  const r = await fetch('/api/law-relate', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ refs, requirements, lawName }),
-  })
-  const d = await r.json()
-  if (!r.ok) throw new Error(d.error || 'ตามอ่านกฎหมายที่อ้างถึงไม่สำเร็จ')
+  const d = await callAi('/api/law-relate', { refs, requirements, lawName })
   return { requirements: d.requirements || [], related_laws: d.related_laws || [],
     related_count: d.related_count || 0, unresolved_count: d.unresolved_count || 0,
     inlined_count: d.inlined_count || 0, manual_ref_count: d.manual_ref_count || 0,
@@ -990,19 +983,20 @@ function HistoryZone({ discovered = [], laws = [], onAddToRegistry, onOpenLaw })
    แยกออกจากประวัติ เพราะนี่คือ "งานที่ทำได้" ไม่ใช่ "สิ่งที่ทำไปแล้ว" */
 function BackfillZone({ laws = [], onReloadLaws }) {
   const { can } = useAuth()
-  const [busyId, setBusyId] = useState(null)
+  // P22 ขั้นที่ 0 · ปุ่มแรกที่ย้ายมาใช้ helper กลาง — พิสูจน์ว่า useAiAction ใช้ได้จริง
+  // ได้เพิ่มจากเดิม: กันกดซ้ำระหว่างที่ยังไม่เสร็จ · จับ timeout · error ไทยที่บอกสาเหตุจริง
+  const ai = useAiAction()
   const pending = useMemo(
     () => laws.filter(l => !(l.reqs || []).length && !l.ai_summary), [laws])
   if (!pending.length) return null
 
-  async function backfill(law) {
+  function backfill(law) {
     // ไม่มีลิงก์ตัวบท = AI ไม่มีอะไรให้อ่าน ต้องสรุปจากความจำ ซึ่งขัดกฎ "ห้ามแต่งเติม"
     if (!law.source_url) {
       toast('กฎหมายฉบับนี้ยังไม่มีลิงก์ตัวบท — เปิดในทะเบียนแล้วใส่ลิงก์ก่อน หรือใช้ช่องด้านบนแนบไฟล์ PDF')
       return
     }
-    setBusyId(law.id)
-    try {
+    return ai.run(law.id, async () => {
       const r = await analyzeSource({ source: law.source_url, sourceUrl: law.source_url })
       await saveLawAiSummary(law.id, {
         law: r.law, requirements: r.requirements,
@@ -1011,8 +1005,7 @@ function BackfillZone({ laws = [], onReloadLaws }) {
       })
       toast('AI สรุปย้อนหลังแล้ว — ยังไม่ทวนสอบ', 'success')
       onReloadLaws && onReloadLaws()
-    } catch (e) { toast('สรุปย้อนหลังไม่สำเร็จ: ' + e.message) }
-    setBusyId(null)
+    }, { errorPrefix: 'สรุปย้อนหลังไม่สำเร็จ' })
   }
 
   return (
@@ -1027,8 +1020,8 @@ function BackfillZone({ laws = [], onReloadLaws }) {
             <span style={{ flex: 1, fontSize: 12.5 }}>{(l.name || '').slice(0, 70)}</span>
             {!l.source_url && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>ยังไม่มีลิงก์ตัวบท</span>}
             <button className="btn btn-ghost" style={{ padding: '3px 9px', fontSize: 11 }}
-              disabled={busyId === l.id || !can('edit')} onClick={() => backfill(l)}>
-              {busyId === l.id ? 'กำลังสรุป…' : 'ให้ AI สรุป'}
+              disabled={ai.busy || !can('edit')} onClick={() => backfill(l)}>
+              {ai.isBusy(l.id) ? 'กำลังสรุป…' : 'ให้ AI สรุป'}
             </button>
           </div>
         ))}
