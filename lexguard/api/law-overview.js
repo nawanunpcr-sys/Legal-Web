@@ -100,7 +100,8 @@ export async function buildOverview(lawId) {
   const laws = await rest(`lg_laws?select=id,code,name,ministry,law_type,issue_date,effective_date&id=eq.${lawId}`)
   if (!laws.length) throw new Error('ไม่พบกฎหมายรหัสนี้ในทะเบียน')
   const law = laws[0]
-  const reqs = await rest(`lg_requirements?select=id,seq,text,responsible,frequency,documents,note&law_id=eq.${lawId}&order=seq.asc&limit=300`)
+  // prompt ของ endpoint นี้ใช้เฉพาะ text — ไม่ดึงคอลัมน์ที่ไม่ได้ใช้มาเปลืองเปล่าๆ
+  const reqs = await rest(`lg_requirements?select=id,seq,text&law_id=eq.${lawId}&order=seq.asc&limit=300`)
   if (!reqs.length) { const e = new Error('ฉบับนี้ยังไม่มีข้อกำหนดในทะเบียน — สรุปภาพรวมไม่ได้'); e.code = 'no_requirements'; throw e }
 
   const body = reqs.map(r => `[${refOf(r)}] ${String(r.text || '').slice(0, 1500)}`).join('\n\n')

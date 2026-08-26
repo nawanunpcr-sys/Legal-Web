@@ -3,7 +3,6 @@
 //   ที่เหลือ (CatBars/NC list/สถิติรายเดือน) พับเก็บ ค่าเริ่มต้น=พับ จำสถานะใน localStorage
 import { useState, useMemo } from 'react'
 import { Pill, Tag, ActiveBadge, thDate, TH_MONTHS, monthlyByAnnounce, announceYears, announceMonth, sumReqStats, usePersist, GLOSSARY } from '../lib/ui.jsx'
-import { buildGapAnalysis, GAP_GROUPS } from '../lib/gap.js'
 import { I } from '../components/icons.jsx'
 
 /* P19 · ส่วนที่พับเก็บได้ — จำสถานะเปิด/ปิดต่อบล็อกใน localStorage (ค่าเริ่มต้น = พับ) */
@@ -163,11 +162,6 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
 
   const bad=fLaws.filter(l=>l.status==='bad')
 
-  // P22 ขั้นที่ 4 · การ์ดสรุปช่องว่างเร่งด่วน — ใช้สูตรเดียวกับหน้ารายงาน (src/lib/gap.js)
-  // ไม่คำนวณเองที่นี่ ไม่งั้นวันหนึ่งตัวเลขสองหน้าจะไม่ตรงกัน แล้วผู้ตรวจจะเจอเอกสารที่ขัดกันเอง
-  // แผนปรับปรุงยังไม่ถูกโหลดในหน้านี้ จึงส่ง [] ไป — กลุ่มที่ต้องใช้แผนจะถูกนับรวมเป็น
-  // "NC ที่ยังไม่มีแผน" ทั้งหมด ซึ่งเป็นค่าที่ปลอดภัยกว่า (ไม่ทำให้ช่องว่างดูน้อยกว่าจริง)
-  const gap = useMemo(()=>buildGapAnalysis(fLaws, []),[fLaws])
 
   // ── P21 · แถบสรุปด้านบน ──────────────────────────────────────────────────
   // เดิมเป็นช่องเท่ากัน 8 ช่องเรียงกันรวด พอเพิ่ม 3 สถานะใหม่เข้าไปเลยล้นเป็นสองแถว
@@ -191,27 +185,7 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
     {k:'wait',  lab:'ยังไม่ประเมิน', val:stats.waiting, color:'var(--ink-faint)', hollow:true, tip:GLOSSARY.waiting},
   ]
 
-  const gapCards = GAP_GROUPS.map(g=>({ ...g, n: gap.summary.counts[g.key]||0 })).filter(g=>g.n>0)
-
   return <div className="view">
-    {/* P22 ขั้นที่ 4 · ช่องว่างเร่งด่วน — ลิงก์ไปหน้ารายงานเต็ม */}
-    {gapCards.length>0 && (
-      <div className="panel" style={{marginBottom:14,borderLeft:'3px solid var(--bad)'}}>
-        <div className="panel-h" style={{cursor:'pointer'}} onClick={()=>onGoView&&onGoView('gap')}>
-          <span style={{flex:1,fontSize:14,fontWeight:600}}>ช่องว่างที่ผู้ตรวจจะพบ ({gap.summary.totalGaps} รายการ)</span>
-          <span style={{fontSize:12,color:'var(--brand)',fontWeight:500}}>ดูรายงานเต็ม →</span>
-        </div>
-        <div className="panel-b" style={{paddingTop:4,display:'flex',gap:8,flexWrap:'wrap'}}>
-          {gapCards.map(g=>(
-            <button key={g.key} className="chip" style={{cursor:'pointer'}} title={g.why}
-              onClick={()=>onGoView&&onGoView('gap')}>{g.title} ({g.n})</button>
-          ))}
-          <span style={{fontSize:11.5,color:'var(--ink-faint)',alignSelf:'center',marginLeft:4}}>
-            ความครบถ้วนของหลักฐาน {gap.summary.evidencePct==null?'—':gap.summary.evidencePct+'%'}
-          </span>
-        </div>
-      </div>
-    )}
     <div className="dash-summary">
       <div className="dash-summary-top">
         <div className="dash-summary-main">

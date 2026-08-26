@@ -93,13 +93,15 @@ export async function preassessLaw(lawId, { force = false } = {}) {
   const laws = await rest(`lg_laws?select=id,code,name,ministry&id=eq.${lawId}`)
   if (!laws.length) throw new Error('ไม่พบกฎหมายรหัสนี้ในทะเบียน')
   const law = laws[0]
-  const all = await rest(`lg_requirements?select=id,seq,text,responsible,frequency,documents,note,status,evaluated_by,evidence_url,evidence_label&law_id=eq.${lawId}&order=seq.asc&limit=200`)
+  // migration 052 · view นี้รวมค่าจาก F-259 ที่กู้กลับมาแล้ว
+  const all = await rest(`lg_req_effective?select=requirement_id,seq,text,responsible,frequency,documents,report_to,status,evaluated_by,evidence_url,evidence_label&law_id=eq.${lawId}&order=seq.asc&limit=200`)
   if (!all.length) { const e = new Error('ฉบับนี้ยังไม่มีข้อกำหนดในทะเบียน'); e.code = 'no_requirements'; throw e }
 
   // ข้อที่มีคนประเมินไว้แล้ว = ไม่เสนอทับ (เกณฑ์ผ่านขั้นที่ 3 ข้อ 2)
   // ตัวชี้คือ evaluated_by ไม่ใช่ evaluated_at เพราะ migration 044 เติม evaluated_at
   // ให้ทั้ง 575 แถวไปแล้ว ถ้าใช้ evaluated_at จะข้ามทุกข้อในระบบและฟีเจอร์นี้ไม่ทำงานเลย
   const targets = force ? all : all.filter(r => !String(r.evaluated_by || '').trim())
+  targets.forEach(r => { r.id = r.requirement_id })   // view ใช้ชื่อคอลัมน์ requirement_id
   if (!targets.length) {
     return { law: { id: law.id, code: law.code }, skipped: all.length, results: [],
       note: 'ทุกข้อของฉบับนี้มีผู้ประเมินบันทึกไว้แล้ว — ไม่เสนอทับ' }
@@ -117,7 +119,7 @@ export async function preassessLaw(lawId, { force = false } = {}) {
     r.frequency ? `   ความถี่: ${r.frequency}` : '',
     r.documents ? `   เอกสารที่ระบุไว้: ${String(r.documents).slice(0, 300)}` : '',
     r.evidence_url ? `   หลักฐานที่แนบไว้กับข้อนี้: ${r.evidence_label || r.evidence_url}` : '   หลักฐานที่แนบไว้กับข้อนี้: (ไม่มี)',
-    r.note ? `   หมายเหตุ: ${String(r.note).slice(0, 200)}` : '',
+    r.report_to ? `   การรายงานผล: ${String(r.report_to).slice(0, 200)}` : '',
   ].filter(Boolean).join('\n')).join('\n\n')
 
   const ar = await fetch('https://api.anthropic.com/v1/messages', {

@@ -1831,3 +1831,23 @@ export async function fetchLawFileCounts() {
   ;(data || []).forEach(a => { m[a.ref_id] = (m[a.ref_id] || 0) + 1 })
   return m
 }
+
+// ── P22 · ค่าที่กู้มาจาก F-259 รายข้อ (migration 052) ────────────────────────
+// คืน { [requirement_id]: {responsible, frequency, documents, report_to, ...} }
+// หน้าจอใช้เติมช่องที่ระบบยังว่าง พร้อมติดป้ายว่าค่านี้มาจากเอกสารต้นฉบับ ไม่ใช่คนกรอกในระบบ
+export async function fetchF259Source(lawId) {
+  if (!hasSupabase || !lawId) return {}
+  const { data } = await supabase.from('lg_req_f259_source')
+    .select('*').eq('law_id', lawId).not('requirement_id', 'is', null)
+  const m = {}
+  ;(data || []).forEach(r => { m[r.requirement_id] = r })
+  return m
+}
+
+// แถวจาก F-259 ที่จับคู่กับข้อกำหนดในทะเบียนไม่ได้ — ต้องมีคนมาไล่ ไม่ปล่อยหายเงียบ
+export async function fetchF259Unmatched() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_req_f259_source')
+    .select('*').is('requirement_id', null).order('cat').order('source_row')
+  return data || []
+}

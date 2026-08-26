@@ -13,10 +13,11 @@ import { fetchImprovementPlans, suggestionAccuracy, fetchLawFileCounts } from '.
 import { exportGapToExcel } from '../lib/integrations.js'
 import { buildGapReport } from '../components/PdfExport.jsx'
 import { I } from '../components/icons.jsx'
+import { GLOSSARY } from '../lib/ui.jsx'
 
-function Stat({ lab, val, sub, accent }) {
+function Stat({ lab, val, sub, accent, tip }) {
   return (
-    <div className="stat" style={{ borderTopColor: accent }}>
+    <div className="stat" style={{ borderTopColor: accent }} title={tip || ''}>
       <div className="lab">{lab}</div>
       <div className="val num" style={{ color: accent }}>{val}</div>
       {sub && <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 3, lineHeight: 1.5 }}>{sub}</div>}
@@ -48,10 +49,10 @@ export default function GapReport({ laws = [], catMap = {}, settings = {}, round
     <div className="view">
       {/* ── หัวรายงาน ── */}
       <div className="rc-stats" style={{ marginBottom: 14 }}>
-        <Stat lab="อัตราความสอดคล้อง" accent="#5F7A61"
+        <Stat lab="อัตราความสอดคล้อง" accent="#5F7A61" tip={GLOSSARY.pct}
           val={summary.pct == null ? '—' : summary.pct + '%'}
           sub={`${summary.met} จาก ${summary.assessed} ข้อที่เข้าฐานคำนวณ (C + NC)`} />
-        <Stat lab="ความครบถ้วนของหลักฐาน" accent="#B58A3C"
+        <Stat lab="ความครบถ้วนของหลักฐาน" accent="#B58A3C" tip={GLOSSARY.evidence}
           val={summary.evidencePct == null ? '—' : summary.evidencePct + '%'}
           sub={`${summary.evidenceHave} จาก ${summary.evidenceNeed} ข้อที่ประเมินว่าสอดคล้อง`} />
         <Stat lab="ช่องว่างทั้งหมด" accent="#B4553F" val={summary.totalGaps}

@@ -84,7 +84,9 @@ export async function buildActionGuide(lawId, by = 'ระบบ') {
   const laws = await rest(`lg_laws?select=id,code,name,ministry,law_type,doc_list&id=eq.${lawId}`)
   if (!laws.length) throw new Error('ไม่พบกฎหมายรหัสนี้ในทะเบียน')
   const law = laws[0]
-  const reqs = await rest(`lg_requirements?select=id,seq,text,responsible,frequency,documents,note&law_id=eq.${lawId}&order=seq.asc&limit=300`)
+  // migration 052 · อ่านจาก view ที่รวมค่าจาก F-259 แล้ว (ค่าที่ผู้ใช้กรอกในระบบชนะเสมอ)
+  // ถ้าอ่านตารางดิบ จะได้ผู้รับผิดชอบ/ความถี่/เอกสาร แค่ ~30 ค่าจาก 575 ข้อ ทั้งที่กู้มาได้แล้ว
+  const reqs = await rest(`lg_req_effective?select=requirement_id,seq,text,responsible,frequency,documents,report_to&law_id=eq.${lawId}&order=seq.asc&limit=300`)
   if (!reqs.length) {
     const e = new Error('ฉบับนี้ยังไม่มีข้อกำหนดในทะเบียน — สร้างคู่มือปฏิบัติไม่ได้ กรุณาให้ AI สรุปกฎหมายก่อน')
     e.code = 'no_requirements'
@@ -98,7 +100,7 @@ export async function buildActionGuide(lawId, by = 'ระบบ') {
     r.responsible ? `   ผู้รับผิดชอบที่ทะเบียนบันทึกไว้: ${r.responsible}` : '',
     r.frequency ? `   ความถี่ที่ทะเบียนบันทึกไว้: ${r.frequency}` : '',
     r.documents ? `   เอกสารที่ทะเบียนบันทึกไว้: ${String(r.documents).slice(0, 300)}` : '',
-    r.note ? `   หมายเหตุ: ${String(r.note).slice(0, 300)}` : '',
+    r.report_to ? `   การรายงานผลที่ทะเบียนบันทึกไว้: ${String(r.report_to).slice(0, 200)}` : '',
   ].filter(Boolean).join('\n')).join('\n\n')
 
   const ar = await fetch('https://api.anthropic.com/v1/messages', {

@@ -4,7 +4,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { syncReverifyOverdueNotifications } from '../lib/supabase.js'
 import { I } from '../components/icons.jsx'
-import { Tag, thDate, daysTo, usePageFilters } from '../lib/ui.jsx'
+import { Tag, thDate, daysTo, usePageFilters, GLOSSARY } from '../lib/ui.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import AssessForm from '../components/AssessForm.jsx'
 import { WFStepper, StatusBadge, MonitorModal, CaseDrawer, agingDays, agingColor } from '../components/CaseParts.jsx'
@@ -54,7 +54,7 @@ function AssessModal({ wf, law, suggest, onAssess, onClose }) {
   return (<>
     <div className="scrim" style={{ zIndex: 320 }} onClick={onClose} />
     <div className="modal" style={{ zIndex: 321, width: 600 }}>
-      <div className="modal-head"><h3>{law?.code || '—'} · ประเมินความสอดคล้อง</h3><button className="close" onClick={onClose}><I n="x" /></button></div>
+      <div className="modal-head"><h3 title={GLOSSARY.pct}>{law?.code || '—'} · ประเมินความสอดคล้อง</h3><button className="close" onClick={onClose}><I n="x" /></button></div>
       <div className="modal-body">
         <div style={{ fontSize: 13, marginBottom: 8 }}>{law?.name}</div>
         {can('edit')

@@ -5,7 +5,7 @@
 // เพื่อทราบ / ไม่เกี่ยวข้อง / ยังไม่ประเมิน เคยหลุดเข้ามาเพราะกรองด้วย status==='unmet' ตรงๆ
 // ซึ่งจะกลายเป็นการสั่งให้คนไปทำแผนปรับปรุงกับข้อที่ไม่มีอะไรต้องแก้
 import { useEffect, useState } from 'react'
-import { reqKind } from '../lib/ui.jsx'
+import { reqKind, GLOSSARY } from '../lib/ui.jsx'
 import { fetchImprovementPlans, closeImprovementPlan } from '../lib/supabase.js'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
@@ -31,7 +31,7 @@ function SavedPlans({ laws, onChanged }) {
 
   const today = new Date().toISOString().slice(0, 10)
   async function close(p) {
-    const ev = window.prompt('สรุปผล/หลักฐานการปิดแผน (บังคับกรอก):', '')
+    const ev = window.prompt('สรุปผล/หลักฐานการปิดแผน (บังคับกรอก)\n' + GLOSSARY.evidence, '')
     if (ev === null) return
     if (!ev.trim()) { toast('ต้องระบุหลักฐานหรือสรุปผลก่อนปิดแผน'); return }
     setBusyId(p.id)
@@ -45,7 +45,7 @@ function SavedPlans({ laws, onChanged }) {
 
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
-      <div className="panel-h"><h3>แผนปรับปรุงที่บันทึกไว้ ({open.length})</h3></div>
+      <div className="panel-h"><h3 title={GLOSSARY.plan}>แผนปรับปรุงที่บันทึกไว้ ({open.length})</h3></div>
       <div className="panel-b" style={{ paddingTop: 4 }}>
         {open.map(p => {
           const l = lawById[p.law_id]
@@ -112,7 +112,7 @@ export default function Improvements({ laws, catMap, onOpen, onChanged }) {
               <span style={{width:10,height:10,borderRadius:3,background:cat?.color||'#888',flexShrink:0}}/>
               <span className="num" style={{fontSize:12,color:'var(--brand)',fontWeight:700}}>{l.code}</span>
               <span style={{flex:1,fontSize:14,fontWeight:500}}>{l.name.slice(0,80)}{l.name.length>80?'…':''}</span>
-              <span className="pill p-bad">{ncReqs.length} ข้อ NC</span>
+              <span className="pill p-bad" title={GLOSSARY.unmet}>{ncReqs.length} ข้อ NC</span>
               <span style={{fontSize:12,color:'var(--brand)',fontWeight:500}}>ดูรายละเอียด →</span>
             </div>
             <div style={{padding:'2px 22px 14px'}}>
@@ -127,7 +127,7 @@ export default function Improvements({ laws, catMap, onOpen, onChanged }) {
                       {r.note&&<span className="meta-chip" style={{color:'var(--bad)',borderColor:'var(--bad-bg)',background:'var(--bad-bg)'}}>{r.note.slice(0,80)}</span>}
                     </div>
                   </div>
-                  <span className="pill p-bad" style={{fontSize:10,padding:'2px 7px',alignSelf:'flex-start',marginTop:2}}>NC</span>
+                  <span className="pill p-bad" style={{fontSize:10,padding:'2px 7px',alignSelf:'flex-start',marginTop:2}} title={GLOSSARY.unmet}>NC</span>
                 </div>
               ))}
             </div>

@@ -8,7 +8,7 @@ import { RELEVANCE, relevanceOf, confirmRelevance } from '../lib/supabase.js'
 import { fetchActionGuide, fetchLawEvidence, matchEvidence, EMPTY_GUIDE,
          createPlansFromMissingEvidence, fetchPlansByLaw } from '../lib/supabase.js'
 import { fetchSuggestions, recordSuggestionDecision, humanAssessed, runPreassess } from '../lib/supabase.js'
-import { fetchLawOverview, runLawOverview } from '../lib/supabase.js'
+import { fetchLawOverview, runLawOverview, fetchF259Source } from '../lib/supabase.js'
 import { callAi, useAiAction } from '../lib/aiAction.js'
 import ReqStatusPicker from './ReqStatusPicker.jsx'
 import { I } from './icons.jsx'
@@ -704,6 +704,8 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
   const [savingStatus, setSavingStatus] = useState(false)
   // P22 ขั้นที่ 3 · ข้อเสนอสถานะจาก AI ต่อข้อ { [requirement_id]: suggestion }
   const [suggs, setSuggs] = useState({})
+  // migration 052 · ค่าที่กู้จาก F-259 รายข้อ — ใช้เติมช่องที่ระบบยังว่าง
+  const [f259, setF259] = useState({})
   const preassess = useAiAction()
   const [addingReq, setAddingReq] = useState(false)   // เปิดฟอร์ม "เพิ่มข้อปฏิบัติ"
   const [newReq, setNewReq] = useState(EMPTY_NEW_REQ)
@@ -726,6 +728,7 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
     let alive = true
     fetchReviewLog(law.id).then(r=>{ if(alive) setReviews(r) }).catch(()=>{})
     fetchSuggestions(law.id).then(s=>{ if(alive) setSuggs(s) }).catch(()=>{})
+    fetchF259Source(law.id).then(s=>{ if(alive) setF259(s) }).catch(()=>{})
     return ()=>{ alive = false }
   }, [law.id])   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -963,6 +966,12 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
                 const rresp = ro.responsible ?? r.responsible
                 const rfreq = ro.frequency   ?? r.frequency
                 const rdocs = ro.documents   ?? r.documents
+                // migration 052 · ช่องที่ระบบยังว่าง เติมด้วยค่าจากเอกสาร F-259 พร้อมติดป้ายที่มา
+                // ค่าที่คนกรอกในระบบชนะเสมอ — ตรงกับตรรกะของ view lg_req_effective
+                const fx = f259[r.id] || {}
+                const eResp = rresp || fx.responsible, eFreq = rfreq || fx.frequency
+                const eDocs = rdocs || fx.documents,   eRep  = fx.report_to
+                const fromF = (own, val) => !own && !!val
                 const isEditing = editingId === r.id
                 return (
                 <div className={'req '+reqKind(r)} key={r.id}>
@@ -1012,9 +1021,10 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
                       </div>
                     )}
                     <div className="rmeta">
-                      {rresp && <span className="b">{rresp}</span>}
-                      {rfreq && <span className="b">{rfreq}</span>}
-                      {rdocs && <span className="b">{rdocs.slice(0,50)}</span>}
+                      {eResp && <span className="b" title={fromF(rresp,eResp)?'ค่านี้มาจากเอกสาร F-259 ยังไม่ได้บันทึกในระบบ':''}>{eResp}{fromF(rresp,eResp)?' · F-259':''}</span>}
+                      {eFreq && <span className="b" title={fromF(rfreq,eFreq)?'ค่านี้มาจากเอกสาร F-259 ยังไม่ได้บันทึกในระบบ':''}>{eFreq}{fromF(rfreq,eFreq)?' · F-259':''}</span>}
+                      {eDocs && <span className="b" title={(fromF(rdocs,eDocs)?'จากเอกสาร F-259 · ':'')+eDocs}>{eDocs.slice(0,50)}{fromF(rdocs,eDocs)?' · F-259':''}</span>}
+                      {eRep && <span className="b" title="การรายงานผล — จากเอกสาร F-259">รายงาน: {eRep.slice(0,30)}</span>}
                     </div>
                     <div className="rmeta" style={{marginTop:5}}>
                       {r.evaluated_by

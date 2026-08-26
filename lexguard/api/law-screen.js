@@ -101,7 +101,10 @@ export async function screenOneLaw(lawId, profile) {
   const laws = await rest(`lg_laws?select=id,code,name,ministry,law_type,issue_date,effective_date,source_url&id=eq.${lawId}`)
   if (!laws.length) throw new Error('ไม่พบกฎหมายรหัสนี้ในทะเบียน')
   const law = laws[0]
-  const reqs = await rest(`lg_requirements?select=id,seq,text,responsible,note&law_id=eq.${lawId}&order=seq.asc&limit=200`)
+  // migration 053 · view นี้ให้ทั้ง note (applicability ที่ยุบรวมไว้ตอนนำเข้า)
+  // และค่าที่กู้จาก F-259 — อ่านตารางดิบจะพลาดค่าที่กู้มาแล้ว
+  const reqs = (await rest(`lg_req_effective?select=requirement_id,seq,text,responsible,note&law_id=eq.${lawId}&order=seq.asc&limit=200`))
+    .map(r => ({ ...r, id: r.requirement_id }))
 
   const lawText = [
     `ชื่อกฎหมาย: ${law.name}`,
