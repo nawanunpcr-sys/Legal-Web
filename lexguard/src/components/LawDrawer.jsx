@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { STATUS, LAW_STATUS, REPEAL_CONFIDENCE, uploadEvidence, updateRequirementField, fetchReviewLog, addReviewLog, updateLawField } from '../lib/supabase.js'
+import { STATUS, uploadEvidence, updateRequirementField, fetchReviewLog, addReviewLog, updateLawField } from '../lib/supabase.js'
 import { useAuth, NO_PERM, currentUserName } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 import { daysTo, reqStats, reqKind, reqEvalTitle } from '../lib/ui.jsx'
@@ -684,7 +684,7 @@ function OverviewPanel({ law }) {
 
 const EMPTY_NEW_REQ = { text:'', responsible:'', frequency:'', documents:'', choice:'waiting', statusReason:'', waitDate:'' }
 
-export default function LawDrawer({ law, catMap, settings, onClose, onToggle, onAddReq, onRepeal, onRestore, onDuplicate, onToggleActive, onDelete, thDate, relevance, onRelevanceChanged, onPlansCreated }){
+export default function LawDrawer({ law, catMap, settings, onClose, onToggle, onAddReq, onRepeal, onRestore, onDuplicate, onToggleActive, thDate, relevance, onRelevanceChanged, onPlansCreated }){
   const { can } = useAuth()
   const inactive = law.active === false
   const [showRepealModal, setShowRepealModal] = useState(false)

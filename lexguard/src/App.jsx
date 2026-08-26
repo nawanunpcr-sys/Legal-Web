@@ -338,6 +338,9 @@ export default function App(){
   }
 
   // P14 · Task 3 — ลบกฎหมายถาวร (admin) · optimistic + rollback
+  // P22 · ไม่มีปุ่มไหนเรียกแล้ว — ตัดปุ่มลบออกทั้งระบบตามที่ผู้ใช้สั่ง (26/08/2569)
+  // เก็บฟังก์ชันไว้เผื่อต้องคืนปุ่มในภายหลัง · ถ้าแน่ใจว่าไม่ใช้แล้วค่อยลบทั้งก้อน
+  // eslint-disable-next-line no-unused-vars
   async function handleDeleteLaw(law){
     const prevLaws=laws, prevWf=workflowRows
     setLaws(prev=>prev.filter(l=>l.id!==law.id))
@@ -698,7 +701,7 @@ export default function App(){
           {view==='registry'      && <RegistryCompliance
             regLaws={activeLaws} cats={cats} catMap={catMap} stats={stats}
             search={searchDebounced} onOpen={setOpenLaw} onCreate={handleCreateLaw} onBulk={handleBulkCompliance} allLaws={lawsWithRel}
-            workflow={workflowRows} suggest={suggest} onAssess={handleWorkflowAssess} focus={regFocus} onDelete={handleDeleteLaw}
+            workflow={workflowRows} suggest={suggest} onAssess={handleWorkflowAssess} focus={regFocus}
             round={round} onExportF259={()=>setShowPdf(true)} onAddLaw={()=>openAddLaw()}
             onImported={async()=>{ await loadLaws(); fetchQuarterStats().then(setQuarterStats); fetchActivity().then(setActivity) }}
             monthsData={months} monthYear={monthYear} setMonthYear={setMonthYear} onToggleMonth={handleToggleMonth}
@@ -731,7 +734,7 @@ export default function App(){
 
       {openLaw && (
         <LawDrawer law={openLaw} catMap={catMap} settings={settings} onClose={()=>setOpenLaw(null)}
-          onToggle={setReqStatus} onAddReq={addReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive} onDelete={handleDeleteLaw}
+          onToggle={setReqStatus} onAddReq={addReq} onRepeal={handleRepeal} onRestore={handleRestore} onDuplicate={handleDuplicate} onToggleActive={handleToggleActive}
           thDate={thDate} relevance={relByLaw[openLaw.id]||null} onRelevanceChanged={loadRelevance} onPlansCreated={loadLaws}/>
       )}
       {showAddLaw && <AddLawFlow cats={cats} allLaws={laws} suggest={suggest} initialData={addLawInit}

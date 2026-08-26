@@ -95,7 +95,7 @@ const REGISTRY_TABS = [['register','ทะเบียนกฎหมาย'],['
 // P19 · เพิ่ม 3 แท็บบนสุด: ทะเบียนกฎหมาย / ประวัติการทำรายการ / กฎหมายที่ยกเลิก
 // History.jsx และ Repealed.jsx render ตรงๆ ไม่ได้แก้ไข component ทั้งสองไฟล์เลย
 export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onOpen,onCreate,onBulk,allLaws,round,onExportF259,onAddLaw,onImported,
-    workflow=[],suggest={},onAssess,focus,onDelete,
+    workflow=[],suggest={},onAssess,focus,
     monthsData=[],monthYear,setMonthYear,onToggleMonth,onMarkNoNewLaws,onMarkHasNewLaws,
     // P19 · props ใหม่สำหรับแท็บ ประวัติ/ยกเลิก
     activity=[],settings={},searchLog=[],repealedLaws=[],onRestore,
@@ -146,14 +146,14 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
            ค่าเริ่มต้นของสวิตช์คือปิด ผลที่ผู้ใช้เห็นจึงเหมือนเดิมทุกประการ */
         laws={allLaws} cats={cats} catMap={catMap} search={search} onOpen={onOpen} onCreate={onCreate} onBulk={onBulk} allLaws={allLaws}
         round={round} onExportF259={onExportF259} onAddLaw={onAddLaw} onImported={onImported}
-        workflow={workflow} suggest={suggest} onAssess={onAssess} focus={focus} onDelete={onDelete}
+        workflow={workflow} suggest={suggest} onAssess={onAssess} focus={focus}
         repealChecks={repealChecks} repealBusy={repealBusy} onRepealCheck={onRepealCheck}
         onRepealApply={onRepealApply} onRepealDismiss={onRepealDismiss}
         companyProfile={companyProfile} onRelevanceChanged={onRelevanceChanged}/>
     </>}
 
     {tab==='history' && <History activity={activity} laws={allLaws} catMap={catMap} settings={settings}
-      workflowRows={workflow} searchLog={searchLog} onDeleteLaw={onDelete}/>}
+      workflowRows={workflow} searchLog={searchLog}/>}
 
     {tab==='repealed' && <Repealed laws={repealedLaws} catMap={catMap} search={search} onOpen={onOpen} onRestore={onRestore} allLaws={allLaws}/>}
   </div>
@@ -290,7 +290,7 @@ function ScreeningBar({ laws, profile, onChanged }) {
 }
 
 function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round={q:1,by:new Date().getFullYear()+543},onExportF259,onAddLaw,onImported,
-    workflow=[],suggest={},onAssess,focus,onDelete,
+    workflow=[],suggest={},onAssess,focus,
     repealChecks=[],repealBusy=false,onRepealCheck,onRepealApply,onRepealDismiss,
     companyProfile=null,onRelevanceChanged}){
   const { can }=useAuth()
