@@ -468,7 +468,7 @@ export function buildLawReport({ law, catName = '', catColor = '', settings = {}
 // หัวกระดาษยึดโครงจริงของ F-259 ตามที่สำรวจไว้ใน docs/f259-mapping.md ข้อ 5
 // (ชั้นความลับ · เลขที่เอกสาร Rev. · รอบการติดตาม · วันที่ · อ้าง ISO 45001 ข้อ 6.1.3)
 // เพื่อให้ผู้ตรวจเห็นความเชื่อมโยงกับเอกสารที่เขาคุ้นอยู่แล้วทันที
-export function buildGapReport({ groups = {}, summary = {}, catMap = {}, settings = {}, round, groupDefs }) {
+export function buildGapReport({ groups = {}, summary = {}, catMap = {}, settings = {}, round, groupDefs, insight = null }) {
   const el = document.getElementById('print-report'); if (!el) return
   const company = settings.company_name || settings.org_name || 'บริษัท จัสเทล เน็ทเวิร์ค จำกัด'
   const printedOn = thDate(new Date().toISOString())
@@ -501,6 +501,35 @@ export function buildGapReport({ groups = {}, summary = {}, catMap = {}, setting
         </table>
       </div>`
   }).join('')
+
+  // ── ผลวิเคราะห์ · ข้อเสนอแนะข้อ 4 ขอ "Gap Analysis พร้อมข้อเสนอแนะ"
+  //    ไฟล์ที่พิมพ์ออกมาต้องมีส่วนนี้ ไม่ใช่มีแค่บนหน้าจอ เพราะผู้ตรวจอ่านกระดาษ
+  const insightBlock = (insight && insight.summary && insight.themes?.length) ? `
+    <div class="gsect">
+      <div class="gh">ผลวิเคราะห์ช่องว่างและข้อเสนอแนะ</div>
+      <div class="gw">ช่องว่าง ${insight.summary.total} รายการ กระจุกอยู่ใน ${insight.summary.themeCount} เรื่อง ·
+        จัดการ ${Math.min(3, insight.themes.length)} เรื่องแรกปิดได้ ${insight.summary.topCovered}/${insight.summary.total}
+        (${insight.summary.topPct}%)</div>
+      <table class="gt">
+        <thead><tr><th style="width:20px">#</th><th style="width:190px">หัวข้อ</th>
+          <th style="width:44px">รายการ</th><th style="width:110px">กฎหมาย</th><th>ข้อเสนอแนะ</th></tr></thead>
+        <tbody>${insight.themes.map((th, i) => `<tr>
+          <td class="ctr">${i + 1}</td><td>${ESC(th.label)}</td>
+          <td class="ctr">${th.items.length}</td>
+          <td>${ESC((th.laws || []).join(', '))}</td>
+          <td>${ESC(th.advice)}</td></tr>`).join('')}</tbody>
+      </table>
+      ${(insight.chains || []).length ? `<div class="gw" style="margin-top:5px">
+        <b>ข้อกำหนดที่ต่อกันเป็นลูกโซ่ — ต้องทำต้นทางก่อน:</b>
+        ${insight.chains.map(c => `${ESC(c.law?.code || '')} เริ่มที่ข้อ ${ESC((c.roots || []).join(' และ '))}
+          (${(c.links || []).map(l => `ข้อ ${l.from} → ข้อ ${l.to}`).join(' · ')})`).join(' &nbsp;|&nbsp; ')}
+      </div>` : ''}
+      ${insight.summary.unassigned > 0 ? `<div class="gw"><b>หมายเหตุ:</b>
+        ${insight.summary.unassigned} จาก ${insight.summary.total} รายการยังไม่มีผู้รับผิดชอบ
+        ต้องระบุหน่วยงานก่อนเปิดแผนปรับปรุง</div>` : ''}
+      <div class="gw" style="font-size:10px">จัดกลุ่มด้วยการจับคำสำคัญในตัวบทและการอ้างอิงข้อ —
+        ไม่ใช่ความเห็นทางกฎหมายและไม่ได้ใช้ AI</div>
+    </div>` : ''
 
   const pct = summary.pct == null ? '—' : summary.pct + '%'
   const evPct = summary.evidencePct == null ? '—' : summary.evidencePct + '%'
@@ -550,6 +579,7 @@ export function buildGapReport({ groups = {}, summary = {}, catMap = {}, setting
       <td class="st"><div class="stn">${summary.laws}</div><div class="stl">กฎหมายที่บังคับใช้<br/>(${summary.req} ข้อปฏิบัติ)</div></td>
     </tr></table>
 
+    ${insightBlock}
     ${sections}
 
     <div class="gfoot">

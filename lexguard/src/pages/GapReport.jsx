@@ -9,6 +9,7 @@
 // ตัวเลขทุกตัวมาจาก src/lib/gap.js ซึ่งใช้สูตรเดียวกับ Dashboard (ฐาน C + NC)
 import { useEffect, useMemo, useState } from 'react'
 import { buildGapAnalysis, GAP_GROUPS, deptCounts, filterRows, groupByLaw, topActions } from '../lib/gap.js'
+import { analyzeGaps } from '../lib/gapInsight.js'
 import { fetchImprovementPlans, fetchLawFileCounts, fetchF259Responsible } from '../lib/supabase.js'
 import { exportGapToExcel } from '../lib/integrations.js'
 import { buildGapReport } from '../components/PdfExport.jsx'
@@ -50,12 +51,14 @@ export default function GapReport({ laws = [], catMap = {}, settings = {}, round
     GAP_GROUPS.map(g => [g.key, filterRows(groups[g.key] || [], { dept, q })])), [groups, dept, q])
   const shownTotal = GAP_GROUPS.reduce((n, g) => n + shown[g.key].length, 0)
   const filtering = dept !== 'all' || !!q.trim()
+  // วิเคราะห์จากรายการที่กำลังแสดงอยู่ — กรองหน่วยงานแล้วผลวิเคราะห์เปลี่ยนตาม
+  const insight = useMemo(() => analyzeGaps(GAP_GROUPS.flatMap(g => shown[g.key])), [shown])
 
   // กำลังกรองอยู่ → ส่งออกเฉพาะที่เห็น เพื่อให้ส่งให้แต่ละฝ่ายแยกกันได้
   // ไม่กรอง → ส่งออกทั้งหมดเหมือนเดิม · ตัวเลขสรุปหัวรายงานเป็นของทั้งทะเบียนเสมอ
   const exportSet = () => filtering ? shown : groups
   function exportPdf() {
-    buildGapReport({ groups: exportSet(), summary, catMap, settings, round })
+    buildGapReport({ groups: exportSet(), summary, catMap, settings, round, insight })
     setTimeout(() => window.print(), 80)
   }
 
@@ -82,6 +85,83 @@ export default function GapReport({ laws = [], catMap = {}, settings = {}, round
         กฎหมายที่ยังไม่คัดกรอง) ถูกซ่อนไว้ เพราะสะท้อน<b>ข้อมูลที่ยังไม่ได้เก็บ</b>
         ไม่ใช่การละเลยของทีมงาน — จะกลับมาแสดงเมื่อเริ่มบันทึกข้อมูลเหล่านั้นแล้ว
       </div>
+
+      {/* ── ผลวิเคราะห์ช่องว่าง ───────────────────────────────────────────
+          ข้อเสนอแนะข้อ 4 ขอ "Gap Analysis พร้อมข้อเสนอแนะ" — ของเดิมทำได้แค่นับ
+          ส่วนนี้จัดกลุ่มช่องว่างตามหัวข้อ และหาลูกโซ่ในตัวบท เพื่อตอบว่า
+          "แก้เรื่องเดียวปิดได้กี่รายการ" และ "ต้องเริ่มที่ข้อไหน"
+          ทำด้วยการจับคำสำคัญกับการอ้างอิงข้อในตัวบท ไม่ได้เรียก AI */}
+      {insight.summary && insight.themes.length > 0 && (
+        <div className="panel" style={{ marginBottom: 14, borderLeft: '3px solid var(--brand)' }}>
+          <div className="panel-h">
+            <h3>ผลวิเคราะห์ช่องว่าง</h3>
+            <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-faint)' }}>
+              {insight.summary.total} รายการ · {insight.summary.themeCount} หัวข้อ · {insight.summary.lawCount} ฉบับ
+            </span>
+          </div>
+          <div className="panel-b" style={{ paddingTop: 6 }}>
+            <div style={{ fontSize: 13.5, lineHeight: 1.75, marginBottom: 12 }}>
+              ช่องว่างทั้งหมดกระจุกอยู่ใน <b>{insight.summary.themeCount} เรื่อง</b> —
+              จัดการ {Math.min(3, insight.themes.length)} เรื่องแรกได้ จะปิดช่องว่างไป{' '}
+              <b>{insight.summary.topCovered} จาก {insight.summary.total} รายการ ({insight.summary.topPct}%)</b>
+            </div>
+
+            {insight.themes.map((th, i) => (
+              <div key={th.key} className="impr-row">
+                <div className="impr-dot" style={{ background: 'var(--brand)' }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>
+                    {i + 1}. {th.label}
+                    <span style={{ fontWeight: 400, color: 'var(--ink-faint)' }}>
+                      {' '}— {th.items.length} รายการ ({th.pct}%)
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 4, lineHeight: 1.7 }}>
+                    {th.advice}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                    {th.laws.map(c => <span key={c} className="meta-chip" style={{ fontSize: 10.5 }}>{c}</span>)}
+                    {th.depts.map(d => <span key={d} className="meta-chip" style={{ fontSize: 10.5 }}>{d}</span>)}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* ลูกโซ่ในตัวบท — ทำต้นทางก่อนแล้วปลายทางปิดตาม */}
+            {insight.chains.length > 0 && (
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ink-faint)', marginBottom: 7 }}>
+                  ข้อกำหนดที่ต่อกันเป็นลูกโซ่ — ต้องทำต้นทางก่อน
+                </div>
+                {insight.chains.map(c => (
+                  <div key={c.law?.code} style={{ fontSize: 12.5, lineHeight: 1.8, marginBottom: 6 }}>
+                    <b>{c.law?.code}</b> · {c.count} รายการต่อกัน — <b style={{ color: 'var(--bad)' }}>
+                      เริ่มที่ข้อ {c.roots.join(' และ ')}</b>
+                    <div style={{ color: 'var(--ink-faint)', fontSize: 11.5 }}>
+                      {c.links.map(l => `ข้อ ${l.from} → ข้อ ${l.to}`).join('  ·  ')}
+                      {' '}— ข้อปลายทางทำไม่ได้ถ้าข้อต้นทางยังไม่เสร็จ
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {insight.summary.unassigned > 0 && (
+              <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 7, background: 'var(--warn-bg)',
+                color: 'var(--warn)', fontSize: 12.5, lineHeight: 1.65 }}>
+                <b>{insight.summary.unassigned} จาก {insight.summary.total} รายการยังไม่มีผู้รับผิดชอบ</b> —
+                ต้องระบุหน่วยงานก่อน ไม่งั้นเปิดแผนปรับปรุงแล้วไม่มีใครรับงานไปทำ
+              </div>
+            )}
+
+            <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 12, lineHeight: 1.6 }}>
+              จัดกลุ่มด้วยการจับคำสำคัญในตัวบทและการอ้างอิงข้อ (เช่น “ตามข้อ ๖”) —
+              <b> ไม่ใช่ความเห็นทางกฎหมายและไม่ได้ใช้ AI</b> ใช้เพื่อจัดลำดับงาน
+              ก่อนตัดสินใจจริงให้เปิดตัวบทประกอบเสมอ
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── เริ่มจากตรงนี้ · สามอย่างที่ปิดช่องว่างได้มากที่สุด ────────────────
           คำนวณจากจำนวนรายการล้วนๆ ไม่ได้ให้น้ำหนักว่าอะไรเสี่ยงกว่ากัน
