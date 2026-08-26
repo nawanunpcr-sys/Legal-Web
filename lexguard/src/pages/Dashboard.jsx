@@ -1,7 +1,8 @@
 // Dashboard page — overview KPIs, category bars, NC list, quarterly chart, report deadlines.
 // P19 · จัดใหม่: เห็นโดยไม่ต้องเลื่อน = การ์ด "ต้องทำตอนนี้" + KPI strip
 //   ที่เหลือ (CatBars/NC list/สถิติรายเดือน) พับเก็บ ค่าเริ่มต้น=พับ จำสถานะใน localStorage
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { RISK, RISK_ORDER, fetchUnmetSubByRisk } from '../lib/supabase.js'
 import { Pill, Tag, ActiveBadge, thDate, TH_MONTHS, monthlyByAnnounce, announceYears, announceMonth, sumReqStats, usePersist, GLOSSARY } from '../lib/ui.jsx'
 import { I } from '../components/icons.jsx'
 
@@ -162,6 +163,13 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
 
   const bad=fLaws.filter(l=>l.status==='bad')
 
+  // P24 · ข้อย่อยที่ยังไม่ได้ดำเนินการ แยกตามระดับความเสี่ยง
+  const [subRisk,setSubRisk]=useState(null)
+  useEffect(()=>{ let live=true
+    fetchUnmetSubByRisk().then(d=>{ if(live) setSubRisk(d) }).catch(()=>{})
+    return ()=>{ live=false }
+  },[])
+
 
   // ── P21 · แถบสรุปด้านบน ──────────────────────────────────────────────────
   // เดิมเป็นช่องเท่ากัน 8 ช่องเรียงกันรวด พอเพิ่ม 3 สถานะใหม่เข้าไปเลยล้นเป็นสองแถว
@@ -188,6 +196,29 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
   ]
 
   return <div className="view">
+    {/* P24 · ข้อย่อยที่ยังไม่ได้ดำเนินการ — ตอบได้ว่าค้างตรงจุดไหนและเร่งด่วนแค่ไหน
+        ต่างจากตัวเลข NC ระดับข้อกำหนดตรงที่ละเอียดถึงระดับการกระทำ */}
+    {subRisk && subRisk.total>0 && (
+      <div className="panel" style={{marginBottom:14,borderLeft:'3px solid '+RISK.critical.color}}>
+        <div className="panel-h" style={{cursor:'pointer'}} onClick={()=>onGoView&&onGoView('registry')}>
+          <span style={{flex:1,fontSize:14,fontWeight:600}}>
+            ข้อย่อยที่ยังไม่ได้ดำเนินการ ({subRisk.total.toLocaleString('en-US')} ข้อ)
+          </span>
+          <span style={{fontSize:12,color:'var(--ink-faint)'}}>จากกฎหมาย {subRisk.laws} ฉบับ</span>
+        </div>
+        <div className="panel-b" style={{paddingTop:6,display:'flex',gap:9,flexWrap:'wrap'}}>
+          {RISK_ORDER.filter(k=>subRisk.byRisk[k]).map(k=>(
+            <div key={k} title={RISK[k].desc} style={{
+              display:'flex',alignItems:'center',gap:7,padding:'7px 13px',borderRadius:9,
+              background:RISK[k].bg,border:'1px solid '+RISK[k].color+'33'}}>
+              <span style={{width:9,height:9,borderRadius:'50%',background:RISK[k].color}}/>
+              <span style={{fontSize:12.5,color:'var(--ink-soft)'}}>เสี่ยง{RISK[k].label}</span>
+              <b className="num" style={{fontSize:16,color:RISK[k].color}}>{subRisk.byRisk[k]}</b>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
     <div className="dash-summary">
       <div className="dash-summary-top">
         <div className="dash-summary-main">

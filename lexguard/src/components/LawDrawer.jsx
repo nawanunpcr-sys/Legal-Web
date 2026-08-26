@@ -9,6 +9,8 @@ import { fetchActionGuide, fetchLawEvidence, matchEvidence, EMPTY_GUIDE,
          createPlansFromMissingEvidence, fetchPlansByLaw } from '../lib/supabase.js'
 import { fetchSuggestions, recordSuggestionDecision, humanAssessed, runPreassess } from '../lib/supabase.js'
 import { fetchLawOverview, runLawOverview, fetchF259Source } from '../lib/supabase.js'
+import { fetchSubRequirements, fetchSubProgress, REQ_STATUS as RQS } from '../lib/supabase.js'
+import SubRequirementList from './SubRequirementList.jsx'
 import { callAi, useAiAction } from '../lib/aiAction.js'
 import ReqStatusPicker from './ReqStatusPicker.jsx'
 import { I } from './icons.jsx'
@@ -704,6 +706,10 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
   const [suggs, setSuggs] = useState({})
   // migration 052 · ค่าที่กู้จาก F-259 รายข้อ — ใช้เติมช่องที่ระบบยังว่าง
   const [f259, setF259] = useState({})
+  // P24 · ข้อย่อยรายข้อกำหนด + ความคืบหน้า
+  const [subs, setSubs] = useState({})
+  const [subProg, setSubProg] = useState({})
+  const [openSubId, setOpenSubId] = useState(null)   // ข้อกำหนดที่กาง checklist อยู่
   const preassess = useAiAction()
   const [addingReq, setAddingReq] = useState(false)   // เปิดฟอร์ม "เพิ่มข้อปฏิบัติ"
   const [newReq, setNewReq] = useState(EMPTY_NEW_REQ)
@@ -727,6 +733,7 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
     fetchReviewLog(law.id).then(r=>{ if(alive) setReviews(r) }).catch(()=>{})
     fetchSuggestions(law.id).then(s=>{ if(alive) setSuggs(s) }).catch(()=>{})
     fetchF259Source(law.id).then(s=>{ if(alive) setF259(s) }).catch(()=>{})
+    loadSubs(alive)
     return ()=>{ alive = false }
   }, [law.id])   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -784,6 +791,32 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
     const k = reqKind(r)
     setStatusDraft({ choice: REQ_STATUS[k] ? k : '', reason: r.status_reason || '' })
   }
+  async function loadSubs(alive = true){
+    try{
+      const [s, p] = await Promise.all([fetchSubRequirements(law.id), fetchSubProgress(law.id)])
+      if(alive !== false){ setSubs(s); setSubProg(p) }
+    }catch(e){ console.warn('โหลดข้อย่อยไม่สำเร็จ', e) }
+  }
+
+  // P24 · ยืนยันสถานะที่ระบบแนะนำจากผลติ๊กข้อย่อย
+  // ⚠ ระบบไม่เปลี่ยนสถานะให้อัตโนมัติ — ต้องกดปุ่มนี้เท่านั้น (กติกาข้อ 3)
+  //   เหตุผลบันทึกไว้ว่ามาจากการติ๊กข้อย่อยกี่ข้อ เพื่อให้ตรวจย้อนหลังได้
+  async function confirmSuggested(r, suggested){
+    const p = subProg[r.id]
+    if(!RQS[suggested]){ toast('ยังประเมินข้อย่อยไม่ครบ'); return }
+    const reason = suggested === 'met'
+      ? ''
+      : suggested === 'unmet'
+        ? `ข้อย่อยยังไม่ได้ดำเนินการ ${p.unmet} จาก ${p.total} ข้อ`
+        : `ข้อย่อยทั้ง ${p.total} ข้อไม่เข้าข่ายกิจการขององค์กร`
+    setSavingStatus(true)
+    try{
+      await onToggle(law, r, suggested, reason)
+      toast('ยืนยันสถานะจากผลติ๊กข้อย่อยแล้ว','success')
+    }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message) }
+    finally{ setSavingStatus(false) }
+  }
+
   async function saveStatus(r){
     if(savingStatus) return
     const { choice, reason } = statusDraft
@@ -1039,6 +1072,47 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
                     </div>
                     {reqKind(r)==='unmet' && r.note && <div className="note">{r.note}</div>}
                     {r.status_reason && <div className="reason">เหตุผล: {r.status_reason}</div>}
+
+                    {/* P24 · ข้อย่อยที่ประเมินได้ทีละข้อ — ตอบได้ว่าไม่สอดคล้องตรงจุดใด */}
+                    {(()=>{ const list=subs[r.id]||[], pr=subProg[r.id], open=openSubId===r.id
+                      const done = pr ? (pr.met+pr.unmet+pr.na) : 0
+                      return (<div style={{marginTop:8}}>
+                        <button className="btn btn-ghost" style={{padding:'3px 10px',fontSize:11.5}}
+                          onClick={()=>setOpenSubId(open?null:r.id)}>
+                          {open?'ย่อรายการข้อย่อย ▲'
+                            : list.length ? `ข้อย่อย ${list.length} ข้อ · ประเมินแล้ว ${done}/${pr?.total??list.length} ▼`
+                            : 'แตกเป็นข้อย่อยเพื่อประเมินทีละข้อ ▼'}
+                        </button>
+                        {open && <>
+                          <SubRequirementList req={r} subs={list} progress={pr} onChanged={()=>loadSubs()}/>
+                          {/* สถานะที่ระบบแนะนำ — ต้องกดยืนยันเอง */}
+                          {pr?.suggested_status && RQS[pr.suggested_status] && pr.suggested_status!==reqKind(r) && can('edit') && (
+                            <div style={{marginTop:10,padding:'10px 13px',borderRadius:8,
+                              background:'var(--surface-2)',border:'1px solid var(--line)'}}>
+                              <div style={{fontSize:12.5,lineHeight:1.7}}>
+                                จากผลติ๊กข้อย่อย ระบบแนะนำสถานะ{' '}
+                                <b className={'pill '+RQS[pr.suggested_status].cls} style={{fontSize:10.5}}>
+                                  {RQS[pr.suggested_status].code} — {RQS[pr.suggested_status].label}</b>
+                                {' '}(สถานะปัจจุบัน {RQS[reqKind(r)]?.label || 'ยังไม่ประเมิน'})
+                              </div>
+                              <div style={{display:'flex',gap:8,marginTop:9,flexWrap:'wrap',alignItems:'center'}}>
+                                <button className="btn btn-primary" style={{padding:'4px 12px',fontSize:12}}
+                                  disabled={savingStatus} onClick={()=>confirmSuggested(r,pr.suggested_status)}>
+                                  ยืนยันสถานะนี้
+                                </button>
+                                <span style={{fontSize:11.5,color:'var(--ink-faint)'}}>
+                                  ระบบไม่เปลี่ยนสถานะให้เอง — ต้องมีผู้ประเมินกดยืนยันเสมอ
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                          {pr && pr.total>0 && pr.pending>0 && (
+                            <div style={{marginTop:8,fontSize:11.5,color:'var(--ink-faint)'}}>
+                              ยังเหลือข้อย่อยที่ไม่ได้ประเมิน {pr.pending} ข้อ — ประเมินครบแล้วระบบจะเสนอสถานะให้
+                            </div>
+                          )}
+                        </>}
+                      </div>) })()}
 
                     {/* P22 ขั้นที่ 3 · ข้อเสนอของ AI — แสดงตลอด ไม่ต้องกดเข้าโหมดแก้ก่อน
                         เพื่อให้ผู้ประเมินเห็นภาพรวมทั้งฉบับได้ก่อนลงมือทีละข้อ */}

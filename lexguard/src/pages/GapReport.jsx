@@ -8,9 +8,10 @@
 // หน้านี้อ่านอย่างเดียว ไม่มีคำสั่งเขียนลงฐานข้อมูล
 // ตัวเลขทุกตัวมาจาก src/lib/gap.js ซึ่งใช้สูตรเดียวกับ Dashboard (ฐาน C + NC)
 import { useEffect, useMemo, useState } from 'react'
-import { buildGapAnalysis, GAP_GROUPS, deptCounts, filterRows, groupByLaw, topActions } from '../lib/gap.js'
+import { buildGapAnalysis, GAP_GROUPS, deptCounts, filterRows, groupByLaw, topActions,
+         SUB_GAP_GROUP, buildSubGaps } from '../lib/gap.js'
 import { analyzeGaps } from '../lib/gapInsight.js'
-import { fetchImprovementPlans, fetchLawFileCounts, fetchF259Responsible } from '../lib/supabase.js'
+import { fetchImprovementPlans, fetchLawFileCounts, fetchF259Responsible, fetchUnmetSubs } from '../lib/supabase.js'
 import { exportGapToExcel } from '../lib/integrations.js'
 import { buildGapReport } from '../components/PdfExport.jsx'
 import { I } from '../components/icons.jsx'
@@ -30,6 +31,7 @@ export default function GapReport({ laws = [], catMap = {}, settings = {}, round
   const [plans, setPlans] = useState([])
   const [lawFiles, setLawFiles] = useState({})
   const [respMap, setRespMap] = useState({})   // ผู้รับผิดชอบที่กู้จาก F-259
+  const [unmetSubs, setUnmetSubs] = useState([])   // ข้อย่อยที่ยังไม่ได้ดำเนินการ (P24)
   const [openKey, setOpenKey] = useState(GAP_GROUPS[0].key)
   // P22 · ตัวกรองสำหรับหน้าจอ — ไม่กระทบตัวเลขสรุปด้านบนและไฟล์ export
   const [dept, setDept] = useState('all')
@@ -40,19 +42,26 @@ export default function GapReport({ laws = [], catMap = {}, settings = {}, round
     fetchImprovementPlans().then(d => { if (live) setPlans(d) }).catch(() => {})
     fetchLawFileCounts().then(m => { if (live) setLawFiles(m) }).catch(() => {})
     fetchF259Responsible().then(m => { if (live) setRespMap(m) }).catch(() => {})
+    fetchUnmetSubs().then(d => { if (live) setUnmetSubs(d) }).catch(() => {})
     return () => { live = false }
   }, [])
 
   const { groups, summary } = useMemo(() => buildGapAnalysis(laws, plans, lawFiles, respMap), [laws, plans, lawFiles, respMap])
-  const depts = useMemo(() => deptCounts(groups), [groups])
   const tops  = useMemo(() => topActions(groups, summary), [groups, summary])
   // รายการหลังกรอง แยกตามกลุ่ม — ใช้ทั้งบนหน้าจอและตอน export "เฉพาะที่เห็น"
+  // P24 · ช่องว่างระดับข้อย่อย — เพิ่มเป็นกลุ่มเมื่อมีข้อมูลเท่านั้น
+  // ไม่โผล่เป็นกลุ่มว่างให้รก เหมือนที่ทำกับ 3 กลุ่มที่ซ่อนไว้
+  const subRows = useMemo(() => buildSubGaps(unmetSubs, laws), [unmetSubs, laws])
+  const allGroups = useMemo(() => subRows.length ? [...GAP_GROUPS, SUB_GAP_GROUP] : GAP_GROUPS, [subRows.length])
+  const groupsPlus = useMemo(() => ({ ...groups, [SUB_GAP_GROUP.key]: subRows }), [groups, subRows])
+  // ⚠ ต้องประกาศหลัง groupsPlus — const อยู่ใน TDZ ถ้าเรียกก่อนจะพังตอน render
+  const depts = useMemo(() => deptCounts(groupsPlus), [groupsPlus])
   const shown = useMemo(() => Object.fromEntries(
-    GAP_GROUPS.map(g => [g.key, filterRows(groups[g.key] || [], { dept, q })])), [groups, dept, q])
-  const shownTotal = GAP_GROUPS.reduce((n, g) => n + shown[g.key].length, 0)
+    allGroups.map(g => [g.key, filterRows(groupsPlus[g.key] || [], { dept, q })])), [allGroups, groupsPlus, dept, q])
+  const shownTotal = allGroups.reduce((n, g) => n + shown[g.key].length, 0)
   const filtering = dept !== 'all' || !!q.trim()
   // วิเคราะห์จากรายการที่กำลังแสดงอยู่ — กรองหน่วยงานแล้วผลวิเคราะห์เปลี่ยนตาม
-  const insight = useMemo(() => analyzeGaps(GAP_GROUPS.flatMap(g => shown[g.key])), [shown])
+  const insight = useMemo(() => analyzeGaps(allGroups.flatMap(g => shown[g.key])), [allGroups, shown])
 
   // กำลังกรองอยู่ → ส่งออกเฉพาะที่เห็น เพื่อให้ส่งให้แต่ละฝ่ายแยกกันได้
   // ไม่กรอง → ส่งออกทั้งหมดเหมือนเดิม · ตัวเลขสรุปหัวรายงานเป็นของทั้งทะเบียนเสมอ
@@ -232,9 +241,9 @@ export default function GapReport({ laws = [], catMap = {}, settings = {}, round
       {/* ── 5 กลุ่มช่องว่าง · ยุบเป็นรายกฎหมาย ────────────────────────────
           509 แถวเรียงรวดอ่านไม่ไหว · ยุบเป็น ~120 ฉบับพับไว้ กดกางดูรายข้อ
           เรียงตามจำนวนรายการมากไปน้อย เพื่อให้เห็นว่าปัญหากระจุกที่ฉบับไหน */}
-      {GAP_GROUPS.map(g => {
+      {allGroups.map(g => {
         const rows = shown[g.key]
-        const all = groups[g.key] || []
+        const all = groupsPlus[g.key] || []
         const on = openKey === g.key
         const byLaw = on ? groupByLaw(rows) : []
         return (

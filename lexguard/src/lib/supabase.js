@@ -1865,3 +1865,131 @@ export async function fetchF259Responsible() {
   ;(data || []).forEach(r => { m[r.requirement_id] = r.responsible })
   return m
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// P24 · ข้อย่อยของข้อกำหนด (migration 054)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ระดับความเสี่ยง 4 ระดับ — สี + ข้อความกำกับเสมอ ไม่ใช้สีสื่อความหมายอย่างเดียว (กติกาข้อ 8)
+export const RISK = {
+  critical: { label: 'สูงมาก',  short: 'สูงมาก',  color: '#C0392B', bg: 'rgba(192,57,43,.10)',
+              desc: 'ผิดกฎหมายทันทีและมีบทลงโทษ หรือกระทบชีวิตและความปลอดภัยโดยตรง' },
+  high:     { label: 'สูง',     short: 'สูง',     color: '#D35400', bg: 'rgba(211,84,0,.10)',
+              desc: 'ผิดเงื่อนไขหลักของกฎหมาย ผู้ตรวจจะออกข้อบกพร่องแน่นอน' },
+  medium:   { label: 'ปานกลาง', short: 'ปานกลาง', color: '#B7950B', bg: 'rgba(183,149,11,.12)',
+              desc: 'ข้อกำหนดรอง หรือเป็นเรื่องเอกสารที่ตามแก้ได้' },
+  low:      { label: 'ต่ำ',     short: 'ต่ำ',     color: '#5F7A61', bg: 'rgba(95,122,97,.12)',
+              desc: 'แนวปฏิบัติที่ควรทำ ไม่ถึงกับผิดกฎหมาย' },
+}
+export const RISK_ORDER = ['critical', 'high', 'medium', 'low']
+
+// สถานะการติ๊กของข้อย่อย — 4 ค่า
+export const subKind = s => s?.is_na ? 'na' : (s?.is_met === true ? 'met' : (s?.is_met === false ? 'unmet' : 'pending'))
+export const SUB_STATUS = {
+  met:     { label: 'ทำแล้ว',       cls: 'p-ok'      },
+  unmet:   { label: 'ยังไม่ทำ',     cls: 'p-bad'     },
+  na:      { label: 'ไม่เกี่ยวข้อง', cls: 'p-na'      },
+  pending: { label: 'ยังไม่ประเมิน', cls: 'p-waiting' },
+}
+
+// ── อ่าน ────────────────────────────────────────────────────────────────
+// ข้อย่อยทั้งฉบับ → { [requirement_id]: [ข้อย่อย…] }
+export async function fetchSubRequirements(lawId) {
+  if (!hasSupabase || !lawId) return {}
+  const { data } = await supabase.from('lg_sub_requirements')
+    .select('*').eq('law_id', lawId).order('requirement_id').order('seq')
+  const m = {}
+  ;(data || []).forEach(s => { (m[s.requirement_id] = m[s.requirement_id] || []).push(s) })
+  return m
+}
+
+// ความคืบหน้า + สถานะที่ระบบแนะนำ ต่อข้อกำหนด
+export async function fetchSubProgress(lawId) {
+  if (!hasSupabase || !lawId) return {}
+  const { data } = await supabase.from('lg_sub_req_progress').select('*').eq('law_id', lawId)
+  return Object.fromEntries((data || []).map(p => [p.requirement_id, p]))
+}
+
+// ── เขียน ───────────────────────────────────────────────────────────────
+// ติ๊กข้อย่อย 1 ข้อ · kind = met | unmet | na | clear
+// ⚠ ไม่แตะ lg_requirements.status — การเปลี่ยนสถานะจริงต้องให้คนกดยืนยันแยกต่างหาก
+export async function setSubCheck(sub, kind, { note = '', evidence } = {}) {
+  if (!hasSupabase) throw new Error('ยังไม่ได้ตั้งค่า Supabase')
+  const clean = String(note || '').trim()
+  if (kind === 'unmet' && !clean) throw new Error('ข้อที่ยังไม่ทำ ต้องระบุหมายเหตุว่าติดตรงไหน')
+  const now = new Date().toISOString(), by = currentUserName()
+  const patch = kind === 'clear'
+    ? { is_met: null, is_na: false, check_note: null, checked_by: null, checked_at: null }
+    : {
+        is_met: kind === 'met' ? true : kind === 'unmet' ? false : null,
+        is_na: kind === 'na',
+        check_note: clean || null, checked_by: by, checked_at: now,
+        ...(evidence ? { evidence_url: evidence.url, evidence_label: evidence.label } : {}),
+      }
+  const { error } = await supabase.from('lg_sub_requirements').update(patch).eq('id', sub.id)
+  if (error) throw error
+}
+
+// ติ๊ก "ทำแล้ว" ทุกข้อที่ยังไม่ได้ประเมิน — ลดจำนวนคลิกสำหรับฉบับที่ปฏิบัติครบ
+// แตะเฉพาะข้อที่ยังไม่มีใครติ๊ก ไม่เขียนทับผลที่คนตัดสินไว้แล้ว
+export async function markAllSubMet(subs = []) {
+  const todo = subs.filter(s => s.is_met === null && !s.is_na)
+  if (!todo.length) return { updated: 0 }
+  const { error } = await supabase.from('lg_sub_requirements').update({
+    is_met: true, is_na: false, checked_by: currentUserName(), checked_at: new Date().toISOString(),
+  }).in('id', todo.map(s => s.id))
+  if (error) throw error
+  return { updated: todo.length }
+}
+
+// เพิ่มข้อย่อยเอง (generated_by = manual)
+export async function addSubRequirement(req, { title, action_required = '', evidence_required = '', risk_level = 'medium', note = '' }) {
+  const t = String(title || '').trim()
+  if (!t) throw new Error('ชื่อข้อย่อยห้ามว่าง')
+  const { data: last } = await supabase.from('lg_sub_requirements')
+    .select('seq').eq('requirement_id', req.id).order('seq', { ascending: false }).limit(1)
+  const { data, error } = await supabase.from('lg_sub_requirements').insert({
+    requirement_id: req.id, law_id: req.law_id, seq: (last?.[0]?.seq ?? -1) + 1,
+    title: t, action_required, evidence_required,
+    risk_level: RISK[risk_level] ? risk_level : 'medium',
+    note: String(note || '').trim() || null, generated_by: 'manual',
+  }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteSubRequirement(id) {
+  const { error } = await supabase.from('lg_sub_requirements').delete().eq('id', id)
+  if (error) throw error
+}
+
+// สั่งให้ AI แตกข้อย่อย
+export async function runSubBreakdown(requirementId, { regenerate = false } = {}) {
+  return callAi('/api/req-breakdown', { requirement_id: requirementId, regenerate, by: currentUserName() })
+}
+
+// P24 · ข้อย่อยที่ยังไม่ได้ดำเนินการ แยกตามระดับความเสี่ยง — ใช้บนการ์ด Dashboard
+// นับเฉพาะกฎหมายที่ยังบังคับใช้และยังใช้งานอยู่ ให้ตรงกับฐานของตัวเลขอื่นในระบบ
+export async function fetchUnmetSubByRisk() {
+  if (!hasSupabase) return { total: 0, byRisk: {}, laws: 0 }
+  const { data } = await supabase.from('lg_sub_requirements')
+    .select('id,risk_level,law_id,lg_laws!inner(law_status,active)')
+    .eq('is_met', false)
+  const rows = (data || []).filter(r => {
+    const l = r.lg_laws
+    return l && (l.law_status || 'in_force') === 'in_force' && l.active !== false
+  })
+  const byRisk = {}
+  rows.forEach(r => { byRisk[r.risk_level] = (byRisk[r.risk_level] || 0) + 1 })
+  return { total: rows.length, byRisk, laws: new Set(rows.map(r => r.law_id)).size }
+}
+
+// P24 · ข้อย่อยที่ยังไม่ได้ดำเนินการ พร้อมบริบทกฎหมาย — ใช้เติมเข้า Gap Analysis
+// ระบบเดิมบอกได้แค่ "ข้อกำหนดนี้ NC" · ข้อย่อยบอกได้ว่า "ติดตรงระยะเวลาจัดเก็บ"
+export async function fetchUnmetSubs() {
+  if (!hasSupabase) return []
+  const { data } = await supabase.from('lg_sub_requirements')
+    .select('id,title,action_required,evidence_required,risk_level,check_note,checked_by,requirement_id,law_id')
+    .eq('is_met', false).order('law_id').order('requirement_id').order('seq')
+  return data || []
+}

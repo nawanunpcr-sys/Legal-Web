@@ -236,3 +236,33 @@ export function topActions(groups, summary) {
   }
   return out.sort((a, b) => b.n - a.n).slice(0, 3)
 }
+
+// ── P24 · ช่องว่างระดับข้อย่อย ─────────────────────────────────────────────
+// กลุ่มนี้ต่างจาก "NC ที่ยังไม่มีแผน" ตรงที่ละเอียดถึงระดับ "การกระทำ"
+// ตัวอย่างจริง: ตรวจวัดเสียงแล้ว แต่เก็บผลไว้ 2 ปี ไม่ครบ 5 ปี
+//   ระดับข้อกำหนดเห็นแค่ NC ทั้งข้อ · ระดับข้อย่อยชี้ได้ว่าติดที่ระยะเวลาจัดเก็บ
+export const SUB_GAP_GROUP = {
+  key: 'sub_unmet', title: 'ข้อย่อยที่ยังไม่ได้ดำเนินการ',
+  why: 'ผู้ประเมินติ๊กว่ายังไม่ทำในระดับข้อย่อย — ระบุได้ว่าติดตรงจุดใดของข้อกำหนด',
+  todo: 'ดำเนินการตามข้อย่อยแล้วแนบหลักฐาน',
+}
+
+// subs = ผลจาก fetchUnmetSubs() · lawById/reqById ใช้เติมบริบท
+export function buildSubGaps(subs = [], laws = []) {
+  const lawById = Object.fromEntries(laws.map(l => [l.id, l]))
+  const reqById = {}
+  laws.forEach(l => (l.reqs || []).forEach(r => { reqById[r.id] = r }))
+  return subs.map(s => {
+    const law = lawById[s.law_id]
+    const req = reqById[s.requirement_id]
+    if (!law) return null
+    return {
+      law, section: req ? sectionOf(req) : '—',
+      responsible: String(req?.responsible || law.responsible || '').trim() || '—',
+      todo: s.action_required || s.title,
+      due: '', risk: s.risk_level, subTitle: s.title,
+      detail: [s.check_note ? `ติดตรง: ${s.check_note}` : '', s.evidence_required ? `หลักฐานที่ต้องมี: ${s.evidence_required}` : '']
+        .filter(Boolean).join(' · ') || s.title,
+    }
+  }).filter(Boolean)
+}

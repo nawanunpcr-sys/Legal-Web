@@ -26,6 +26,9 @@
     },
     "api/law-overview.js": {
       "maxDuration": 300
+    },
+    "api/req-breakdown.js": {
+      "maxDuration": 300
     }
   },
   "rewrites": [
