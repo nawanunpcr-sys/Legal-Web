@@ -6,7 +6,11 @@
 // ซึ่งจะกลายเป็นการสั่งให้คนไปทำแผนปรับปรุงกับข้อที่ไม่มีอะไรต้องแก้
 import { useEffect, useState } from 'react'
 import { reqKind, GLOSSARY } from '../lib/ui.jsx'
-import { fetchImprovementPlans, closeImprovementPlan } from '../lib/supabase.js'
+import { fetchImprovementPlans, closeImprovementPlan, createImprovementPlan,
+         updateImprovementPlan, listDepartments } from '../lib/supabase.js'
+import PlanModal from '../components/PlanModal.jsx'
+import { buildPlanReport } from '../components/PdfExport.jsx'
+import { I } from '../components/icons.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import { toast } from '../lib/toast.js'
 
@@ -78,10 +82,60 @@ function SavedPlans({ laws, onChanged }) {
   )
 }
 
-export default function Improvements({ laws, catMap, onOpen, onChanged }) {
+export default function Improvements({ laws, catMap, onOpen, onChanged, settings = {} }) {
+  const { can } = useAuth()
   const isNc = r => reqKind(r) === 'unmet'
   const ncLaws = laws.filter(l=>(l.reqs||[]).some(isNc))
   const totalNc = ncLaws.reduce((a,l)=>a+l.reqs.filter(isNc).length, 0)
+
+  // P24 · จัดการแผนได้ในหน้านี้เลย ไม่ต้องเด้งไปหน้าทะเบียนทุกครั้ง
+  // เดิมหน้านี้แสดงรายการ NC อย่างเดียว จะเปิดแผนต้องคลิกเข้าหน้ารายละเอียดกฎหมาย
+  // ซึ่งเป็นคนละบริบทกับงานที่กำลังทำอยู่ (ไล่ปิด NC ทีละข้อ)
+  const [plans, setPlans] = useState([])
+  const [depts, setDepts] = useState([])
+  const [target, setTarget] = useState(null)     // { req, law, initial } ที่กำลังเปิด PlanModal
+  const [busyId, setBusyId] = useState(null)
+
+  async function reload(){
+    try{ setPlans(await fetchImprovementPlans()) }catch{ /* เงียบไว้ ไม่ให้หน้าพัง */ }
+  }
+  useEffect(()=>{ let live=true
+    fetchImprovementPlans().then(d=>{ if(live) setPlans(d) }).catch(()=>{})
+    listDepartments().then(d=>{ if(live) setDepts(d) }).catch(()=>{})
+    return ()=>{ live=false }
+  },[])
+
+  // แผนที่ยังเปิดอยู่ของข้อปฏิบัติหนึ่งข้อ
+  const planOf = r => plans.find(p => p.requirement_id === r.id && p.status !== 'done')
+
+  async function submitPlan(data){
+    const { req, law, initial } = target
+    try{
+      if(initial) await updateImprovementPlan(initial.id, data)
+      else await createImprovementPlan({ ...data, requirement_id: req.id, law_id: law.id })
+      setTarget(null); await reload(); onChanged && onChanged()
+      toast(initial ? 'แก้ไขแผนแล้ว' : 'เปิดแผนปรับปรุงแล้ว', 'success')
+    }catch(e){ toast('บันทึกไม่สำเร็จ: ' + e.message); throw e }
+  }
+
+  async function closePlan(p){
+    const ev = window.prompt('สรุปผล/หลักฐานการปิดแผน (บังคับกรอก)\n' + GLOSSARY.evidence, '')
+    if(ev === null) return
+    if(!ev.trim()){ toast('ต้องระบุหลักฐานหรือสรุปผลก่อนปิดแผน'); return }
+    setBusyId(p.id)
+    try{
+      await closeImprovementPlan(p, { evidence: ev.trim() })
+      toast('ปิดแผนแล้ว — ข้อปฏิบัติที่ผูกไว้ถูกพลิกเป็นสอดคล้อง', 'success')
+      await reload(); onChanged && onChanged()
+    }catch(e){ toast('ปิดแผนไม่สำเร็จ: ' + e.message) }
+    setBusyId(null)
+  }
+
+  function printPlans(law){
+    const rows = law.reqs.filter(isNc).map(r => ({ req: r, plan: planOf(r) }))
+    buildPlanReport({ law, rows, settings, catName: catMap[law.cat]?.name || law.cat })
+    setTimeout(()=>window.print(), 80)
+  }
 
   if (ncLaws.length===0) return (
     <div className="view">
@@ -113,27 +167,68 @@ export default function Improvements({ laws, catMap, onOpen, onChanged }) {
               <span className="num" style={{fontSize:12,color:'var(--brand)',fontWeight:700}}>{l.code}</span>
               <span style={{flex:1,fontSize:14,fontWeight:500}}>{l.name.slice(0,80)}{l.name.length>80?'…':''}</span>
               <span className="pill p-bad" title={GLOSSARY.unmet}>{ncReqs.length} ข้อ NC</span>
+              <button className="btn btn-ghost" style={{padding:'3px 10px',fontSize:11}}
+                title="พิมพ์เอกสารแผนปรับปรุงของกฎหมายฉบับนี้"
+                onClick={e=>{e.stopPropagation(); printPlans(l)}}><I n="list"/>พิมพ์แผน</button>
               <span style={{fontSize:12,color:'var(--brand)',fontWeight:500}}>ดูรายละเอียด →</span>
             </div>
             <div style={{padding:'2px 22px 14px'}}>
-              {ncReqs.map(r=>(
-                <div key={r.id} className="impr-row">
+              {ncReqs.map(r=>{
+                const pl = planOf(r)
+                const today = new Date().toISOString().slice(0,10)
+                const overdue = pl?.due_date && pl.due_date < today
+                return (
+                <div key={r.id} className="impr-row" style={{alignItems:'flex-start'}}>
                   <div className="impr-dot"/>
-                  <div style={{flex:1}}>
+                  <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:13,fontWeight:500,lineHeight:1.5}}>{r.text.slice(0,140)}{r.text.length>140?'…':''}</div>
                     <div style={{display:'flex',gap:7,marginTop:5,flexWrap:'wrap'}}>
                       {r.responsible&&<span className="meta-chip">{r.responsible}</span>}
                       {r.frequency&&<span className="meta-chip">{r.frequency}</span>}
-                      {r.note&&<span className="meta-chip" style={{color:'var(--bad)',borderColor:'var(--bad-bg)',background:'var(--bad-bg)'}}>{r.note.slice(0,80)}</span>}
+                      {r.status_reason&&<span className="meta-chip" style={{color:'var(--bad)',borderColor:'var(--bad-bg)',background:'var(--bad-bg)'}}>{r.status_reason.slice(0,80)}</span>}
                     </div>
+
+                    {/* แผนปรับปรุงของข้อนี้ — แสดงและจัดการตรงนี้เลย */}
+                    {pl ? (
+                      <div style={{marginTop:8,padding:'10px 12px',borderRadius:8,
+                        background:'var(--surface-2)',border:'1px solid '+(overdue?'var(--bad)':'var(--line)')}}>
+                        <div style={{fontSize:11.5,fontWeight:700,color:'var(--ink-faint)',marginBottom:4}}>แผนปรับปรุง</div>
+                        <div style={{fontSize:12.5,lineHeight:1.7}}>{pl.plan_text}</div>
+                        <div style={{display:'flex',gap:7,marginTop:6,flexWrap:'wrap',alignItems:'center'}}>
+                          {pl.owner_name&&<span className="meta-chip">{pl.owner_name}</span>}
+                          <span className="meta-chip" style={overdue?{color:'var(--bad)',background:'var(--bad-bg)',borderColor:'var(--bad-bg)'}:{}}>
+                            {pl.due_date ? (overdue?'เลยกำหนด ':'กำหนดเสร็จ ')+pl.due_date : 'ยังไม่กำหนดวันแล้วเสร็จ'}
+                          </span>
+                          {can('edit') && <>
+                            <button className="btn btn-ghost" style={{padding:'2px 9px',fontSize:11}}
+                              onClick={()=>setTarget({req:r,law:l,initial:pl})}>แก้ไขแผน</button>
+                            <button className="btn btn-primary" style={{padding:'2px 9px',fontSize:11}}
+                              disabled={busyId===pl.id} onClick={()=>closePlan(pl)}>
+                              {busyId===pl.id?'กำลังปิด…':'ปิดแผน'}
+                            </button>
+                          </>}
+                        </div>
+                      </div>
+                    ) : can('edit') && (
+                      <button className="btn btn-ghost" style={{marginTop:8,padding:'3px 11px',fontSize:11.5}}
+                        onClick={()=>setTarget({req:r,law:l,initial:null})}>+ เปิดแผนปรับปรุงสำหรับข้อนี้</button>
+                    )}
                   </div>
                   <span className="pill p-bad" style={{fontSize:10,padding:'2px 7px',alignSelf:'flex-start',marginTop:2}} title={GLOSSARY.unmet}>NC</span>
                 </div>
-              ))}
+              )})}
             </div>
           </div>
         )
       })}
+
+      {target && (
+        <PlanModal req={target.req} law={target.law} departments={depts}
+          defaultDeptName={target.req?.responsible || target.law?.responsible}
+          defaultOwner={target.req?.responsible || ''}
+          initial={target.initial}
+          onClose={()=>setTarget(null)} onSubmit={submitPlan}/>
+      )}
     </div>
   )
 }

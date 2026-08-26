@@ -15,7 +15,7 @@ import { callAi, useAiAction } from '../lib/aiAction.js'
 import ReqStatusPicker from './ReqStatusPicker.jsx'
 import { I } from './icons.jsx'
 import RepealDetails from './RepealDetails.jsx'
-import { buildLawReport } from './PdfExport.jsx'
+import { buildLawReport, buildActionGuideReport, buildSubReqReport } from './PdfExport.jsx'
 
 const REVIEW_RESULTS = ['ไม่มีการเปลี่ยนแปลง', 'มีการแก้ไข', 'ถูกยกเลิก']
 
@@ -286,7 +286,7 @@ function SecRef({ refText }) {
   )
 }
 
-function ActionGuidePanel({ law, onPlansCreated }) {
+function ActionGuidePanel({ law, settings = {}, catName = '', onPlansCreated }) {
   const { can } = useAuth()
   const ai = useAiAction()
   const [row, setRow] = useState(undefined)   // undefined = กำลังโหลด · null = ยังไม่เคยสร้าง
@@ -487,6 +487,12 @@ function ActionGuidePanel({ law, onPlansCreated }) {
             title={can('edit') ? '' : NO_PERM} onClick={build}>
             {ai.isBusy('guide') ? 'กำลังสรุป…' : (row ? 'สร้างใหม่' : 'สร้างรายการสิ่งที่ต้องทำ')}
           </button>
+          {row && (
+            <button className="btn btn-ghost" title="พิมพ์เป็นเอกสารสำหรับเตรียมตรวจประเมิน"
+              onClick={()=>{ buildActionGuideReport({ law, guide, settings, catName, files }); setTimeout(()=>window.print(),80) }}>
+              พิมพ์เป็นเอกสาร
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -908,6 +914,13 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
         <div className="dr-body">
           <OverviewPanel law={law} />
 
+          {/* ⚠ สองแผงนี้เคยหายไปตอนรีแฟกเตอร์กล่องการยกเลิก (การตัดช่วงข้อความกินเลยขอบเขต)
+              ฟีเจอร์ทั้งขั้นที่ 1 และขั้นที่ 2 จึงมองไม่เห็นบนหน้าจอโดยไม่มีใครสังเกต */}
+          <RelevancePanel law={law} rel={relevance} onChanged={onRelevanceChanged} />
+
+          <ActionGuidePanel law={law} settings={settings} catName={cat?.name || law.cat}
+            onPlansCreated={onPlansCreated} />
+
           {/* P21 ส่วนที่ 2 · กล่องข้อมูลการยกเลิก
               แสดงทุกสถานะที่ไม่ใช่ "ยังบังคับใช้" ไม่ใช่เฉพาะที่ยกเลิกทั้งฉบับ
               เพราะ "ยกเลิกบางส่วน" และ "แก้ไขเพิ่มเติม" คือกรณีที่ผู้ใช้ต้องรู้รายละเอียดมากที่สุด
@@ -971,6 +984,13 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
                 </span> })()}
                 {/* P22 ขั้นที่ 3 · ให้ AI เสนอสถานะทุกข้อที่ยังไม่มีใครประเมิน
                     ข้อที่มีคนประเมินไว้แล้วถูกข้ามที่ฝั่ง server ไม่ใช่แค่ซ่อนบนหน้าจอ */}
+                {Object.keys(subs).length>0 && <button className="btn btn-ghost" style={{marginLeft:8,padding:'4px 11px',fontSize:11}}
+                  title="พิมพ์ผลประเมินรายข้อย่อยพร้อมสรุปช่องว่าง สำหรับแนบการตรวจประเมิน"
+                  onClick={()=>{
+                    const groups = law.reqs.filter(r=>(subs[r.id]||[]).length).map(r=>({ req:r, subs:subs[r.id]||[] }))
+                    buildSubReqReport({ law, groups, settings, catName: cat?.name || law.cat })
+                    setTimeout(()=>window.print(), 80)
+                  }}>พิมพ์ผลรายข้อย่อย</button>}
                 {law.reqs.length>0 && <button className="btn btn-ghost" style={{marginLeft:8,padding:'4px 11px',fontSize:11}}
                   disabled={preassess.busy||!can('edit')}
                   title={can('edit')?'ให้ AI เสนอสถานะรายข้อตามเกณฑ์ตัดสินร่วม — เป็นข้อเสนอ ต้องกดรับเองทีละข้อ':NO_PERM}

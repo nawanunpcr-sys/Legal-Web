@@ -716,7 +716,7 @@ export default function App(){
             companyProfile={companyProfile} onRelevanceChanged={loadRelevance}/>}
           {view==='summary'       && <LawSummary laws={activeLaws} allLaws={laws} cats={cats} catMap={catMap} discovered={discovered} suggest={suggest}
             onReloadDiscovered={loadDiscovered} onReloadLaws={loadLaws} onOpenLaw={setOpenLaw} onAddToRegistry={init=>openAddLaw(init)}/>}
-          {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw} onChanged={loadLaws}/>}
+          {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw} onChanged={loadLaws} settings={settings}/>}
           {view==='gap'           && <GapReport laws={inForceLaws} catMap={catMap} settings={settings} round={round} onOpen={setOpenLaw}/>}
           {view==='help'          && <GettingStarted onGoView={goView}/>}
           {view==='comm'          && (<div className="view">

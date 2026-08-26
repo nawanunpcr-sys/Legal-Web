@@ -597,3 +597,289 @@ export function buildGapReport({ groups = {}, summary = {}, catMap = {}, setting
     </table>
   </div>`
 }
+
+// ── P24 · เอกสารแผนปรับปรุงรายกฎหมาย (A4 แนวตั้ง) — reuse #print-report ──
+//
+// ผู้ใช้ต้องการ "แผนปรับปรุงของแต่ละอัน" เป็นเอกสาร ไม่ใช่แค่รายการบนหน้าจอ
+// เพราะแผนปรับปรุงต้องเสนอผู้บริหารลงนาม และแนบเป็นหลักฐานตอนตรวจประเมิน
+// อ้างอิงระเบียบ PD-05 ตามที่หน้าแผนปรับปรุงเดิมระบุไว้
+export function buildPlanReport({ law, rows = [], settings = {}, catName = '' }) {
+  const el = document.getElementById('print-report'); if (!el) return
+  const company = settings.company_name || settings.org_name || 'บริษัท จัสเทล เน็ทเวิร์ค จำกัด'
+  const printedOn = thDate(new Date().toISOString())
+  const today = new Date().toISOString().slice(0, 10)
+
+  const body = rows.length ? rows.map(({ req, plan }, i) => {
+    const overdue = plan?.due_date && plan.due_date < today
+    return `<tr>
+      <td class="ctr nw">${i + 1}</td>
+      <td>${ESC(String(req.text || '').slice(0, 260))}
+        ${req.status_reason ? `<div style="font-size:10.5px">เหตุผล: ${ESC(req.status_reason)}</div>` : ''}</td>
+      <td>${plan ? ESC(plan.plan_text) : '<i>ยังไม่ได้เปิดแผนปรับปรุง</i>'}</td>
+      <td class="nw">${ESC(plan?.owner_name || req.responsible || '—')}</td>
+      <td class="nw">${plan?.due_date
+        ? (overdue ? '<b>เลยกำหนด</b> ' : '') + ESC(plan.due_date)
+        : '—'}</td>
+      <td class="ctr nw">${plan ? (plan.status === 'done' ? 'ปิดแล้ว' : 'ดำเนินการ') : 'ยังไม่เปิด'}</td>
+    </tr>`
+  }).join('') : `<tr><td colspan="6" class="empty">ไม่มีข้อปฏิบัติที่ไม่สอดคล้องในฉบับนี้</td></tr>`
+
+  const open = rows.filter(r => r.plan && r.plan.status !== 'done').length
+  const none = rows.filter(r => !r.plan).length
+
+  el.innerHTML = `
+  <style>
+    #print-report .doc { font-family:'Angsana New','AngsanaUPC','TH Sarabun New','Sarabun',serif; color:#000; font-size:14px; line-height:1.35 }
+    #print-report table { width:100%; border-collapse:collapse }
+    #print-report .form { font-size:11px; text-align:right }
+    #print-report .t1 { font-size:19px; font-weight:700; text-align:center }
+    #print-report .t2 { font-size:14px; text-align:center; margin-top:2px }
+    #print-report .meta { font-size:12px; margin-top:7px; display:flex; justify-content:space-between }
+    #print-report .pt th,#print-report .pt td { border:1px solid #000; padding:3px 5px; font-size:11.5px; vertical-align:top }
+    #print-report .pt th { background:#eee; font-weight:700 }
+    #print-report .ctr { text-align:center } #print-report .nw { white-space:nowrap }
+    #print-report .empty { text-align:center; padding:8px; font-style:italic }
+    #print-report .sum { font-size:11.5px; margin:8px 0 4px }
+  </style>
+  <div class="doc">
+    <table style="margin-bottom:6px">
+      <tr><td style="font-size:11px">ใช้ภายใน</td>
+          <td class="form">F-259 Rev.1 &nbsp;·&nbsp; แผนปรับปรุงอ้างอิง PD-05</td></tr>
+    </table>
+    <div class="t1">แผนปรับปรุงความสอดคล้องตามกฎหมาย</div>
+    <div class="t2">CORRECTIVE ACTION PLAN</div>
+    <div class="meta">
+      <span><b>${ESC(company)}</b></span>
+      <span>วันที่พิมพ์ : ${ESC(printedOn)}</span>
+    </div>
+
+    <table class="pt" style="margin-top:12px">
+      <tr><th style="width:78px">รหัสกฎหมาย</th><td>${ESC(law.code || '')}</td>
+          <th style="width:60px">หมวด</th><td class="nw">${ESC(catName)}</td></tr>
+      <tr><th>ชื่อกฎหมาย</th><td colspan="3">${ESC(law.name || '')}</td></tr>
+      <tr><th>หน่วยงาน</th><td colspan="3">${ESC(law.ministry || '—')}</td></tr>
+    </table>
+
+    <div class="sum">ข้อปฏิบัติที่ไม่สอดคล้อง ${rows.length} ข้อ &nbsp;·&nbsp;
+      มีแผนและอยู่ระหว่างดำเนินการ ${open} ข้อ &nbsp;·&nbsp; ยังไม่ได้เปิดแผน ${none} ข้อ</div>
+
+    <table class="pt">
+      <thead><tr>
+        <th style="width:22px">#</th><th style="width:230px">ข้อปฏิบัติที่ไม่สอดคล้อง</th>
+        <th>แผนปรับปรุง / สิ่งที่จะดำเนินการ</th>
+        <th style="width:82px">ผู้รับผิดชอบ</th><th style="width:78px">กำหนดเสร็จ</th>
+        <th style="width:56px">สถานะ</th>
+      </tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+
+    <table style="margin-top:26px;font-size:12px">
+      <tr>
+        <td style="width:33%;text-align:center">ผู้จัดทำแผน<br/><br/>............................................<br/>(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)<br/>วันที่ ......../......../........</td>
+        <td style="width:33%;text-align:center">ผู้ทบทวน<br/><br/>............................................<br/>(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)<br/>วันที่ ......../......../........</td>
+        <td style="width:33%;text-align:center">ผู้อนุมัติ (MR)<br/><br/>............................................<br/>(&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)<br/>วันที่ ......../......../........</td>
+      </tr>
+    </table>
+  </div>`
+}
+
+// ── P24 · เอกสารผลประเมินรายข้อย่อย + ช่องว่าง (A4 แนวตั้ง) ────────────────
+// สเปกขอ "export ผลประเมินรายข้อย่อยพร้อมสรุปช่องว่าง สำหรับแนบการตรวจประเมิน"
+// นี่คือเอกสารที่ผู้ตรวจ ISO ขอดูโดยตรง — ต้องเห็นว่าติ๊กอะไร ใครติ๊ก ติดตรงไหน
+const RISK_TH = { critical: 'สูงมาก', high: 'สูง', medium: 'ปานกลาง', low: 'ต่ำ' }
+export function buildSubReqReport({ law, groups = [], settings = {}, catName = '' }) {
+  const el = document.getElementById('print-report'); if (!el) return
+  const company = settings.company_name || settings.org_name || 'บริษัท จัสเทล เน็ทเวิร์ค จำกัด'
+  const mark = s => s.is_na ? 'ไม่เกี่ยวข้อง' : s.is_met === true ? 'ทำแล้ว' : s.is_met === false ? 'ยังไม่ทำ' : 'ยังไม่ประเมิน'
+
+  const all = groups.flatMap(g => g.subs)
+  const n = { met: 0, unmet: 0, na: 0, pending: 0 }
+  all.forEach(s => { n[s.is_na ? 'na' : s.is_met === true ? 'met' : s.is_met === false ? 'unmet' : 'pending']++ })
+  const unmet = all.filter(s => s.is_met === false)
+
+  const sections = groups.map((g, gi) => `
+    <div class="rsect">
+      <div class="rh">${gi + 1}. ${ESC(String(g.req.text || '').slice(0, 180))}</div>
+      <table class="st">
+        <thead><tr><th style="width:20px">#</th><th style="width:150px">ข้อย่อย</th>
+          <th>สิ่งที่ต้องทำ</th><th style="width:130px">หลักฐานที่ต้องมี</th>
+          <th style="width:52px">ความเสี่ยง</th><th style="width:60px">ผล</th>
+          <th style="width:120px">หมายเหตุ / ผู้ประเมิน</th></tr></thead>
+        <tbody>${g.subs.length ? g.subs.map((s, i) => `<tr>
+          <td class="ctr">${i + 1}</td><td>${ESC(s.title)}</td>
+          <td>${ESC(s.action_required || '')}</td>
+          <td>${ESC(s.evidence_required || '')}${s.evidence_label ? `<div style="font-size:10px">แนบ: ${ESC(s.evidence_label)}</div>` : ''}</td>
+          <td class="ctr nw">${ESC(RISK_TH[s.risk_level] || s.risk_level)}</td>
+          <td class="ctr nw"><b>${ESC(mark(s))}</b></td>
+          <td>${ESC(s.check_note || '')}${s.checked_by ? `<div style="font-size:10px">${ESC(s.checked_by)}</div>` : ''}</td>
+        </tr>`).join('') : '<tr><td colspan="7" class="empty">ยังไม่ได้แตกข้อย่อย</td></tr>'}</tbody>
+      </table>
+    </div>`).join('')
+
+  el.innerHTML = `
+  <style>
+    #print-report .doc { font-family:'Angsana New','AngsanaUPC','TH Sarabun New','Sarabun',serif; color:#000; font-size:14px; line-height:1.35 }
+    #print-report table { width:100%; border-collapse:collapse }
+    #print-report .form { font-size:11px; text-align:right }
+    #print-report .t1 { font-size:19px; font-weight:700; text-align:center }
+    #print-report .t2 { font-size:14px; text-align:center; margin-top:2px }
+    #print-report .meta { font-size:12px; margin-top:7px; display:flex; justify-content:space-between }
+    #print-report .rsect { margin-top:12px; page-break-inside:avoid }
+    #print-report .rh { font-size:13px; font-weight:700; border-bottom:1.5px solid #000; padding-bottom:2px; margin-bottom:3px }
+    #print-report .st th,#print-report .st td,#print-report .pt th,#print-report .pt td { border:1px solid #000; padding:3px 5px; font-size:11px; vertical-align:top }
+    #print-report .st th,#print-report .pt th { background:#eee; font-weight:700 }
+    #print-report .ctr { text-align:center } #print-report .nw { white-space:nowrap }
+    #print-report .empty { text-align:center; padding:6px; font-style:italic }
+    #print-report .sum { font-size:11.5px; margin:8px 0 4px }
+    #print-report .gapbox { margin-top:14px; border:1px solid #000; padding:8px 10px; page-break-inside:avoid }
+  </style>
+  <div class="doc">
+    <table style="margin-bottom:6px">
+      <tr><td style="font-size:11px">ใช้ภายใน</td>
+          <td class="form">F-259 Rev.1 &nbsp;·&nbsp; ISO 45001 ข้อ 6.1.3</td></tr>
+    </table>
+    <div class="t1">ผลการประเมินความสอดคล้องรายข้อย่อย</div>
+    <div class="t2">REQUIREMENT CHECKLIST &amp; GAP</div>
+    <div class="meta"><span><b>${ESC(company)}</b></span><span>วันที่พิมพ์ : ${ESC(thDate(new Date().toISOString()))}</span></div>
+
+    <table class="pt" style="margin-top:12px">
+      <tr><th style="width:78px">รหัสกฎหมาย</th><td>${ESC(law.code || '')}</td>
+          <th style="width:56px">หมวด</th><td class="nw">${ESC(catName)}</td></tr>
+      <tr><th>ชื่อกฎหมาย</th><td colspan="3">${ESC(law.name || '')}</td></tr>
+    </table>
+
+    <div class="sum">ข้อย่อยทั้งหมด ${all.length} ข้อ &nbsp;·&nbsp; ทำแล้ว ${n.met} &nbsp;·&nbsp;
+      <b>ยังไม่ทำ ${n.unmet}</b> &nbsp;·&nbsp; ไม่เกี่ยวข้อง ${n.na} &nbsp;·&nbsp; ยังไม่ประเมิน ${n.pending}</div>
+
+    ${sections}
+
+    <div class="gapbox">
+      <div style="font-weight:700;font-size:12.5px;margin-bottom:4px">สรุปช่องว่างที่ต้องปิด</div>
+      ${unmet.length ? `<ol style="margin:0;padding-left:18px;font-size:11.5px;line-height:1.7">
+        ${unmet.map(s => `<li><b>${ESC(s.title)}</b> (ความเสี่ยง${ESC(RISK_TH[s.risk_level] || '')})
+          ${s.check_note ? `<br/>ติดตรง: ${ESC(s.check_note)}` : ''}
+          ${s.action_required ? `<br/>ต้องทำ: ${ESC(s.action_required)}` : ''}
+          ${s.evidence_required ? `<br/>หลักฐานที่ต้องเตรียม: ${ESC(s.evidence_required)}` : ''}</li>`).join('')}
+      </ol>` : '<div style="font-size:11.5px">ไม่พบช่องว่าง — ข้อย่อยทุกข้อดำเนินการแล้วหรือไม่เข้าข่าย</div>'}
+    </div>
+
+    <table style="margin-top:24px;font-size:12px">
+      <tr>
+        <td style="width:50%;text-align:center">ผู้ประเมิน<br/><br/>............................................<br/>วันที่ ......../......../........</td>
+        <td style="width:50%;text-align:center">ผู้ทบทวน<br/><br/>............................................<br/>วันที่ ......../......../........</td>
+      </tr>
+    </table>
+  </div>`
+}
+
+// ── P24 · เอกสาร "สิ่งที่ต้องทำ / เอกสาร / หลักฐาน" รายกฎหมาย ──────────────
+// ใช้เตรียมตัวก่อนตรวจประเมิน — ผู้ตรวจถามว่าต้องมีเอกสารอะไร ตอบจากแผ่นนี้ได้เลย
+export function buildActionGuideReport({ law, guide = {}, settings = {}, catName = '', files = [] }) {
+  const el = document.getElementById('print-report'); if (!el) return
+  const company = settings.company_name || settings.org_name || 'บริษัท จัสเทล เน็ทเวิร์ค จำกัด'
+  const have = n => files.some(f => String(f.name || '').toLowerCase().includes(String(n || '').toLowerCase().slice(0, 12)))
+  const T = (title, head, rows) => `
+    <div class="rsect"><div class="rh">${ESC(title)}</div>
+      <table class="st"><thead><tr>${head.map(h => `<th${h[1] ? ` style="width:${h[1]}px"` : ''}>${ESC(h[0])}</th>`).join('')}</tr></thead>
+      <tbody>${rows.length ? rows.join('') : `<tr><td colspan="${head.length}" class="empty">ตัวบทไม่ได้กำหนดในหมวดนี้</td></tr>`}</tbody></table></div>`
+
+  el.innerHTML = `
+  <style>
+    #print-report .doc { font-family:'Angsana New','AngsanaUPC','TH Sarabun New','Sarabun',serif; color:#000; font-size:14px; line-height:1.35 }
+    #print-report table { width:100%; border-collapse:collapse }
+    #print-report .form { font-size:11px; text-align:right }
+    #print-report .t1 { font-size:19px; font-weight:700; text-align:center }
+    #print-report .t2 { font-size:14px; text-align:center; margin-top:2px }
+    #print-report .meta { font-size:12px; margin-top:7px; display:flex; justify-content:space-between }
+    #print-report .rsect { margin-top:13px; page-break-inside:avoid }
+    #print-report .rh { font-size:13.5px; font-weight:700; border-bottom:1.5px solid #000; padding-bottom:2px; margin-bottom:3px }
+    #print-report .st th,#print-report .st td,#print-report .pt th,#print-report .pt td { border:1px solid #000; padding:3px 5px; font-size:11.5px; vertical-align:top }
+    #print-report .st th,#print-report .pt th { background:#eee; font-weight:700 }
+    #print-report .ctr { text-align:center } #print-report .nw { white-space:nowrap }
+    #print-report .empty { text-align:center; padding:6px; font-style:italic }
+  </style>
+  <div class="doc">
+    <table style="margin-bottom:6px">
+      <tr><td style="font-size:11px">ใช้ภายใน</td><td class="form">F-259 Rev.1 &nbsp;·&nbsp; ISO 45001 ข้อ 6.1.3</td></tr>
+    </table>
+    <div class="t1">สิ่งที่ต้องดำเนินการ เอกสาร และหลักฐาน</div>
+    <div class="t2">COMPLIANCE ACTION &amp; EVIDENCE CHECKLIST</div>
+    <div class="meta"><span><b>${ESC(company)}</b></span><span>วันที่พิมพ์ : ${ESC(thDate(new Date().toISOString()))}</span></div>
+    <table class="pt" style="margin-top:12px">
+      <tr><th style="width:78px">รหัสกฎหมาย</th><td>${ESC(law.code || '')}</td><th style="width:56px">หมวด</th><td class="nw">${ESC(catName)}</td></tr>
+      <tr><th>ชื่อกฎหมาย</th><td colspan="3">${ESC(law.name || '')}</td></tr>
+    </table>
+
+    ${T('ก · องค์กรต้องดำเนินการอะไร', [['#', 22], ['สิ่งที่ต้องทำ'], ['ผู้รับผิดชอบ', 92], ['ความถี่', 82], ['ที่มา', 78]],
+      (guide.actions || []).map((a, i) => `<tr><td class="ctr">${i + 1}</td><td>${ESC(a.what)}</td>
+        <td>${ESC(a.who || '—')}</td><td>${ESC(a.frequency || '—')}</td><td class="nw">${ESC(a.section_ref || '')}</td></tr>`))}
+
+    ${T('ข · เอกสาร/แบบฟอร์มที่ต้องจัดทำ', [['#', 22], ['ชื่อเอกสาร', 200], ['วัตถุประสงค์'], ['ผู้เก็บรักษา', 92], ['ที่มา', 78]],
+      (guide.documents || []).map((d, i) => `<tr><td class="ctr">${i + 1}</td><td>${ESC(d.name)}</td>
+        <td>${ESC(d.purpose || '')}</td><td>${ESC(d.who_keeps || '—')}</td><td class="nw">${ESC(d.section_ref || '')}</td></tr>`))}
+
+    ${T('ค · หลักฐานที่ต้องเก็บไว้ให้ผู้ตรวจ', [['#', 22], ['ชื่อหลักฐาน', 200], ['ผู้ตรวจขอดูเพื่อ'], ['มีในระบบ', 60], ['ที่มา', 78]],
+      (guide.evidence || []).map((e, i) => `<tr><td class="ctr">${i + 1}</td><td>${ESC(e.name)}</td>
+        <td>${ESC(e.why_auditor_asks || '')}</td>
+        <td class="ctr nw">${have(e.name) ? 'แนบแล้ว' : '<b>ยังไม่มี</b>'}</td>
+        <td class="nw">${ESC(e.section_ref || '')}</td></tr>`))}
+
+    ${(guide.not_specified || []).length ? `<div class="rsect"><div class="rh">ตัวบทไม่ได้กำหนด — องค์กรต้องกำหนดเอง</div>
+      <ul style="margin:4px 0 0;padding-left:18px;font-size:11.5px;line-height:1.7">
+      ${guide.not_specified.map(n => `<li>${ESC(n.item)}${n.what_missing ? ` — ${ESC(n.what_missing)}` : ''}
+        ${n.section_ref ? ` (${ESC(n.section_ref)})` : ''}</li>`).join('')}</ul></div>` : ''}
+  </div>`
+}
+
+// ── P24 · เอกสารกฎหมายที่ถูกยกเลิก ─────────────────────────────────────────
+// ผู้ตรวจ ISO ถามเสมอว่าองค์กรติดตามการยกเลิก/แก้ไขกฎหมายอย่างไร
+// เดิมดูได้เฉพาะบนหน้าจอ พิมพ์แนบไม่ได้
+export function buildRepealedReport({ laws = [], settings = {}, catName = {} }) {
+  const el = document.getElementById('print-report'); if (!el) return
+  const company = settings.company_name || settings.org_name || 'บริษัท จัสเทล เน็ทเวิร์ค จำกัด'
+  const P = v => (v !== null && v !== undefined && String(v).trim() !== '') ? ESC(v) : '<i>รอตรวจสอบ</i>'
+  const rows = laws.map((l, i) => `<tr>
+    <td class="ctr nw">${i + 1}</td>
+    <td class="nw">${ESC(l.code || '')}</td>
+    <td>${ESC(String(l.name || '').slice(0, 150))}</td>
+    <td>${P(l.repealed_by_title)}${l.repeal_source_url ? `<div style="font-size:10px;word-break:break-all">${ESC(l.repeal_source_url)}</div>` : ''}</td>
+    <td>${P(l.repeal_scope)}<div style="font-size:10.5px">${P(l.repeal_reason)}</div></td>
+    <td class="nw">${P(l.repeal_date)}</td>
+    <td>${(l.replacement_law_title || l.replaced_by_code) ? ESC(l.replacement_law_title || l.replaced_by_code) : '<i>ไม่มีฉบับใหม่ใช้แทน</i>'}</td>
+    <td class="ctr nw">${(l.reqs || []).length}</td>
+    <td class="ctr nw">${l.repeal_verified_by ? ESC(l.repeal_verified_by) : '<b>รอยืนยัน</b>'}</td>
+  </tr>`).join('')
+
+  el.innerHTML = `
+  <style>
+    #print-report .doc { font-family:'Angsana New','AngsanaUPC','TH Sarabun New','Sarabun',serif; color:#000; font-size:14px; line-height:1.35 }
+    #print-report table { width:100%; border-collapse:collapse }
+    #print-report .form { font-size:11px; text-align:right }
+    #print-report .t1 { font-size:19px; font-weight:700; text-align:center }
+    #print-report .t2 { font-size:14px; text-align:center; margin-top:2px }
+    #print-report .meta { font-size:12px; margin-top:7px; display:flex; justify-content:space-between }
+    #print-report .st th,#print-report .st td { border:1px solid #000; padding:3px 5px; font-size:10.5px; vertical-align:top }
+    #print-report .st th { background:#eee; font-weight:700 }
+    #print-report .ctr { text-align:center } #print-report .nw { white-space:nowrap }
+  </style>
+  <div class="doc">
+    <table style="margin-bottom:6px">
+      <tr><td style="font-size:11px">ใช้ภายใน</td><td class="form">F-259 Rev.1 &nbsp;·&nbsp; ISO 45001 ข้อ 6.1.3</td></tr>
+    </table>
+    <div class="t1">ทะเบียนกฎหมายที่ถูกยกเลิกหรือแก้ไข</div>
+    <div class="t2">REGISTER OF REPEALED / AMENDED LEGISLATION</div>
+    <div class="meta"><span><b>${ESC(company)}</b></span>
+      <span>${laws.length} ฉบับ &nbsp;·&nbsp; วันที่พิมพ์ : ${ESC(thDate(new Date().toISOString()))}</span></div>
+    <table class="st" style="margin-top:12px">
+      <thead><tr><th style="width:20px">#</th><th style="width:60px">รหัส</th><th style="width:150px">ชื่อกฎหมาย</th>
+        <th style="width:140px">ถูกยกเลิกโดย</th><th style="width:130px">ขอบเขต / สาระ</th>
+        <th style="width:64px">วันที่มีผล</th><th style="width:120px">ฉบับที่ใช้แทน</th>
+        <th style="width:40px">ข้อกำหนด</th><th style="width:60px">ยืนยันโดย</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="9" class="ctr">ไม่มีกฎหมายที่ถูกยกเลิก</td></tr>'}</tbody>
+    </table>
+    <div style="font-size:11px;margin-top:8px">
+      ช่องที่ระบุว่า "รอตรวจสอบ" คือข้อมูลที่ยังไม่ได้ยืนยันจากแหล่งอ้างอิง ·
+      ข้อกำหนดของฉบับที่ยกเลิกยังคงผลประเมินเดิมไว้ ระบบไม่เปลี่ยนสถานะให้อัตโนมัติ
+    </div>
+  </div>`
+}

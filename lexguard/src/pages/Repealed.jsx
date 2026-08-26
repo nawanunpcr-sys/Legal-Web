@@ -4,11 +4,13 @@ import { useState } from 'react'
 import { Tag, thDate } from '../lib/ui.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
 import RepealDetails from '../components/RepealDetails.jsx'
+import { buildRepealedReport } from '../components/PdfExport.jsx'
+import { I } from '../components/icons.jsx'
 
 // P22 ขั้นที่ 6 · หน้านี้เคยแสดงเพียง 4 ช่อง (วันที่ · รหัสที่แทน · เลขอ้างอิง · เหตุผล)
 // ทั้งที่ฐานข้อมูลเก็บครบตั้งแต่ migration 046 แล้ว — ชื่อเต็มของฉบับที่ยกเลิก
 // ลิงก์ราชกิจจาฯ ขอบเขตการยกเลิก และผลกระทบต่อข้อกำหนดที่เคยประเมินไว้ ไม่เคยถูกแสดงเลย
-export default function Repealed({laws,catMap,search,onOpen,onRestore,allLaws=[]}){
+export default function Repealed({laws,catMap,search,onOpen,onRestore,allLaws=[],settings={}}){
   const { can }=useAuth()
   const q=search.toLowerCase()
   const rows=laws.filter(l=>!q||l.name.toLowerCase().includes(q)||l.code.toLowerCase().includes(q))
@@ -30,10 +32,16 @@ export default function Repealed({laws,catMap,search,onOpen,onRestore,allLaws=[]
     {/* summary banner */}
     <div style={{display:'flex',alignItems:'center',gap:16,padding:'14px 18px',background:'var(--bad-bg)',border:'1px solid var(--bad-bg)',borderRadius:12,marginBottom:20}}>
       <div style={{width:40,height:40,borderRadius:11,background:'var(--bad)',color:'#fff',display:'grid',placeItems:'center',flexShrink:0,fontSize:14,fontWeight:700}}>ยก</div>
-      <div>
+      <div style={{flex:1}}>
         <div style={{fontWeight:700,fontSize:15,color:'var(--bad)'}}>{rows.length} กฎหมายที่ถูกยกเลิก / แทนที่</div>
         <div style={{fontSize:12.5,color:'var(--bad)',marginTop:2}}>รายการเหล่านี้ไม่นับในสถิติความสอดคล้อง — สามารถกู้คืนได้จากหน้ารายละเอียด</div>
       </div>
+      {/* P24 · ผู้ตรวจ ISO ถามเสมอว่าองค์กรติดตามการยกเลิกกฎหมายอย่างไร
+          เดิมดูได้เฉพาะบนหน้าจอ พิมพ์แนบการตรวจไม่ได้ */}
+      <button className="btn btn-ghost" style={{padding:'5px 12px',fontSize:12,flexShrink:0}}
+        onClick={()=>{ buildRepealedReport({laws:rows,settings,catName:catMap}); setTimeout(()=>window.print(),80) }}>
+        <I n="list"/>พิมพ์เป็นเอกสาร
+      </button>
     </div>
 
     {/* detail cards */}

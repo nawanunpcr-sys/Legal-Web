@@ -155,7 +155,7 @@ export default function RegistryCompliance({regLaws,cats,catMap,stats,search,onO
     {tab==='history' && <History activity={activity} laws={allLaws} catMap={catMap} settings={settings}
       workflowRows={workflow} searchLog={searchLog}/>}
 
-    {tab==='repealed' && <Repealed laws={repealedLaws} catMap={catMap} search={search} onOpen={onOpen} onRestore={onRestore} allLaws={allLaws}/>}
+    {tab==='repealed' && <Repealed laws={repealedLaws} catMap={catMap} search={search} onOpen={onOpen} onRestore={onRestore} allLaws={allLaws} settings={settings}/>}
   </div>
 }
 
