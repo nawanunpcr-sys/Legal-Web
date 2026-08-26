@@ -179,7 +179,9 @@ export default function Dashboard({laws,cats,catMap,onOpen,onGoView,monthsData=[
   // P22 ขั้นที่ 6 · tip อธิบายศัพท์ตรงจุดที่ผู้ใช้เห็นคำนั้น
   const breakdown=[
     {k:'met',   lab:'สอดคล้อง',     val:stats.met,     color:'var(--ok)',  tip:GLOSSARY.met},
-    {k:'unmet', lab:'ไม่สอดคล้อง',  val:stats.unmet,   color:'var(--bad)', go:()=>goRegistry('compliance'), tip:GLOSSARY.unmet},
+    // P22 · เด้งเข้าหน้าแผนปรับปรุง ซึ่งเป็นรายการข้อที่ยังไม่สอดคล้องจริงๆ
+    // (เดิมพาไปแท็บความสอดคล้องในทะเบียน ซึ่งยังต้องหาต่อเองอีกทีว่าข้อไหน)
+    {k:'unmet', lab:'ไม่สอดคล้อง',  val:stats.unmet,   color:'var(--bad)', go:()=>onGoView&&onGoView('improvements'), tip:GLOSSARY.unmet},
     {k:'ack',   lab:'เพื่อทราบ',    val:stats.ack,     color:'var(--accent)', tip:GLOSSARY.acknowledged},
     {k:'na',    lab:'ไม่เกี่ยวข้อง', val:stats.na,      color:'var(--ink-faint)', tip:GLOSSARY.not_applicable},
     {k:'wait',  lab:'ยังไม่ประเมิน', val:stats.waiting, color:'var(--ink-faint)', hollow:true, tip:GLOSSARY.waiting},

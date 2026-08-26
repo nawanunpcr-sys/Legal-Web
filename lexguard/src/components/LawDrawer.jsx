@@ -12,7 +12,6 @@ import { fetchLawOverview, runLawOverview, fetchF259Source } from '../lib/supaba
 import { callAi, useAiAction } from '../lib/aiAction.js'
 import ReqStatusPicker from './ReqStatusPicker.jsx'
 import { I } from './icons.jsx'
-import DeleteLawModal from './DeleteLawModal.jsx'
 import RepealDetails from './RepealDetails.jsx'
 import { buildLawReport } from './PdfExport.jsx'
 
@@ -689,7 +688,6 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
   const { can } = useAuth()
   const inactive = law.active === false
   const [showRepealModal, setShowRepealModal] = useState(false)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [reviews, setReviews] = useState([])
   const [evOverrides, setEvOverrides] = useState({})   // { reqId: {evidence_url, evidence_label} } — fresh uploads
@@ -860,7 +858,7 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
           )}
           {!isRepealed && (
             <span className="pill" style={inactive?{background:'var(--surface-3)',color:'var(--ink-faint)'}:{background:'var(--ok-bg)',color:'var(--ok)'}}>
-              {inactive?'ไม่ใช้แล้ว':'ใช้อยู่'}
+              {inactive?'ไม่เกี่ยวข้อง':'ใช้อยู่'}
             </span>
           )}
           <div className="meta">
@@ -1133,12 +1131,13 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
           <button className="btn btn-ghost" style={{flex:1}} onClick={onClose}>ปิด</button>
           {!isRepealed && (
             <>
-              {onToggleActive && <button className="btn btn-ghost" style={{flex:1}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onToggleActive(law)}>{inactive?'ทำให้ใช้อยู่':'ทำเป็นไม่ใช้แล้ว'}</button>}
-              {onDuplicate && <button className="btn btn-ghost" style={{flex:1}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onDuplicate(law)}>ทำซ้ำ</button>}
+              {onToggleActive && <button className="btn btn-ghost" style={{flex:1}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onToggleActive(law)}>{inactive?'ทำให้ใช้อยู่':'ทำเป็นไม่เกี่ยวข้อง'}</button>}
+              {onDuplicate && <button className="btn btn-ghost" style={{flex:1}} disabled={!can('edit')} title={can('edit')?'':NO_PERM} onClick={()=>onDuplicate(law)}>Duplicate</button>}
               {/* ยกเลิกใช้ (repeal — เก็บประวัติ) = admin เท่านั้น */}
               <button className="btn btn-danger" style={{flex:1}} disabled={!can('delete')} title={can('delete')?'':NO_PERM} onClick={()=>setShowRepealModal(true)}>ยกเลิกใช้</button>
               {/* ลบถาวร (hard delete) = admin เท่านั้น */}
-              {onDelete && <button className="btn btn-danger" style={{flex:'0 0 auto',padding:'0 12px'}} disabled={!can('delete')} title={can('delete')?'ลบกฎหมายถาวร (กู้คืนไม่ได้)':NO_PERM} onClick={()=>setShowDeleteModal(true)}><I n="ban"/>ลบ</button>}
+              {/* P22 · ตัดปุ่มลบออกตามที่ผู้ใช้สั่ง — ทะเบียนกฎหมายไม่ควรมีทางลบถาวร
+                  ฉบับที่ไม่ใช้แล้วให้ทำเป็น "ไม่เกี่ยวข้อง" แทน ข้อมูลจึงยังสอบย้อนหลังได้ */}
               <button className="btn btn-primary" style={{flex:1}} onClick={()=>{
                 buildLawReport({ law, catName: cat?.name || law.cat, catColor: cat?.color, settings })
                 setTimeout(()=>window.print(), 80)
@@ -1153,7 +1152,6 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
 
       {showRepealModal && <RepealModal law={law} onConfirm={handleRepealConfirm} onClose={()=>setShowRepealModal(false)}/>}
       {showReviewModal && <ReviewModal law={law} onSave={handleSaveReview} onClose={()=>setShowReviewModal(false)}/>}
-      {showDeleteModal && <DeleteLawModal law={law} onConfirm={()=>{ setShowDeleteModal(false); onDelete(law) }} onClose={()=>setShowDeleteModal(false)}/>}
     </>
   )
 }

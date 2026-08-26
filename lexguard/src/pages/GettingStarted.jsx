@@ -54,15 +54,6 @@ const GLOSSARY = [
 export default function GettingStarted({ onGoView }) {
   return (
     <div className="view">
-      <div className="ai-box" style={{ marginBottom: 18, borderLeftColor: 'var(--brand)' }}>
-        <span className="ai-tag">ระบบนี้ทำอะไร</span>
-        <p style={{ marginBottom: 0, lineHeight: 1.8 }}>
-          ระบบทะเบียนกฎหมาย SHE เก็บกฎหมายที่องค์กรต้องปฏิบัติตาม พร้อมผลการประเมินว่าปฏิบัติได้ครบหรือยัง
-          และหลักฐานที่ใช้ตอบผู้ตรวจ · ทำงานตาม <b>5 ขั้นตามลำดับ</b> ด้านล่าง
-          ถ้าเพิ่งเริ่มใช้ครั้งแรก ให้เริ่มที่ <b>ขั้นที่ 2</b> เพราะทะเบียนมีกฎหมายอยู่แล้ว
-        </p>
-      </div>
-
       {STEPS.map(s => (
         <div key={s.n} className="panel" style={{ marginBottom: 12 }}>
           <div className="panel-h">

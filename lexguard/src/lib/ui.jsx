@@ -251,9 +251,11 @@ export const Term = ({ k, children }) => (
   </span>
 )
 export const Tag = ({ c, color }) => <span className="tag" style={{ borderColor: (color || '#888') + '33', color: color || '#888' }}>{c}</span>
-// Small "in-force" marker — green "ใช้อยู่" when the law is active, grey "ไม่ใช้แล้ว" when retired.
+// P22 · ป้ายสถานะการใช้งาน — "ไม่เกี่ยวข้อง" แทนคำเดิม "ไม่ใช้แล้ว"
+// เพราะฉบับที่ปิดใช้งานในทะเบียนนี้คือฉบับที่องค์กรตัดสินว่าไม่เข้าข่ายกิจการ ไม่ใช่กฎหมายที่ถูกยกเลิก
+// (การยกเลิกทางกฎหมายใช้ law_status ซึ่งเป็นคนละแกน)
 export const ActiveBadge = ({ active, size }) => active === false
-  ? <span className={'active-badge is-off' + (size === 'sm' ? ' active-badge--sm' : '')} title="กฎหมายนี้ไม่ใช้แล้ว"><i />ไม่ใช้แล้ว</span>
+  ? <span className={'active-badge is-off' + (size === 'sm' ? ' active-badge--sm' : '')} title="องค์กรตัดสินว่ากฎหมายฉบับนี้ไม่เกี่ยวข้องกับกิจการ"><i />ไม่เกี่ยวข้อง</span>
   : <span className={'active-badge is-on' + (size === 'sm' ? ' active-badge--sm' : '')} title="กฎหมายนี้ยังใช้อยู่"><i />ใช้อยู่</span>
 
 // Display-only category color override (LA–LG, CC) — matches the Landing palette.

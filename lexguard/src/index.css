@@ -824,7 +824,7 @@ button.topbar-av:hover { box-shadow: 0 0 0 3px var(--brand-tint) }
 .filterbar .right { margin-left: auto; font-size: 11.5px; color: var(--ink-faint) }
 
 /* ─── Tables ─────────────────────────────────────────────────── */
-.tablewrap { overflow: hidden; border-radius: var(--r) }
+.tablewrap { overflow-x: auto; overflow-y: hidden; border-radius: var(--r) }
 table { width: 100%; border-collapse: collapse }
 thead th {
   text-align: left;

@@ -62,15 +62,6 @@ export default function GapReport({ laws = [], catMap = {}, settings = {}, round
           sub={acc?.decided ? `ผู้ประเมินรับข้อเสนอ ${acc.accepted} จาก ${acc.decided} ครั้ง` : 'ยังไม่มีการตัดสินข้อเสนอ'} />
       </div>
 
-      <div className="ai-box" style={{ marginBottom: 14, borderLeftColor: 'var(--brand)' }}>
-        <span className="ai-tag">ความพร้อมสำหรับการตรวจประเมิน — ISO 45001 ข้อ 6.1.3</span>
-        <p style={{ marginBottom: 0, lineHeight: 1.75 }}>
-          รายงานนี้แสดง<b>ช่องว่างที่ผู้ตรวจจะพบ</b> เรียงตามความเสี่ยงจากมากไปน้อย
-          — ตัวเลขทุกตัวคำนวณจากข้อมูลชุดเดียวกับหน้า Dashboard และอัตราความสอดคล้องใช้ฐาน C + NC
-          ตามที่ระบบกำหนดไว้ · หน้านี้ไม่เปลี่ยนแปลงข้อมูลใดในระบบ
-        </p>
-      </div>
-
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         <button className="btn btn-ghost" onClick={exportPdf}><I n="list" />พิมพ์ / บันทึก PDF</button>
         <button className="btn btn-ghost" onClick={() => exportGapToExcel({ groups, summary, catMap, settings })}>

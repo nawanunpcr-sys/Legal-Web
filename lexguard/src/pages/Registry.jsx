@@ -13,7 +13,6 @@ import { useAiAction } from '../lib/aiAction.js'
 import { toast } from '../lib/toast.js'
 import { I } from '../components/icons.jsx'
 import AssessForm from '../components/AssessForm.jsx'
-import DeleteLawModal from '../components/DeleteLawModal.jsx'
 import { exportLawsToExcel } from '../lib/integrations.js'
 import { usePageFilters, Pill, Tag, ActiveBadge, thDate, TH_MONTHS, prog, lawBEYear, sumReqStats, reqStats, reqKind, reqEvalTitle, GLOSSARY } from '../lib/ui.jsx'
 import History from './History.jsx'
@@ -332,7 +331,6 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
   const checkByLaw=useMemo(()=>{ const m={}; (repealChecks||[]).forEach(c=>{ if(!m[c.law_id]) m[c.law_id]=c }); return m },[repealChecks])
   const [flashId,setFlashId]=useState(null)       // P14·T1 · แถวที่เพิ่งเพิ่ม (ไฮไลต์ 2 วิ)
   const [assessTarget,setAssessTarget]=useState(null)   // P14·T2 · { law, wf } เปิด popup ประเมิน
-  const [deleteTarget,setDeleteTarget]=useState(null)   // ลบกฎหมายจากแถวทะเบียน (admin)
 
   // P14·T1 · workflow ที่ยังเปิดอยู่ต่อกฎหมาย (ใช้ทำ badge "รอประเมิน")
   const openWfByLaw=useMemo(()=>{
@@ -387,7 +385,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
     <div className="filterbar">
       <span className={'chip'+(act==='all'?' active':'')} onClick={()=>setAct('all')}>ทั้งหมด</span>
       <span className={'chip'+(act==='active'?' active':'')} onClick={()=>setAct('active')}>ใช้อยู่ ({visible.filter(l=>l.active!==false).length})</span>
-      <span className={'chip'+(act==='inactive'?' active':'')} onClick={()=>setAct('inactive')}>ไม่ใช้แล้ว ({visible.filter(l=>l.active===false).length})</span>
+      <span className={'chip'+(act==='inactive'?' active':'')} onClick={()=>setAct('inactive')}>ไม่เกี่ยวข้อง ({visible.filter(l=>l.active===false).length})</span>
       <span style={{margin:'0 6px',color:'var(--line)'}}>|</span>
       {/* กรองตามสถานะการประเมิน — แสดงฉบับที่มีข้อปฏิบัติสถานะนั้นอย่างน้อย 1 ข้อ */}
       <span className={'chip'+(st==='all'?' active':'')} onClick={()=>setSt('all')} title="ไม่กรองตามสถานะการประเมิน">ทุกสถานะ</span>
@@ -558,7 +556,7 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
                           disabled={repealBusy} title="ตรวจสอบสถานะกฎหมายฉบับนี้จากอินเทอร์เน็ต"
                           onClick={e=>{e.stopPropagation();onRepealCheck([l.id])}}>ตรวจสถานะ</button>}
                       </>
-                    })()}{onDelete&&can('delete')&&<button className="btn btn-ghost" style={{padding:'3px 8px',fontSize:11,color:'var(--bad)'}} title="ลบกฎหมายถาวร" onClick={e=>{e.stopPropagation();setDeleteTarget(l)}}><I n="ban"/></button>}</div></td>
+                    })()}</div></td>
                   </tr>
                 )})}</tbody>
               </table></div>
@@ -582,7 +580,6 @@ function Register({laws,cats,catMap,search,onOpen,onCreate,onBulk,allLaws,round=
     {/* P14·T2 · popup ประเมินกลางจอ — reuse AssessForm + logic เดียวกับ Process Tracker */}
     {assessTarget && <AssessPopup target={assessTarget} suggest={suggest} onAssess={onAssess} onClose={()=>setAssessTarget(null)}/>}
     {/* ลบกฎหมายจากแถวทะเบียน (ยืนยันด้วยการพิมพ์รหัส) */}
-    {deleteTarget && <DeleteLawModal law={deleteTarget} onConfirm={()=>{ const l=deleteTarget; setDeleteTarget(null); onDelete(l) }} onClose={()=>setDeleteTarget(null)}/>}
   </div>
 }
 
