@@ -76,6 +76,11 @@ export function buildGapAnalysis(laws = [], plans = [], lawFiles = {}, respMap =
     if (p.law_id) (planByLaw[p.law_id] = planByLaw[p.law_id] || []).push(p)
   })
   const openPlansOf = r => (planByReq[r.id] || []).filter(p => p.status !== 'done')
+  // แผนที่ผูกไว้ระดับฉบับ (requirement_id = null) — เช่นแผนที่สร้างจาก "หลักฐานที่ยังไม่มี"
+  // ⚠ เดิมสร้าง planByLaw ไว้แต่ไม่มีใครเรียก ทำให้ฉบับที่มีแผนอยู่แล้วยังขึ้นว่า "ไม่มีแผน"
+  //   ไม่ถือว่าแผนระดับฉบับปิดช่องว่างรายข้อให้อัตโนมัติ เพราะมันอาจไม่ได้ครอบคลุมข้อนั้น
+  //   แต่ต้องบอกให้คนรู้ว่ามีแผนอยู่ จะได้ไม่เปิดแผนซ้ำ
+  const lawPlansOf = l => (planByLaw[l.id] || []).filter(p => p.status !== 'done' && !p.requirement_id)
   // ผู้รับผิดชอบที่ใช้ได้จริง — ระบบก่อน แล้วค่อยของฉบับ แล้วค่อยค่าที่กู้จาก F-259
   const respOf = (r, l) => String(r.responsible || '').trim()
     || String(l.responsible || '').trim()
@@ -116,11 +121,17 @@ export function buildGapAnalysis(laws = [], plans = [], lawFiles = {}, respMap =
 
       if (kind === 'unmet') {
         const open = openPlansOf(r)
-        if (!open.length) groups.nc_no_plan.push({
-          law: l, section: sectionOf(r), responsible: respOf(r, l),
-          todo: 'เปิดแผนปรับปรุง ระบุผู้รับผิดชอบและวันแล้วเสร็จ', due: '',
-          detail: r.status_reason || r.note || r.text,
-        })
+        if (!open.length) {
+          const lp = lawPlansOf(l)
+          groups.nc_no_plan.push({
+            law: l, section: sectionOf(r), responsible: respOf(r, l),
+            todo: lp.length
+              ? `เปิดแผนปรับปรุงสำหรับข้อนี้ — ฉบับนี้มีแผนระดับฉบับอยู่แล้ว ${lp.length} รายการ ตรวจว่าครอบคลุมข้อนี้หรือไม่ก่อนเปิดซ้ำ`
+              : 'เปิดแผนปรับปรุง ระบุผู้รับผิดชอบและวันแล้วเสร็จ',
+            due: '', hasLawPlan: lp.length,
+            detail: r.status_reason || r.note || r.text,
+          })
+        }
         else {
           const late = open.filter(p => p.due_date && p.due_date < t)
           late.forEach(p => groups.plan_overdue.push({
