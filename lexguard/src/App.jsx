@@ -50,6 +50,10 @@ const NAV_GROUPS = [
     { id:'dashboard',     label:'Dashboard',            icon:'grid'    },
     { id:'registry',      label:'ทะเบียนกฎหมาย',        icon:'book'    },
     { id:'tasks',         label:'รายการที่ต้องทำ',        icon:'update'  },
+    // P22 · หน้านี้มีมาตั้งแต่ต้นและ render ได้ปกติ แต่ไม่เคยอยู่ในเมนู
+    // เข้าได้ทางเดียวคือกดชิป "ไม่สอดคล้อง" บน Dashboard ซึ่งผู้ใช้ใหม่ไม่มีทางรู้
+    // เป็นขั้นที่ 5 ของสายงาน (NC → เปิดแผน → ปิดแผน) จึงต้องมีที่อยู่ของตัวเอง
+    { id:'improvements',  label:'แผนปรับปรุง',           icon:'check'   },
     { id:'comm',          label:'สื่อสาร & ส่งรายงาน',    icon:'chat'    },
     { id:'summary',       label:'สรุปกฎหมาย (AI)',       icon:'spark'   },
     // P22 ขั้นที่ 4 · หน้า Gap Analysis — ระบบไม่เคยมีหน้ารายงานวิเคราะห์มาก่อน
