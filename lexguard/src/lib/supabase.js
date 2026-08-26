@@ -1851,3 +1851,17 @@ export async function fetchF259Unmatched() {
     .select('*').is('requirement_id', null).order('cat').order('source_row')
   return data || []
 }
+
+// ── P22 · ผู้รับผิดชอบรายข้อที่กู้จาก F-259 (migration 052) ──────────────────
+// Gap Analysis อ่านข้อกำหนดจาก state ของแอปซึ่งมาจาก lg_requirements ตรงๆ
+// จึงเห็น responsible แค่ 39 แถว ทั้งที่กู้จากเอกสารมาได้ 304 แถว
+// ผลคือชิปกรองหน่วยงานขึ้น "— ไม่ระบุ" เป็นอันดับหนึ่ง ซึ่งใช้งานไม่ได้เลย
+export async function fetchF259Responsible() {
+  if (!hasSupabase) return {}
+  const { data } = await supabase.from('lg_req_f259_source')
+    .select('requirement_id,responsible')
+    .not('requirement_id', 'is', null).not('responsible', 'is', null)
+  const m = {}
+  ;(data || []).forEach(r => { m[r.requirement_id] = r.responsible })
+  return m
+}

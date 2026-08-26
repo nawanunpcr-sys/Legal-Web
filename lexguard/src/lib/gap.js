@@ -24,23 +24,34 @@ import { reqKind } from './supabase.js'
 //     บังคับเหตุผลไว้แล้วตั้งแต่ชั้นฐานข้อมูล จึงเป็นไปไม่ได้ที่จะมีแถวแบบนั้น
 //     เปลี่ยนเป็น "ยังไม่ผ่านการคัดกรองความเกี่ยวข้อง" ซึ่งเป็นช่องว่างจริงที่เหลืออยู่
 //     (ผู้ตรวจ ISO 45001 ข้อ 6.1.3 ถามว่าองค์กรชี้บ่งกฎหมายที่ใช้บังคับครบหรือยัง)
-export const GAP_GROUPS = [
+// ⚠ 3 กลุ่มถูกซ่อนไว้ (hidden: true) ตามที่ผู้ใช้สั่ง 26/08/2569
+// เหตุผล: ทั้งสามกลุ่มสะท้อน "ข้อมูลที่ยังไม่มี" ไม่ใช่ช่องว่างที่องค์กรทำผิดจริง
+//   · C แต่ไม่มีหลักฐาน   — ทั้งระบบยังไม่มีไฟล์แนบสักไฟล์ ตัวเลขจึงเท่ากับ C ทั้งหมด
+//   · ยังไม่มีผู้ประเมิน   — เป็นผลจากข้อมูลนำเข้าย้อนหลัง ไม่ใช่การละเลยของทีมงาน
+//   · ยังไม่คัดกรอง        — ฟีเจอร์คัดกรองเพิ่งมี ยังไม่มีใครได้เริ่มใช้
+// ปล่อยไว้จะทำให้รายงานขึ้น 1,189 รายการ ทั้งที่ช่องว่างจริงมี 11 รายการ
+// ซึ่งกลบเรื่องที่ต้องแก้จริงจนมองไม่เห็น
+// นิยามยังอยู่ครบ เปลี่ยน hidden เป็น false เมื่อข้อมูลพร้อมก็กลับมาใช้ได้ทันที
+export const GAP_GROUPS_ALL = [
   { key: 'nc_no_plan',   title: 'NC ที่ยังไม่มีแผนปรับปรุง',
     why: 'ตรวจพบว่าไม่สอดคล้องแล้ว แต่ยังไม่มีใครรับผิดชอบแก้ไข — ความเสี่ยงสูงสุด',
     todo: 'เปิดแผนปรับปรุง ระบุผู้รับผิดชอบและวันแล้วเสร็จ' },
   { key: 'plan_overdue', title: 'NC ที่มีแผนแล้วแต่เลยกำหนด',
     why: 'มีแผนแต่ไม่ปิดตามกำหนด — ผู้ตรวจจะถามหาสาเหตุและมาตรการชั่วคราว',
     todo: 'ปิดแผน หรือทบทวนกำหนดเวลาพร้อมบันทึกเหตุผล' },
-  { key: 'met_no_evidence', title: 'สอดคล้อง (C) แต่ไม่มีหลักฐานแนบ',
+  { key: 'met_no_evidence', hidden: true, title: 'สอดคล้อง (C) แต่ไม่มีหลักฐานแนบ',
     why: 'อ้างว่าปฏิบัติแล้วแต่พิสูจน์ไม่ได้ — ความเสี่ยงที่ซ่อนอยู่ ตอบผู้ตรวจไม่ได้',
     todo: 'แนบหลักฐานที่ข้อนั้น หรือทบทวนสถานะใหม่' },
-  { key: 'not_assessed', title: 'ยังไม่มีผู้ประเมินบันทึกไว้',
+  { key: 'not_assessed', hidden: true, title: 'ยังไม่มีผู้ประเมินบันทึกไว้',
     why: 'สถานะในระบบมาจากการนำเข้าข้อมูลเดิม ไม่ใช่จากการประเมินของคน',
     todo: 'ให้ผู้รับผิดชอบประเมินและบันทึกชื่อผู้ประเมิน' },
-  { key: 'unscreened',   title: 'ยังไม่ผ่านการคัดกรองความเกี่ยวข้อง',
+  { key: 'unscreened', hidden: true,   title: 'ยังไม่ผ่านการคัดกรองความเกี่ยวข้อง',
     why: 'ยังไม่มีใครยืนยันว่ากฎหมายฉบับนี้ใช้บังคับกับองค์กรหรือไม่ (ISO 45001 ข้อ 6.1.3)',
     todo: 'คัดกรองแล้วกดยืนยันผลในหน้ารายละเอียดกฎหมาย' },
 ]
+
+// กลุ่มที่แสดงจริงบนหน้าจอและในไฟล์ export — ตัวเลขสรุปทุกตัวนับจากชุดนี้เท่านั้น
+export const GAP_GROUPS = GAP_GROUPS_ALL.filter(g => !g.hidden)
 
 const today = () => new Date().toISOString().slice(0, 10)
 const hasEvidence = r => !!String(r?.evidence_url || '').trim()
@@ -55,7 +66,9 @@ export const sectionOf = r => {
 // laws     = กฎหมายที่ยังบังคับใช้ พร้อม reqs และ relevance (จาก App.lawsWithRel)
 // plans    = แถวจาก lg_improvement_plans
 // lawFiles = { [law_id]: จำนวนไฟล์แนบระดับฉบับ } — ใช้เสริมกรณีหลักฐานผูกที่ระดับฉบับ
-export function buildGapAnalysis(laws = [], plans = [], lawFiles = {}) {
+// respMap = { [requirement_id]: responsible } จาก lg_req_f259_source (migration 052)
+//   ค่าที่ผู้ใช้กรอกในระบบชนะเสมอ · ค่าจากเอกสารเป็นตัวสำรอง — ตรรกะเดียวกับ view lg_req_effective
+export function buildGapAnalysis(laws = [], plans = [], lawFiles = {}, respMap = {}) {
   const t = today()
   const planByReq = {}, planByLaw = {}
   plans.forEach(p => {
@@ -63,8 +76,13 @@ export function buildGapAnalysis(laws = [], plans = [], lawFiles = {}) {
     if (p.law_id) (planByLaw[p.law_id] = planByLaw[p.law_id] || []).push(p)
   })
   const openPlansOf = r => (planByReq[r.id] || []).filter(p => p.status !== 'done')
+  // ผู้รับผิดชอบที่ใช้ได้จริง — ระบบก่อน แล้วค่อยของฉบับ แล้วค่อยค่าที่กู้จาก F-259
+  const respOf = (r, l) => String(r.responsible || '').trim()
+    || String(l.responsible || '').trim()
+    || String(respMap[r.id] || '').trim()
+    || '—'
 
-  const groups = Object.fromEntries(GAP_GROUPS.map(g => [g.key, []]))
+  const groups = Object.fromEntries(GAP_GROUPS_ALL.map(g => [g.key, []]))
   let met = 0, unmet = 0, ack = 0, na = 0, waiting = 0, evidenceHave = 0, evidenceNeed = 0
 
   for (const l of laws) {
@@ -91,7 +109,7 @@ export function buildGapAnalysis(laws = [], plans = [], lawFiles = {}) {
         evidenceNeed++
         if (hasEvidence(r) || (lawFiles[l.id] || 0) > 0) evidenceHave++
         else groups.met_no_evidence.push({
-          law: l, section: sectionOf(r), responsible: r.responsible || l.responsible || '—',
+          law: l, section: sectionOf(r), responsible: respOf(r, l),
           todo: 'แนบหลักฐานที่ข้อนี้ หรือทบทวนสถานะใหม่', due: '', detail: r.text,
         })
       }
@@ -99,7 +117,7 @@ export function buildGapAnalysis(laws = [], plans = [], lawFiles = {}) {
       if (kind === 'unmet') {
         const open = openPlansOf(r)
         if (!open.length) groups.nc_no_plan.push({
-          law: l, section: sectionOf(r), responsible: r.responsible || l.responsible || '—',
+          law: l, section: sectionOf(r), responsible: respOf(r, l),
           todo: 'เปิดแผนปรับปรุง ระบุผู้รับผิดชอบและวันแล้วเสร็จ', due: '',
           detail: r.status_reason || r.note || r.text,
         })
@@ -113,7 +131,7 @@ export function buildGapAnalysis(laws = [], plans = [], lawFiles = {}) {
       }
 
       if (!assessedByHuman(r)) groups.not_assessed.push({
-        law: l, section: sectionOf(r), responsible: r.responsible || l.responsible || '—',
+        law: l, section: sectionOf(r), responsible: respOf(r, l),
         todo: 'ให้ผู้รับผิดชอบประเมินและบันทึกชื่อผู้ประเมิน', due: '', detail: r.text,
       })
     }
@@ -130,8 +148,80 @@ export function buildGapAnalysis(laws = [], plans = [], lawFiles = {}) {
       pct: assessed ? Math.round(met / assessed * 100) : null,
       evidenceNeed, evidenceHave,
       evidencePct: evidenceNeed ? Math.round(evidenceHave / evidenceNeed * 100) : null,
+      // นับเฉพาะกลุ่มที่แสดงจริง — ไม่งั้นหัวรายงานจะขึ้นตัวเลขที่หน้าจอไม่มีให้ดู
       counts: Object.fromEntries(GAP_GROUPS.map(g => [g.key, groups[g.key].length])),
       totalGaps: GAP_GROUPS.reduce((n, g) => n + groups[g.key].length, 0),
+      countsAll: Object.fromEntries(GAP_GROUPS_ALL.map(g => [g.key, groups[g.key].length])),
     },
   }
+}
+
+// ── P22 · ตัวช่วยสำหรับหน้าจอ Gap Analysis ──────────────────────────────────
+// แยกจาก buildGapAnalysis เพราะเป็นเรื่องการ "แสดงผล" ล้วน ไม่กระทบตัวเลขในรายงาน
+// ตัวเลขสรุปทุกตัวยังมาจาก summary ชุดเดิม จึงไม่มีทางที่หน้าจอกับ PDF/Excel จะไม่ตรงกัน
+
+// รายชื่อหน่วยงานพร้อมจำนวนช่องว่าง — ใช้ทำชิปกรอง
+// คนที่ต้องลงมือแก้คือเจ้าของหน่วยงาน ถ้าหาแถวของตัวเองไม่เจอ รายงานก็ไม่มีประโยชน์
+export const UNSPEC = 'ยังไม่ระบุหน่วยงาน'
+
+// ค่าผู้รับผิดชอบใน F-259 หลายช่องเป็นหลายบรรทัด ("Safety⏎Data center⏎MTN")
+// ขึ้นบนชิปแล้วดันความสูงจนแถบตัวกรองเละ · ยุบเป็นบรรทัดเดียวคั่นด้วย /
+export const normDept = v => {
+  const s = String(v || '').replace(/\s*[\r\n]+\s*/g, ' / ').replace(/\s+/g, ' ').trim()
+  return (!s || s === '—') ? UNSPEC : s
+}
+
+export function deptCounts(groups) {
+  const m = {}
+  for (const g of GAP_GROUPS)
+    for (const x of (groups[g.key] || [])) {
+      const d = normDept(x.responsible)
+      m[d] = (m[d] || 0) + 1
+    }
+  // ดัน 'ยังไม่ระบุหน่วยงาน' ไปท้ายสุดเสมอ — มันไม่ใช่หน่วยงานที่สั่งงานได้
+  return Object.entries(m).sort((a, b) =>
+    (a[0] === UNSPEC) - (b[0] === UNSPEC) || b[1] - a[1])
+}
+
+// กรองรายการตามหน่วยงาน + คำค้น (รหัส / ชื่อกฎหมาย / มาตรา / สิ่งที่ต้องทำ)
+export function filterRows(rows = [], { dept = 'all', q = '' } = {}) {
+  const s = String(q || '').trim().toLowerCase()
+  return rows.filter(x => {
+    if (dept !== 'all') {
+      if (normDept(x.responsible) !== dept) return false
+    }
+    if (!s) return true
+    return [x.law?.code, x.law?.name, x.section, x.todo, x.detail]
+      .some(v => String(v || '').toLowerCase().includes(s))
+  })
+}
+
+// ยุบรายการเป็นรายกฎหมาย — 509 แถวเรียงรวดอ่านไม่ไหว แต่ 120 ฉบับพับไว้อ่านไหว
+// เรียงตามจำนวนช่องว่างมากไปน้อย เพื่อให้เห็นว่าปัญหากระจุกอยู่ที่ฉบับไหน
+// (ไม่ใช่คะแนนความเสี่ยง — เป็นแค่การนับว่าฉบับไหนมีรายการเยอะสุด)
+export function groupByLaw(rows = []) {
+  const m = new Map()
+  for (const x of rows) {
+    const k = x.law?.id ?? x.law?.code ?? '—'
+    if (!m.has(k)) m.set(k, { law: x.law, items: [] })
+    m.get(k).items.push(x)
+  }
+  return [...m.values()].sort((a, b) => b.items.length - a.items.length
+    || String(a.law?.code || '').localeCompare(String(b.law?.code || '')))
+}
+
+// "เริ่มจากตรงนี้" — สามอย่างที่ทำแล้วปิดช่องว่างได้มากที่สุด
+// คำนวณจากจำนวนจริงล้วนๆ ไม่มีการให้น้ำหนักหรือตัดสินว่าอะไรเสี่ยงกว่ากัน
+export function topActions(groups, summary) {
+  const out = []
+  for (const g of GAP_GROUPS) {
+    const n = (groups[g.key] || []).length
+    if (!n) continue
+    const laws = new Set((groups[g.key] || []).map(x => x.law?.id)).size
+    out.push({
+      key: g.key, title: g.title, n, laws, todo: g.todo,
+      pct: summary.totalGaps ? Math.round(n / summary.totalGaps * 100) : 0,
+    })
+  }
+  return out.sort((a, b) => b.n - a.n).slice(0, 3)
 }
