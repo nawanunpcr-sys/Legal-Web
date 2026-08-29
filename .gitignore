@@ -5,3 +5,11 @@
 node_modules/
 dist/
 .vercel/
+
+# ไฟล์ที่สร้างจาก .md ด้วย scripts/md2docx.py — ไม่ต้อง commit ของที่สร้างใหม่ได้
+*.docx
+lexguard/docs/*.html
+
+# ชุดส่งออกข้อมูลบริษัท — ห้าม commit (repo เป็น public)
+Compliance-export/
+Compliance.git/
