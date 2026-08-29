@@ -211,8 +211,24 @@ export default function SubRequirementList({ req, subs = [], progress, onChanged
 
   const pending = subs.filter(s => s.is_met === null && !s.is_na).length
 
+  // ── P25 · ข้อย่อยชุดนี้สร้างจากบริบทครบหรือไม่ ────────────────────────────
+  // req-breakdown.js ประกอบบริบทด้วย .filter(Boolean) — ถ้าสรุปภาพรวม (ขั้น 5) หรือ
+  // คู่มือปฏิบัติ (ขั้น 2) ยังว่าง มันจะแตกข้อย่อยจากตัวบทเปล่าเงียบๆ
+  // ผลประเมินทั้งชุดที่ตามมาจึงตั้งอยู่บนข้อย่อยที่คุณภาพต่ำกว่าที่ควร โดยไม่มีใครรู้
+  // 'unknown' = แถวที่มีอยู่ก่อน migration 055 ไม่มีทางรู้ย้อนหลัง จึงไม่เตือน
+  const ctxLevels = new Set(subs.map(s => s.context_level).filter(Boolean))
+  const weakCtx = ctxLevels.has('bare') ? 'bare' : (ctxLevels.has('partial') ? 'partial' : null)
+
   return (
     <div style={{ marginTop: 10 }}>
+      {weakCtx && (
+        <div style={{ marginBottom: 10, padding: '9px 12px', borderRadius: 7, background: 'var(--warn-bg)',
+          color: 'var(--warn)', fontSize: 12, lineHeight: 1.65 }}>
+          ข้อย่อยชุดนี้สร้างจากบริบทไม่ครบ
+          ({weakCtx === 'bare' ? 'ไม่มีทั้งสรุปภาพรวมและคู่มือปฏิบัติ' : 'มีอย่างใดอย่างหนึ่ง'})
+          — ควรทำขั้นที่ 2 และขั้นที่ 5 ให้เสร็จก่อน แล้วกด “แตกใหม่”
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
         <ProgressBar p={progress} />
         {pending > 0 && can('edit') && (

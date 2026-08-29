@@ -16,6 +16,9 @@ export function WFStepper({ wf }) {
   const doneAll = wf.status === 'เสร็จสิ้น'
   const state = [doneOwner, doneAssess, doneAll]
   const current = wf.stage   // 1..3
+  // P25 · ขั้นที่ "กำลังทำ" และ "เสร็จแล้ว" ใช้ไอคอนบอกว่าเป็นงานของใคร
+  // ขั้นที่ยังไม่ถึงคงเป็นตัวเลขไว้ เพื่อให้ยังเห็นว่ามีกี่ขั้นและตัวเองอยู่ลำดับใด
+  const STAGE_ICON = ['user', 'scale', 'shield']
   return (
     <div className="wf-stepper" style={{display:'flex',alignItems:'center',gap:0,margin:'6px 0'}}>
       {WF_STAGES.map((s,i)=>{
@@ -24,9 +27,10 @@ export function WFStepper({ wf }) {
         return (
           <div key={s.n} style={{display:'flex',alignItems:'center',flex:i<2?1:'0 0 auto'}}>
             <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:70}}>
-              <span style={{width:26,height:26,borderRadius:'50%',display:'grid',placeItems:'center',fontSize:12,fontWeight:700,
+              <span aria-label={`ขั้นที่ ${s.n} ${s.title} — ${done?'เสร็จแล้ว':active?'กำลังดำเนินการ':'ยังไม่ถึงขั้นนี้'}`}
+                style={{width:26,height:26,borderRadius:'50%',display:'grid',placeItems:'center',fontSize:12,fontWeight:700,
                 background:done?'var(--ok)':active?'var(--brand)':'var(--grayfill)',color:(done||active)?'#fff':'var(--ink-faint)'}}>
-                {done?'✓':s.n}</span>
+                {(done||active) ? <I n={STAGE_ICON[i]}/> : s.n}</span>
               <span style={{fontSize:11,color:active?'var(--brand)':'var(--ink-soft)',fontWeight:active?600:400,whiteSpace:'nowrap'}}>{s.title}</span>
             </div>
             {i<2 && <div style={{flex:1,height:2,background:state[i]?'var(--ok)':'var(--line)',margin:'0 2px',alignSelf:'flex-start',marginTop:12}}/>}

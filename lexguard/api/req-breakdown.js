@@ -82,6 +82,14 @@ export async function breakdownRequirement(reqId, { regenerate = false, by = '�
   const guides = await rest(`lg_law_action_guide?select=guide&law_id=eq.${req.law_id}`)
   const guide = guides[0]?.guide
 
+  // ── บริบทครบแค่ไหน ──────────────────────────────────────────────────────
+  // ctx ประกอบด้วย .filter(Boolean) ถ้าสาระสำคัญ (ขั้น 5) หรือคู่มือปฏิบัติ (ขั้น 2) ยังว่าง
+  // มันจะแตกข้อย่อยจากตัวบทเปล่าเงียบๆ โดยไม่มีใครรู้ว่าชุดนี้คุณภาพต่ำกว่าที่ควร
+  // จึงบันทึกไว้ทุกแถว แล้วให้หน้าจอขึ้นป้ายเตือนเมื่อค่าไม่ใช่ full
+  const hasSummary = !!overview?.gist
+  const hasGuide = !!guide
+  const contextLevel = hasSummary && hasGuide ? 'full' : (hasSummary || hasGuide ? 'partial' : 'bare')
+
   const ctx = [
     `กฎหมาย: ${law.name || ''}`,
     law.ministry ? `หน่วยงาน: ${law.ministry}` : '',
@@ -127,7 +135,7 @@ export async function breakdownRequirement(reqId, { regenerate = false, by = '�
       evidence_required: S(x.evidence_required, 500),
       risk_level: RISK.includes(x.risk_level) ? x.risk_level : 'medium',
       note: S(x.note, 500) || null,
-      generated_by: 'ai', model: MODEL,
+      generated_by: 'ai', model: MODEL, context_level: contextLevel,
     }))
   if (!items.length) throw new Error('AI ไม่ได้เสนอข้อย่อยที่ใช้ได้แม้แต่ข้อเดียว')
 
@@ -142,7 +150,7 @@ export async function breakdownRequirement(reqId, { regenerate = false, by = '�
 
   const ins = await rest('lg_sub_requirements?select=*', {
     method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(items) })
-  return { requirement_id: reqId, items: ins, reused: false, by }
+  return { requirement_id: reqId, items: ins, reused: false, by, context_level: contextLevel }
 }
 
 export default async function handler(req, res) {

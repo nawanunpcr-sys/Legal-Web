@@ -709,7 +709,8 @@ export default function App(){
             onRepealApply={handleRepealApply} onRepealDismiss={handleRepealDismiss}
             companyProfile={companyProfile} onRelevanceChanged={loadRelevance}/>}
           {view==='summary'       && <LawSummary laws={activeLaws} allLaws={laws} cats={cats} catMap={catMap} discovered={discovered} suggest={suggest}
-            onReloadDiscovered={loadDiscovered} onReloadLaws={loadLaws} onOpenLaw={setOpenLaw} onAddToRegistry={init=>openAddLaw(init)}/>}
+            onReloadDiscovered={loadDiscovered} onReloadLaws={loadLaws} onOpenLaw={setOpenLaw} onAddToRegistry={init=>openAddLaw(init)}
+            companyProfile={companyProfile}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw} onChanged={loadLaws} settings={settings}/>}
           {view==='help'          && <GettingStarted onGoView={goView}/>}
           {view==='comm'          && (<div className="view">

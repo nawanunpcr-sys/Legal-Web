@@ -8,7 +8,7 @@ import { RELEVANCE, relevanceOf, confirmRelevance } from '../lib/supabase.js'
 import { fetchActionGuide, fetchLawEvidence, matchEvidence, EMPTY_GUIDE,
          createPlansFromMissingEvidence, fetchPlansByLaw } from '../lib/supabase.js'
 import { fetchSuggestions, recordSuggestionDecision, humanAssessed, runPreassess } from '../lib/supabase.js'
-import { fetchLawOverview, runLawOverview, fetchF259Source } from '../lib/supabase.js'
+import { fetchLawOverview, runLawOverview, fetchF259Source, fetchLawGap } from '../lib/supabase.js'
 import { fetchSubRequirements, fetchSubProgress, REQ_STATUS as RQS } from '../lib/supabase.js'
 import SubRequirementList from './SubRequirementList.jsx'
 import { callAi, useAiAction } from '../lib/aiAction.js'
@@ -690,6 +690,151 @@ function OverviewPanel({ law }) {
   )
 }
 
+/* ══ P25 ขั้นที่ 6 · ช่องว่างที่ต้องปิด ═══════════════════════════════════════
+
+   ระบบบอกได้แล้วว่าข้อย่อยใดยังไม่ทำ แต่ไม่มีที่ใดตอบว่า "ทั้งฉบับนี้ขาดอะไรเป็นหลัก
+   และต้องลงมือทำอะไรก่อน" — ผู้บริหารเปิดตารางติ๊ก 40 แถวแล้วอ่านไม่ออกว่าควรเริ่มตรงไหน
+
+   แผงนี้ "อ่านอย่างเดียว" ไม่มีปุ่มสั่งสรุปเอง — สั่งงานผ่านคิว "วิเคราะห์ทั้งชุด"
+   ในหน้าสรุปกฎหมาย (AI) ที่เดียว เพราะขั้นนี้ต้องรันหลังขั้น 1-5 เสมอ
+   ถ้าเปิดให้กดตรงนี้ได้ ผู้ใช้จะกดก่อนแล้วได้สรุปที่ตั้งอยู่บนข้อมูลที่ยังไม่ครบ
+
+   ตัวเลขทั้งหมดมาจาก stats ที่กติกาคำนวณฝั่ง server ไม่ใช่ AI นับ (api/_lib/gap-collect.js) */
+const GAP_RISK = { critical:'วิกฤต', high:'สูง', medium:'ปานกลาง', low:'ต่ำ' }
+
+function GapPanel({ law, subs = {}, onOpenReq }) {
+  const [row, setRow] = useState(undefined)   // undefined = กำลังโหลด · null = ยังไม่มี
+  const [open, setOpen] = useState(true)
+
+  useEffect(() => { let live = true
+    fetchLawGap(law.id).then(d => { if (live) setRow(d) }).catch(() => { if (live) setRow(null) })
+    return () => { live = false }
+  }, [law.id])
+
+  if (row === undefined) return null
+
+  // ── ยังติ๊กไม่ครบ = ขั้นที่ 6 ยังสรุปไม่ได้ ────────────────────────────────
+  // แทนที่จะซ่อนแผงไว้เฉยๆ ให้บอกตรงๆ ว่าเหลือกี่ข้อและพาไปที่ข้อกำหนดที่ค้าง
+  // (server ตอบ 428 กรณีนี้อยู่แล้ว — ที่นี่ทำให้ผู้ใช้เห็นก่อนจะไปเจอ error)
+  const all = Object.values(subs).flat()
+  const pending = all.filter(s => s.is_met === null && !s.is_na)
+  if (!row) {
+    if (!all.length) return null
+    return (
+      <div className="sec">
+        <div className="sec-t">ช่องว่างที่ต้องปิด</div>
+        <div className="panel" style={{ padding:18, fontSize:12.5, color:'var(--ink-soft)', lineHeight:1.75 }}>
+          {pending.length
+            ? <>ยังประเมินข้อย่อยไม่ครบ — เหลืออีก <b style={{ color:'var(--warn)' }}>{pending.length}</b> ข้อ
+                จากทั้งหมด {all.length} ข้อ · สรุปช่องว่างจากข้อมูลที่ยังไม่ครบจะทำให้เข้าใจผิดว่าครบแล้ว
+                {onOpenReq && (
+                  <div style={{ marginTop:10 }}>
+                    <button className="btn btn-ghost" style={{ padding:'4px 11px', fontSize:12 }}
+                      onClick={() => onOpenReq(pending[0].requirement_id)}>ไปที่ข้อที่ยังค้าง</button>
+                  </div>
+                )}
+              </>
+            : <>ติ๊กข้อย่อยครบแล้ว แต่ยังไม่ได้สรุปช่องว่างของฉบับนี้ —
+                สั่งได้ที่ปุ่ม “วิเคราะห์ทั้งชุด” ในหน้าสรุปกฎหมาย (AI)</>}
+        </div>
+      </div>
+    )
+  }
+
+  const st = row.stats || {}
+  const gaps = Array.isArray(row.gaps) ? row.gaps : []
+  // สรุปตั้งอยู่บนผลติ๊กชุดหนึ่ง ถ้าจำนวนข้อย่อยตอนนี้ไม่เท่าเดิม ตัวเลขข้างบนก็ไม่ใช่ของจริงแล้ว
+  const stale = all.length > 0 && st.total != null && st.total !== all.length
+
+  return (
+    <div className="sec">
+      <div className="sec-t" style={{ cursor:'pointer' }} onClick={() => setOpen(o => !o)}>
+        ช่องว่างที่ต้องปิด
+        {gaps.length > 0 && <span className="pill p-bad" style={{ marginLeft:8, fontSize:11 }}>{gaps.length} เรื่อง</span>}
+        <span style={{ marginLeft:'auto', fontSize:12, color:'var(--brand)', fontWeight:500 }}>{open ? 'ย่อ ▲' : 'ขยาย ▼'}</span>
+      </div>
+      <div className="panel" style={{ padding:18 }}>
+        {row.headline && (
+          <div style={{ fontSize:13.5, lineHeight:1.85, whiteSpace:'pre-wrap' }}>{row.headline}</div>
+        )}
+
+        <div style={{ display:'flex', gap:14, flexWrap:'wrap', marginTop:10, fontSize:12, color:'var(--ink-soft)' }}>
+          <span>ข้อย่อยทั้งหมด <b>{st.total ?? 0}</b> ข้อ</span>
+          <span>ดำเนินการแล้ว <b style={{ color:'var(--ok)' }}>{st.met ?? 0}</b></span>
+          <span>ยังไม่ได้ดำเนินการ <b style={{ color:'var(--bad)' }}>{st.unmet ?? 0}</b></span>
+          {st.na ? <span>ไม่เกี่ยวข้อง <b>{st.na}</b></span> : null}
+        </div>
+
+        {stale && (
+          <div style={{ marginTop:10, padding:'9px 12px', borderRadius:7, background:'var(--warn-bg)',
+            color:'var(--warn)', fontSize:12.5, lineHeight:1.65 }}>
+            ผลติ๊กข้อย่อยเปลี่ยนไปหลังสร้างสรุปนี้ — ตัวเลขข้างบนเป็นของตอนสรุป ควรสั่งวิเคราะห์ใหม่
+          </div>
+        )}
+
+        {open && gaps.map((g, i) => (
+          <div key={i} style={{ marginTop:14, padding:'13px 15px', borderRadius:9,
+            border:'1px solid var(--line)', borderLeft:'3px solid var(--bad)' }}>
+            <div style={{ display:'flex', alignItems:'baseline', gap:9, flexWrap:'wrap' }}>
+              <span className="pill p-bad" style={{ fontSize:10.5 }}>ลำดับ {g.priority}</span>
+              <b style={{ fontSize:13.5, lineHeight:1.55 }}>{g.title}</b>
+            </div>
+            {g.why_it_matters && (
+              <div style={{ fontSize:12.5, color:'var(--ink-soft)', marginTop:6, lineHeight:1.7 }}>{g.why_it_matters}</div>
+            )}
+            {(g.to_close || []).length > 0 && (
+              <div style={{ marginTop:9 }}>
+                <div style={{ fontSize:11.5, fontWeight:700, color:'var(--ink-faint)', marginBottom:4 }}>สิ่งที่ต้องดำเนินการ</div>
+                <ol style={{ margin:0, paddingLeft:18, fontSize:12.5, lineHeight:1.75 }}>
+                  {g.to_close.map((s, k) => <li key={k}>{s}</li>)}
+                </ol>
+              </div>
+            )}
+            {(g.evidence || []).length > 0 && (
+              <div style={{ marginTop:9 }}>
+                <div style={{ fontSize:11.5, fontWeight:700, color:'var(--ink-faint)', marginBottom:4 }}>เอกสารที่ต้องเตรียม</div>
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                  {g.evidence.map((e, k) => <span key={k} className="meta-chip" style={{ fontSize:10.5 }}>{e}</span>)}
+                </div>
+              </div>
+            )}
+            {(g.sub_req_ids || []).length > 0 && (
+              <div style={{ marginTop:9, fontSize:11.5, color:'var(--ink-faint)' }}>
+                รวมข้อย่อย {g.sub_req_ids.length} ข้อ
+                {onOpenReq && (() => {
+                  // พาไปที่ข้อกำหนดแม่ของข้อย่อยแรกในช่องว่างนี้ — checklist อยู่ใต้ข้อกำหนด
+                  const first = all.find(s => g.sub_req_ids.includes(s.id))
+                  return first ? <button className="btn btn-ghost" style={{ marginLeft:8, padding:'2px 9px', fontSize:11 }}
+                    onClick={() => onOpenReq(first.requirement_id)}>ดูข้อย่อยที่เกี่ยว</button> : null
+                })()}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {open && !gaps.length && (
+          <div style={{ marginTop:12, fontSize:12.5, color:'var(--ok)', lineHeight:1.7 }}>
+            ไม่พบช่องว่าง — ข้อย่อยทุกข้อของฉบับนี้ดำเนินการแล้วหรือระบุว่าไม่เกี่ยวข้อง
+          </div>
+        )}
+
+        {open && row.caution && (
+          <div style={{ marginTop:12, padding:'10px 13px', borderRadius:7, background:'var(--warn-bg)',
+            color:'var(--warn)', fontSize:12.5, lineHeight:1.7 }}>
+            <b>ข้อควรระวัง:</b> {row.caution}
+          </div>
+        )}
+
+        <p style={{ fontSize:11.5, color:'var(--ink-faint)', marginTop:12, lineHeight:1.6 }}>
+          ตัวเลขคำนวณด้วยกติกาจากผลติ๊กข้อย่อย · คำอธิบายเรียบเรียงโดย AI
+          {row.generated_at ? ' · ' + new Date(row.generated_at).toLocaleString('th-TH') : ''}
+          {' '}— เป็นข้อเสนอ ไม่ใช่การตัดสินสถานะความสอดคล้อง ซึ่งยังเป็นดุลพินิจของผู้ประเมิน
+        </p>
+      </div>
+    </div>
+  )
+}
+
 const EMPTY_NEW_REQ = { text:'', responsible:'', frequency:'', documents:'', choice:'waiting', statusReason:'', waitDate:'' }
 
 export default function LawDrawer({ law, catMap, settings, onClose, onToggle, onAddReq, onRepeal, onRestore, onDuplicate, onToggleActive, thDate, relevance, onRelevanceChanged, onPlansCreated }){
@@ -913,6 +1058,9 @@ export default function LawDrawer({ law, catMap, settings, onClose, onToggle, on
         </div>
         <div className="dr-body">
           <OverviewPanel law={law} />
+
+          {/* P25 ขั้นที่ 6 · อ่านอย่างเดียว สั่งงานผ่านคิวในหน้าสรุปกฎหมาย (AI) */}
+          <GapPanel law={law} subs={subs} onOpenReq={id=>setOpenSubId(id)} />
 
           {/* ⚠ สองแผงนี้เคยหายไปตอนรีแฟกเตอร์กล่องการยกเลิก (การตัดช่วงข้อความกินเลยขอบเขต)
               ฟีเจอร์ทั้งขั้นที่ 1 และขั้นที่ 2 จึงมองไม่เห็นบนหน้าจอโดยไม่มีใครสังเกต */}

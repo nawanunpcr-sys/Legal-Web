@@ -15,6 +15,11 @@
 import { sameOrigin, clientIp, rateLimited, tooManyRequests } from './_lib/guard.js'
 import { processQueue, queueCounts, resetProcessing } from './_lib/queue.js'
 import { screenOneLaw, loadProfile } from './law-screen.js'
+import { buildActionGuide } from './law-action-guide.js'
+import { buildOverview } from './law-overview.js'
+import { preassessLaw } from './req-preassess.js'
+import { breakdownRequirement } from './req-breakdown.js'
+import { summarizeGap } from './law-gap.js'
 
 const SUPA_URL = process.env.VITE_SUPABASE_URL
 const SUPA_KEY = process.env.VITE_SUPABASE_ANON_KEY
@@ -31,12 +36,74 @@ const JOBS = {
       return { profile }
     },
     async run(item, ctx) {
-      const lawId = Number(String(item.ref).replace(/^law:/, ''))
-      if (!Number.isFinite(lawId)) throw new Error('รหัสอ้างอิงในคิวไม่ถูกต้อง: ' + item.ref)
-      const out = await screenOneLaw(lawId, ctx.profile)
+      const out = await screenOneLaw(refId(item, 'law'), ctx.profile)
       return { note: `${out.relevance.verdict} (${out.relevance.confidence})` }
     },
   },
+
+  // ── P25 · ขั้นที่เหลือของสายวิเคราะห์ ────────────────────────────────────
+  // ทุกตัวเรียกฟังก์ชันที่ export ไว้แล้วในไฟล์ของขั้นนั้น ไม่คัดลอกตรรกะมาเขียนซ้ำ
+  // ลำดับบังคับ: law_screen → law_action_guide → law_overview → req_breakdown
+  //              → req_preassess → law_gap
+  // ฝั่งหน้าจอเป็นผู้ไล่ลำดับ (ดู CHAIN_ORDER ใน src/lib/chain.js) เพราะคิวแยกตามประเภทงาน
+  // ที่นี่จึงป้องกันอีกชั้นด้วยการให้แต่ละขั้นตรวจว่าผลของขั้นก่อนมีจริงหรือยัง
+  // ถ้าไม่มีให้ล้มพร้อมบอกเหตุผล — ดีกว่าปล่อยให้ทำงานบนข้อมูลที่ยังไม่มี
+  law_action_guide: {
+    label: 'สิ่งที่ต้องทำ/เอกสาร/หลักฐาน',
+    perItemMs: 70_000,
+    async run(item) {
+      const out = await buildActionGuide(refId(item, 'law'), 'คิว')
+      const g = out?.guide || {}
+      return { note: `ต้องทำ ${(g.actions || []).length} · หลักฐาน ${(g.evidence || []).length}` }
+    },
+  },
+
+  law_overview: {
+    label: 'สรุปภาพรวมทั้งฉบับ',
+    perItemMs: 70_000,
+    async run(item) {
+      await buildOverview(refId(item, 'law'))
+      return { note: 'สรุปภาพรวมแล้ว' }
+    },
+  },
+
+  // ref เป็นรายข้อกำหนด ไม่ใช่รายฉบับ — ฉบับหนึ่งมีข้อกำหนดหลายข้อ
+  // ถ้ารวมทั้งฉบับไว้ในงานเดียว งานเดียวจะกินเวลาเกิน perItemMs จนคิวรอบนั้นพัง
+  req_breakdown: {
+    label: 'แตกข้อย่อย',
+    perItemMs: 70_000,
+    async run(item) {
+      const out = await breakdownRequirement(refId(item, 'req'), { by: 'คิว' })
+      return { note: out.reused ? 'มีข้อย่อยอยู่แล้ว' : `${out.items.length} ข้อย่อย (บริบท ${out.context_level})` }
+    },
+  },
+
+  req_preassess: {
+    label: 'เสนอสถานะรายข้อ',
+    perItemMs: 90_000,
+    async run(item) {
+      const out = await preassessLaw(refId(item, 'law'))
+      return { note: `เสนอ ${out?.items?.length ?? 0} ข้อ` }
+    },
+  },
+
+  law_gap: {
+    label: 'สรุปช่องว่าง',
+    perItemMs: 70_000,
+    async run(item) {
+      const out = await summarizeGap(refId(item, 'law'), { by: 'คิว' })
+      return { note: (out.gaps || []).length ? `พบ ${out.gaps.length} ช่องว่าง` : 'ไม่พบช่องว่าง' }
+    },
+  },
+}
+
+// 'law:123' → 123 · ป้องกันการหยิบงานผิดประเภทมาทำด้วยรหัสของอีกประเภท
+function refId(item, prefix) {
+  const raw = String(item.ref || '')
+  if (!raw.startsWith(prefix + ':')) throw new Error(`รหัสอ้างอิงในคิวไม่ถูกต้อง (ต้องขึ้นต้น "${prefix}:"): ${raw}`)
+  const n = Number(raw.slice(prefix.length + 1))
+  if (!Number.isFinite(n)) throw new Error('รหัสอ้างอิงในคิวไม่ถูกต้อง: ' + raw)
+  return n
 }
 
 export default async function handler(req, res) {

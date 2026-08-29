@@ -3,8 +3,10 @@
 //         lg_ai_discovered_laws (ai_payload) → กด "เพิ่มเข้าทะเบียน" prefill AddLawFlow (Workflow A).
 // โซนล่าง: ประวัติการสรุปด้วย AI (lg_ai_discovered_laws ทุกสถานะ + lg_laws.ai_summary_at)
 //         + รายการกฎหมายในทะเบียนที่ยังไม่มีสรุป ให้สั่งสรุปย้อนหลังได้.
-import { useMemo, useState } from 'react'
-import { saveDiscoveredLaw, deleteDiscoveredLaw, saveLawAiSummary, repealLaw } from '../lib/supabase.js'
+import { useEffect, useMemo, useState } from 'react'
+import { saveDiscoveredLaw, deleteDiscoveredLaw, saveLawAiSummary, repealLaw,
+         fetchChainMarks, fetchQueuedRefs, enqueueChain, runChainQueue, profileReady } from '../lib/supabase.js'
+import { CHAIN, CHAIN_ORDER, CHAIN_BY_KIND, chainState, chainDoneCount, chainJobs } from '../lib/chain.js'
 import { I } from '../components/icons.jsx'
 import { thDate, findLawDuplicate, beToISO } from '../lib/ui.jsx'
 import { useAuth, NO_PERM } from '../lib/auth.js'
@@ -981,6 +983,178 @@ function HistoryZone({ discovered = [], laws = [], onAddToRegistry, onOpenLaw })
 
 /* ── กฎหมายในทะเบียนที่ยังไม่มีสรุป AI — ปุ่มสั่งสรุปย้อนหลัง ──
    แยกออกจากประวัติ เพราะนี่คือ "งานที่ทำได้" ไม่ใช่ "สิ่งที่ทำไปแล้ว" */
+/* ── P25 · โซนวิเคราะห์ครบวงจร ──────────────────────────────────────────────
+
+   ปัญหา: ขั้นที่ 0 อยู่หน้านี้ ส่วนขั้น 1-5 อยู่ในลิ้นชักรายฉบับ ผู้ใช้ต้องจำเองว่า
+   กดอะไรก่อนหลัง และไม่มีทางรู้ว่าฉบับไหนทำถึงขั้นไหนแล้ว
+
+   ═══ ทำไมไม่เชนใน 1 คำขอ ═══
+   5 ขั้นในคำขอเดียวชนเพดาน 300 วิของ Vercel แน่นอน (law-analyze ชนเป็นประจำอยู่แล้ว)
+   จึงเข้าคิวทั้งชุดแล้วให้ /api/queue-run ทยอยทำ โดยหน้าจอไล่ประเภทงานตาม CHAIN_ORDER
+   ทีละประเภทจนหมด ก่อนขึ้นประเภทถัดไป — ขั้นหลังจึงไม่ทำงานบนข้อมูลที่ขั้นก่อนยังไม่มี */
+const DOT = { done:'var(--ok)', queued:'var(--brand)', todo:'var(--grayfill, var(--line))' }
+const DOT_LABEL = { done:'เสร็จแล้ว', queued:'อยู่ในคิว', todo:'ยังไม่ทำ' }
+
+function ChainDots({ state }) {
+  return (
+    <div style={{ display:'flex', gap:5, alignItems:'center' }}>
+      {state.map(s => (
+        <span key={s.kind} title={`ขั้นที่ ${s.step} ${s.label} — ${DOT_LABEL[s.status]}`}
+          aria-label={`ขั้นที่ ${s.step} ${s.label} ${DOT_LABEL[s.status]}`}
+          style={{ width:9, height:9, borderRadius:'50%', background:DOT[s.status],
+                   border: s.status==='todo' ? '1px solid var(--line)' : 'none', display:'inline-block' }} />
+      ))}
+    </div>
+  )
+}
+
+function ChainZone({ laws = [], profile, onReloadLaws }) {
+  const { can } = useAuth()
+  const ai = useAiAction()
+  const [marks, setMarks] = useState(null)
+  const [queued, setQueued] = useState({})
+  const [msg, setMsg] = useState('')
+  const [showAll, setShowAll] = useState(false)
+  const ready = profileReady(profile)
+
+  async function reload() {
+    const [m, q] = await Promise.all([fetchChainMarks(), fetchQueuedRefs(CHAIN_ORDER)])
+    setMarks(m); setQueued(q)
+  }
+  useEffect(() => { let live = true
+    Promise.all([fetchChainMarks(), fetchQueuedRefs(CHAIN_ORDER)])
+      .then(([m, q]) => { if (live) { setMarks(m); setQueued(q) } }).catch(() => {})
+    return () => { live = false }
+  }, [laws.length])
+
+  const rows = useMemo(() => {
+    if (!marks) return []
+    return laws.map(l => {
+      const state = chainState(l, marks, queued)
+      return { law: l, state, done: chainDoneCount(state) }
+    }).sort((a, b) => a.done - b.done || String(a.law.code).localeCompare(String(b.law.code)))
+  }, [laws, marks, queued])
+
+  const incomplete = rows.filter(r => r.done < CHAIN.length)
+  const shown = showAll ? rows : incomplete.slice(0, 12)
+
+  async function queueOne(row) {
+    return ai.run('q' + row.law.id, async () => {
+      const jobs = chainJobs(row.law, { state: row.state })
+      if (!jobs.length) { toast('ฉบับนี้ทำครบทุกขั้นแล้ว'); return }
+      const r = await enqueueChain(jobs)
+      await reload()
+      setMsg(`เข้าคิว ${r.queued} งานสำหรับ ${row.law.code}${r.skipped ? ` · ข้ามที่ค้างอยู่แล้ว ${r.skipped}` : ''}`)
+      toast(`เข้าคิว ${r.queued} งาน`, 'success')
+    }, { errorPrefix: 'เข้าคิวไม่สำเร็จ' })
+  }
+
+  async function queueAll() {
+    const jobs = incomplete.flatMap(r => chainJobs(r.law, { state: r.state }))
+    if (!jobs.length) { toast('ทุกฉบับทำครบทุกขั้นแล้ว'); return }
+    if (!(await confirmDialog(
+      `เข้าคิววิเคราะห์ ${incomplete.length} ฉบับ รวม ${jobs.length} งาน?\n\n`
+      + 'ระบบจะทยอยทำทีละงานตามลำดับขั้น ไม่ได้ทำพร้อมกันทั้งหมด\n'
+      + 'ผลทุกชิ้นเป็นข้อเสนอ ยังต้องยืนยันรายฉบับเหมือนเดิม',
+      { okLabel: 'เข้าคิวทั้งหมด' }))) return
+    return ai.run('qall', async () => {
+      const r = await enqueueChain(jobs)
+      await reload()
+      setMsg(`เข้าคิวแล้ว ${r.queued} งาน จาก ${incomplete.length} ฉบับ${r.skipped ? ` · ข้ามที่ค้างอยู่แล้ว ${r.skipped}` : ''}`)
+      toast(`เข้าคิว ${r.queued} งาน`, 'success')
+    }, { errorPrefix: 'เข้าคิวไม่สำเร็จ' })
+  }
+
+  // ── ประมวลผลคิว · ไล่ตามลำดับขั้น ห้ามสลับ ──────────────────────────────
+  // ทำประเภทหนึ่งจนหมดก่อนขึ้นประเภทถัดไป ถ้าประเภทใดยังเหลือค้าง (ชนงบเวลา 300 วิ)
+  // ให้หยุดไว้แค่นั้นแล้วบอกให้กดต่อ — ไม่ข้ามไปทำขั้นหลังบนข้อมูลที่ยังไม่ครบ
+  async function runAll() {
+    return ai.run('run', async () => {
+      const lines = []
+      for (const kind of CHAIN_ORDER) {
+        if (!(queued[kind]?.size)) continue
+        const r = await runChainQueue(kind)
+        const c = CHAIN_BY_KIND[kind]
+        lines.push(`${c.label}: สำเร็จ ${r.done}` + (r.failed ? ` · ล้มเหลว ${r.failed}` : '')
+          + (r.remaining ? ` · เหลือ ${r.remaining}` : ''))
+        if (r.remaining) { lines.push(`หยุดที่ขั้น “${c.label}” เพราะยังเหลืองานค้าง — กดประมวลผลต่อได้`); break }
+      }
+      await reload()
+      onReloadLaws && onReloadLaws()
+      setMsg(lines.length ? lines.join(' · ') : 'ไม่มีงานค้างในคิว')
+      toast('ประมวลผลคิวรอบนี้เสร็จแล้ว', 'success')
+    }, { errorPrefix: 'ประมวลผลคิวไม่สำเร็จ' })
+  }
+
+  const totalQueued = CHAIN_ORDER.reduce((n, k) => n + (queued[k]?.size || 0), 0)
+  if (!marks || !laws.length) return null
+
+  return (
+    <div className="panel" style={{ marginTop: 14, padding: '13px 16px' }}>
+      <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+        <b style={{ fontSize:13 }}>วิเคราะห์ครบวงจร</b>
+        <span style={{ fontSize:12, color:'var(--ink-faint)' }}>
+          ยังไม่ครบ 6 ขั้น {incomplete.length} ฉบับ{totalQueued ? ` · ค้างในคิว ${totalQueued} งาน` : ''}
+        </span>
+        <div style={{ marginLeft:'auto', display:'flex', gap:8, flexWrap:'wrap' }}>
+          <button className="btn btn-ghost" style={{ padding:'4px 11px', fontSize:12 }}
+            disabled={ai.busy || !can('edit') || !ready || !incomplete.length}
+            title={ready ? 'เข้าคิวทุกฉบับที่ยังไม่ครบ' : 'ต้องตั้งโปรไฟล์บริบทองค์กรก่อน'}
+            onClick={queueAll}>
+            {ai.isBusy('qall') ? 'กำลังเข้าคิว…' : 'วิเคราะห์ทุกฉบับที่ยังไม่ครบ'}
+          </button>
+          <button className="btn btn-primary" style={{ padding:'4px 11px', fontSize:12 }}
+            disabled={ai.busy || !can('edit') || !totalQueued} onClick={runAll}>
+            {ai.isBusy('run') ? 'กำลังประมวลผล…' : `ประมวลผลคิว${totalQueued ? ` (${totalQueued})` : ''}`}
+          </button>
+        </div>
+      </div>
+
+      {!ready && (
+        <div style={{ marginTop:10, padding:'9px 12px', borderRadius:7, background:'var(--warn-bg)',
+          color:'var(--warn)', fontSize:12.5, lineHeight:1.65 }}>
+          ยังไม่ได้ตั้งโปรไฟล์บริบทองค์กร — ขั้นคัดกรองความเกี่ยวข้องทำงานไม่ได้
+          ตั้งค่าได้ที่หน้า “ตั้งค่า → ข้อมูลองค์กร”
+        </div>
+      )}
+
+      <div style={{ marginTop:9, fontSize:11.5, color:'var(--ink-faint)', lineHeight:1.65 }}>
+        ลำดับการทำ: {CHAIN_ORDER.map(k => CHAIN_BY_KIND[k].label).join(' → ')}
+        {' '}· จุดเรียงตามเลขขั้น 1-6 ไม่ใช่ลำดับการทำ
+      </div>
+      {msg && <div style={{ marginTop:7, fontSize:12, color:'var(--ink-soft)' }}>{msg}</div>}
+
+      <div style={{ marginTop:10 }}>
+        {shown.map(row => (
+          <div key={row.law.id} style={{ display:'flex', alignItems:'center', gap:10,
+            padding:'8px 0', borderTop:'1px solid var(--line-soft)', flexWrap:'wrap' }}>
+            <ChainDots state={row.state} />
+            <div style={{ flex:1, minWidth:200 }}>
+              <div style={{ fontSize:12.5, fontWeight:600 }}>{row.law.code}</div>
+              <div style={{ fontSize:11.5, color:'var(--ink-faint)', lineHeight:1.5 }}>
+                {(row.law.name || '').slice(0, 80)}{(row.law.name || '').length > 80 ? '…' : ''}
+              </div>
+            </div>
+            <span style={{ fontSize:11.5, color:'var(--ink-faint)' }}>{row.done}/{CHAIN.length} ขั้น</span>
+            <button className="btn btn-ghost" style={{ padding:'3px 10px', fontSize:11.5 }}
+              disabled={ai.busy || !can('edit') || !ready || row.done === CHAIN.length}
+              onClick={() => queueOne(row)}>
+              {ai.isBusy('q' + row.law.id) ? 'กำลังเข้าคิว…' : 'วิเคราะห์ทั้งชุด'}
+            </button>
+          </div>
+        ))}
+        {!showAll && incomplete.length > shown.length && (
+          <button className="btn btn-ghost" style={{ marginTop:8, padding:'4px 11px', fontSize:12 }}
+            onClick={() => setShowAll(true)}>ดูทั้งหมด ({rows.length} ฉบับ)</button>
+        )}
+        {!incomplete.length && (
+          <div style={{ fontSize:12.5, color:'var(--ok)', padding:'8px 0' }}>ทุกฉบับทำครบทั้ง 6 ขั้นแล้ว</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function BackfillZone({ laws = [], onReloadLaws }) {
   const { can } = useAuth()
   // P22 ขั้นที่ 0 · ปุ่มแรกที่ย้ายมาใช้ helper กลาง — พิสูจน์ว่า useAiAction ใช้ได้จริง
@@ -1031,7 +1205,7 @@ function BackfillZone({ laws = [], onReloadLaws }) {
 }
 
 export default function LawSummary({ laws = [], allLaws = [], cats = [], discovered = [], suggest = {},
-  onReloadDiscovered, onReloadLaws, onOpenLaw, onAddToRegistry }) {
+  companyProfile = null, onReloadDiscovered, onReloadLaws, onOpenLaw, onAddToRegistry }) {
   return (
     <div className="view">
       <AiSummaryZone cats={cats} laws={allLaws.length ? allLaws : laws} suggest={suggest} onQueued={onReloadDiscovered} onAddToRegistry={onAddToRegistry} onReloadLaws={onReloadLaws} />
@@ -1040,6 +1214,8 @@ export default function LawSummary({ laws = [], allLaws = [], cats = [], discove
           ส่วนปุ่มสั่งสรุปย้อนหลังใช้ laws (เฉพาะที่ยังใช้บังคับ) — ไม่ต้องไปสรุปฉบับที่ยกเลิกแล้ว */}
       <HistoryZone discovered={discovered} laws={allLaws.length ? allLaws : laws} onAddToRegistry={onAddToRegistry} onOpenLaw={onOpenLaw} />
       <BackfillZone laws={laws} onReloadLaws={onReloadLaws} />
+      {/* P25 · จุดเดียวที่สั่งได้ทั้งสาย 6 ขั้น — ขั้นย่อยยังกดรายฉบับได้เหมือนเดิมในลิ้นชัก */}
+      <ChainZone laws={laws} profile={companyProfile} onReloadLaws={onReloadLaws} />
     </div>
   )
 }
