@@ -3,7 +3,6 @@
 // ───────────────────────────────────────────────────────────────
 
 import { REQ_STATUS, REQ_STATUS_ORDER, WAITING_STATUS, LAW_STATUS, reqKind } from './supabase.js'
-import { GAP_GROUPS as GAP_GROUPS_DEF } from './gap.js'
 
 const TH_MONTHS_FULL = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']
 const xesc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
@@ -114,70 +113,3 @@ export function exportLawsToExcel(laws, catMap = {}) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-// ── P22 ขั้นที่ 4 · Excel ของรายงาน Gap Analysis ─────────────────────────────
-// ใช้กลไก SpreadsheetML 2003 เดิมทุกประการ ไม่เพิ่ม dependency ใดๆ
-// 1 worksheet ต่อ 1 กลุ่มช่องว่าง + ชีทสรุปนำหน้า
-// ตัวเลขในชีทสรุปมาจาก summary ก้อนเดียวกับที่หน้าจอและ PDF ใช้ (src/lib/gap.js)
-// จึงไม่มีทางที่สามแหล่งจะให้คำตอบต่างกัน
-export function exportGapToExcel({ groups = {}, summary = {}, settings = {}, groupDefs }) {
-  const defs = groupDefs || GAP_GROUPS_DEF
-  const cell = (v, style) => `<Cell${style ? ` ss:StyleID="${style}"` : ''}><Data ss:Type="String">${xesc(v)}</Data></Cell>`
-  const HEAD = ['ลำดับ', 'รหัสกฎหมาย', 'ชื่อกฎหมาย', 'มาตรา / ข้อ', 'หน่วยงานผู้รับผิดชอบ', 'สิ่งที่ต้องทำต่อ', 'กำหนดเวลา', 'รายละเอียดข้อกำหนด']
-  const WIDTHS = [40, 70, 260, 90, 100, 240, 90, 320]
-  const company = settings.company_name || settings.org_name || ''
-
-  const sumRows = [
-    ['อัตราความสอดคล้อง', summary.pct == null ? '—' : summary.pct + '%', `${summary.met} จาก ${summary.assessed} ข้อ (ฐาน C + NC)`],
-    ['ความครบถ้วนของหลักฐาน', summary.evidencePct == null ? '—' : summary.evidencePct + '%', `${summary.evidenceHave} จาก ${summary.evidenceNeed} ข้อที่ประเมินว่าสอดคล้อง`],
-    ['ช่องว่างที่พบทั้งหมด', String(summary.totalGaps ?? 0), `จาก ${summary.laws ?? 0} ฉบับ · ${summary.req ?? 0} ข้อปฏิบัติ`],
-    ['', '', ''],
-    ...defs.map(g => [g.title, String((groups[g.key] || []).length), g.why]),
-  ]
-  const summarySheet = `<Worksheet ss:Name="${xesc(sheetName('สรุปช่องว่าง'))}"><Table>` +
-    [220, 90, 420].map(w => `<Column ss:Width="${w}"/>`).join('') +
-    `<Row ss:Height="22"><Cell ss:StyleID="band" ss:MergeAcross="2"><Data ss:Type="String">${xesc('รายงานวิเคราะห์ช่องว่างความสอดคล้องตามกฎหมาย — ISO 45001 ข้อ 6.1.3' + (company ? ' · ' + company : ''))}</Data></Cell></Row>` +
-    '<Row ss:Height="24">' + ['หัวข้อ', 'ค่า', 'คำอธิบาย'].map(h => cell(h, 'hdr')).join('') + '</Row>' +
-    sumRows.map(r => '<Row>' + r.map(v => cell(v)).join('') + '</Row>').join('') +
-    `<Row/><Row><Cell ss:MergeAcross="2"><Data ss:Type="String">${xesc('อัตราความสอดคล้อง = C ÷ (C + NC) × 100 · Ack และ ไม่เกี่ยวข้อง ไม่นับเป็นตัวหาร — ตรงกับที่แสดงบนหน้า Dashboard')}</Data></Cell></Row>` +
-    `</Table></Worksheet>`
-
-  const sheets = defs.map(g => {
-    const rows = groups[g.key] || []
-    const body = rows.length
-      ? rows.map((x, i) => '<Row>' + [
-        cell(String(i + 1), 'ctr'), cell(x.law?.code || ''), cell(x.law?.name || ''),
-        cell(x.section || ''), cell(x.responsible || ''), cell(x.todo || ''),
-        cell(x.due ? 'เลยกำหนด ' + x.due : 'ยังไม่กำหนด', x.due ? 'bad' : ''),
-        cell(String(x.detail || '').slice(0, 500)),
-      ].join('') + '</Row>').join('')
-      : `<Row><Cell ss:MergeAcross="7"><Data ss:Type="String">${xesc('ไม่พบช่องว่างในกลุ่มนี้')}</Data></Cell></Row>`
-    return `<Worksheet ss:Name="${xesc(sheetName(g.title))}"><Table>` +
-      WIDTHS.map(w => `<Column ss:Width="${w}"/>`).join('') +
-      `<Row ss:Height="22"><Cell ss:StyleID="band" ss:MergeAcross="7"><Data ss:Type="String">${xesc(g.title + ' — ' + g.why)}</Data></Cell></Row>` +
-      '<Row ss:Height="24">' + HEAD.map(h => cell(h, 'hdr')).join('') + '</Row>' +
-      body + `</Table></Worksheet>`
-  }).join('')
-
-  const xml =
-`<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
- <Styles>
-  <Style ss:ID="Default"><Font ss:FontName="Tahoma" ss:Size="10"/><Alignment ss:Vertical="Top" ss:WrapText="1"/></Style>
-  <Style ss:ID="hdr"><Font ss:FontName="Tahoma" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#0071E3" ss:Pattern="Solid"/><Alignment ss:Vertical="Center"/></Style>
-  <Style ss:ID="bad"><Font ss:Color="#D6342A" ss:Bold="1"/><Alignment ss:Vertical="Top"/></Style>
-  <Style ss:ID="ctr"><Alignment ss:Horizontal="Center" ss:Vertical="Top"/></Style>
-  <Style ss:ID="band"><Font ss:FontName="Tahoma" ss:Size="11" ss:Bold="1"/><Interior ss:Color="#BFBFBF" ss:Pattern="Solid"/></Style>
- </Styles>
- ${summarySheet}
- ${sheets}
-</Workbook>`
-
-  const blob = new Blob(['﻿', xml], { type: 'application/vnd.ms-excel;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `GapAnalysis_${new Date().toISOString().slice(0, 10)}.xls`
-  document.body.appendChild(a); a.click(); a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}

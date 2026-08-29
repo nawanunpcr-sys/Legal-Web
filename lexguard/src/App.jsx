@@ -37,7 +37,6 @@ import RegistryCompliance from './pages/Registry.jsx'
 import Communication from './pages/Communications.jsx'
 import ExportPdfModal from './components/ExportPdfModal.jsx'
 import Improvements from './pages/Improvements.jsx'
-import GapReport from './pages/GapReport.jsx'
 import GettingStarted from './pages/GettingStarted.jsx'
 import NotificationsPage from './pages/Notifications.jsx'
 import SettingsPage from './pages/Settings.jsx'
@@ -56,9 +55,6 @@ const NAV_GROUPS = [
     { id:'improvements',  label:'แผนปรับปรุง',           icon:'check'   },
     { id:'comm',          label:'สื่อสาร & ส่งรายงาน',    icon:'chat'    },
     { id:'summary',       label:'สรุปกฎหมาย (AI)',       icon:'spark'   },
-    // P22 ขั้นที่ 4 · หน้า Gap Analysis — ระบบไม่เคยมีหน้ารายงานวิเคราะห์มาก่อน
-    // (Reports.jsx เป็นตารางกำหนดส่งรายงานราชการใต้เมนูสื่อสาร ไม่ใช่ที่ของรายงานนี้)
-    { id:'gap',           label:'Gap Analysis',          icon:'scale'   },
     // P22 ขั้นที่ 6 · เข้าถึงได้จากทุกหน้าเพราะอยู่ในเมนูหลักที่แสดงตลอดเวลา
     { id:'help',          label:'เริ่มต้นใช้งาน',        icon:'info'    },
   ]},
@@ -69,7 +65,6 @@ const TITLES = {
   tasks:         ['รายการที่ต้องทำ',        'งานที่ต้องดำเนินการทั้งหมด — ทวนสอบกฎหมาย · รายงานราชการ · การสื่อสาร'],
   // P19 · registry ตอนนี้มี 3 แท็บ (ทะเบียน/ประวัติ/ยกเลิก) — history และ repealed ไม่ใช่ view เดี่ยวๆ แล้ว
   registry:      ['ทะเบียนกฎหมาย',        ''],
-  gap:           ['Gap Analysis', 'ช่องว่างที่ผู้ตรวจจะพบ เรียงตามความเสี่ยง — ISO 45001 ข้อ 6.1.3'],
   help:          ['เริ่มต้นใช้งาน',       'สายงาน 5 ขั้นของระบบ และความหมายของศัพท์ที่ใช้'],
   register:      ['ทะเบียนกฎหมาย',         'กฎหมายที่เกี่ยวข้องและสถานะการปฏิบัติ'],
   compliance:    ['ติดตามความสอดคล้อง',    'สถานะรายข้อปฏิบัติแยกตามหมวดและลำดับชั้น'],
@@ -691,8 +686,7 @@ export default function App(){
           </div>
           <div className="view-swap" key={view}>
           {/* P22 · ต้องเป็น lawsWithRel ไม่ใช่ laws — การ์ดช่องว่างบน Dashboard อ่าน l.relevance
-              ถ้าส่ง laws เปล่าไป ทุกฉบับจะถูกนับว่า "ยังไม่คัดกรอง" ตลอดกาล
-              แล้วตัวเลขจะไม่ตรงกับหน้า Gap Analysis ซึ่งผิดเกณฑ์ผ่านของขั้นที่ 4 */}
+              ถ้าส่ง laws เปล่าไป ทุกฉบับจะถูกนับว่า "ยังไม่คัดกรอง" ตลอดกาล */}
           {view==='dashboard'     && <Dashboard     laws={lawsWithRel} cats={cats} catMap={catMap} onOpen={setOpenLaw} onGoView={goView}
             monthsData={months}/>}
           {view==='tasks'         && <Tasks taskRows={taskRows} workflowRows={workflowRows} laws={activeLaws} catMap={catMap} suggest={suggest} focusSignal={trackerFocus}
@@ -717,7 +711,6 @@ export default function App(){
           {view==='summary'       && <LawSummary laws={activeLaws} allLaws={laws} cats={cats} catMap={catMap} discovered={discovered} suggest={suggest}
             onReloadDiscovered={loadDiscovered} onReloadLaws={loadLaws} onOpenLaw={setOpenLaw} onAddToRegistry={init=>openAddLaw(init)}/>}
           {view==='improvements'  && <Improvements  laws={inForceLaws} catMap={catMap} onOpen={setOpenLaw} onChanged={loadLaws} settings={settings}/>}
-          {view==='gap'           && <GapReport laws={inForceLaws} catMap={catMap} settings={settings} round={round} onOpen={setOpenLaw}/>}
           {view==='help'          && <GettingStarted onGoView={goView}/>}
           {view==='comm'          && (<div className="view">
             <div className="seg" style={{marginBottom:14}}>

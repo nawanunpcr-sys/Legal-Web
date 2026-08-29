@@ -311,7 +311,7 @@ function CompanyProfileCard() {
           value={p.licenses} onChange={v => set('licenses', v)} />
 
         <ListField label="ขอบข่ายมาตรฐานที่รับรอง"
-          hint="ตามชีท “ข้อมูลจำเพาะของเอกสาร” ของ F-259 — ใช้อ้างอิงในรายงาน Gap Analysis"
+          hint="ตามชีท “ข้อมูลจำเพาะของเอกสาร” ของ F-259 — ใช้อ้างอิงบนหัวกระดาษของรายงานที่พิมพ์"
           placeholder={'ISO 45001 ข้อ 6.1.3\nISO 27001 ข้อ A.18.1\nISO 20000 ข้อ 4.2, 9.1'}
           value={p.iso_scope} onChange={v => set('iso_scope', v)} />
 
